@@ -180,18 +180,33 @@ class SeedTest(unittest.TestCase):
         self.assertEqual(vault.read("face_profiles"), {})
 
 
-class LivenessRuleTest(unittest.TestCase):
-    def test_random_motion_thresholds(self):
-        baseline = (200.0, 100.0, 160.0, 160.0)
-        self.assertTrue(OpenCVFace._passed("MOVE LEFT", (145, 100, 160, 160), baseline))
-        self.assertTrue(OpenCVFace._passed("MOVE RIGHT", (255, 100, 160, 160), baseline))
-        self.assertTrue(OpenCVFace._passed("MOVE CLOSER", (190, 90, 200, 200), baseline))
-        self.assertFalse(OpenCVFace._passed("MOVE LEFT", (195, 100, 160, 160), baseline))
+def yunet_face(x, y, w, h, nose_shift=0.0):
+    """YuNet 형식 얼굴: 박스 + 눈 2개 + 코. nose_shift는 눈 사이 거리 대비 코의 좌우 이동."""
+    e1x, e2x, ey = x + w * 0.3, x + w * 0.7, y + h * 0.4
+    nose_x = (e1x + e2x) / 2 + (e2x - e1x) * nose_shift
+    return (x, y, w, h, e1x, ey, e2x, ey, nose_x, y + h * 0.6)
 
-    def test_center_return_rule(self):
-        baseline = (200.0, 100.0, 160.0, 160.0)
-        self.assertTrue(OpenCVFace._centered((205, 100, 160, 160), baseline))
-        self.assertFalse(OpenCVFace._centered((80, 100, 160, 160), baseline))
+
+class LivenessRuleTest(unittest.TestCase):
+    def setUp(self):
+        self.baseline = OpenCVFace._pose(yunet_face(200.0, 100.0, 160.0, 160.0))
+
+    def test_head_turn_uses_nose_position_not_box_shift(self):
+        self.assertAlmostEqual(OpenCVFace._yaw(yunet_face(200, 100, 160, 160)), 0.0)
+        self.assertTrue(OpenCVFace._passed("TURN LEFT", yunet_face(200, 100, 160, 160, -0.3), self.baseline))
+        self.assertTrue(OpenCVFace._passed("TURN RIGHT", yunet_face(200, 100, 160, 160, 0.3), self.baseline))
+        # 고개는 그대로 두고 몸만 옆으로 옮기면 고개 돌림이 아니다.
+        self.assertFalse(OpenCVFace._passed("TURN LEFT", yunet_face(120, 100, 160, 160), self.baseline))
+        self.assertFalse(OpenCVFace._passed("TURN LEFT", yunet_face(200, 100, 160, 160, 0.3), self.baseline))
+
+    def test_move_closer(self):
+        self.assertTrue(OpenCVFace._passed("MOVE CLOSER", yunet_face(190, 90, 200, 200), self.baseline))
+        self.assertFalse(OpenCVFace._passed("MOVE CLOSER", yunet_face(200, 100, 165, 165), self.baseline))
+
+    def test_center_return_needs_front_view(self):
+        self.assertTrue(OpenCVFace._centered(yunet_face(205, 100, 160, 160), self.baseline))
+        self.assertFalse(OpenCVFace._centered(yunet_face(80, 100, 160, 160), self.baseline))
+        self.assertFalse(OpenCVFace._centered(yunet_face(205, 100, 160, 160, 0.3), self.baseline))
 
 
 if __name__ == "__main__":

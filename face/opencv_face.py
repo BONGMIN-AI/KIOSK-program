@@ -2,7 +2,8 @@
 
 사진과 영상 프레임은 저장하지 않는다. SFace가 만든 128차원 특징값만 기존
 Vault의 ``face_profiles`` 데이터셋에 저장하므로 디스크에서는 암호화된다.
-로그인 때마다 무작위 움직임 두 가지를 요구해 정지 사진 공격을 줄인다.
+등록 때는 무작위 동작 두 가지, 로그인 때는 한 가지를 요구해 정지 사진 공격을 줄인다.
+고개 돌림은 YuNet이 함께 주는 눈·코 위치로 좌우 각도(yaw)를 추정해 판정한다.
 
 이 활성 생체 확인은 수업용 데모 수준이다. 움직이는 영상·정교한 3D 마스크까지
 막는 상용 위조 방지 시스템은 아니다.
@@ -24,7 +25,11 @@ from . import FaceError, guide_view
 
 COSINE_THRESHOLD = 0.363
 SESSION_SECONDS = 45
-CAPTURE_SAMPLES = 10
+CAPTURE_SAMPLES = 10          # 등록: 정면 특징 10장 평균
+LOGIN_SAMPLES = 5             # 로그인·확인: 빠르게 5장
+TURN_THRESHOLD = 0.18         # 정면 대비 코가 눈 사이 거리의 18% 이상 옆으로 가면 고개를 돌린 것
+CENTER_YAW = 0.12             # 정면으로 돌아왔다고 볼 각도 범위
+MOTIONS = ("TURN LEFT", "TURN RIGHT", "MOVE CLOSER")
 WINDOW_SIZE = guide_view.CANVAS_SIZE   # 왼쪽 카메라 + 오른쪽 단계 안내 (10-B)
 
 
@@ -74,7 +79,7 @@ class OpenCVFace:
             "algorithm": "OpenCV-SFace-2021dec",
             "feature": feature.astype(float).reshape(-1).tolist(),
             "created_at": now_iso(),
-            "liveness": "random-two-motion-v1",
+            "liveness": "random-two-motion-v2-yaw",
         }
         self.vault.write("face_profiles", profiles)
         on_status("얼굴 등록 완료 · 원본 사진은 저장하지 않았습니다")
@@ -119,25 +124,44 @@ class OpenCVFace:
         return faces[0], 1
 
     @staticmethod
-    def _passed(challenge: str, face, baseline) -> bool:
-        x, _y, w, h = map(float, face[:4])
-        bx, _by, bw, bh = baseline
-        cx, base_cx = x + w / 2, bx + bw / 2
-        if challenge == "MOVE LEFT":
-            return cx < base_cx - max(35.0, bw * 0.22)
-        if challenge == "MOVE RIGHT":
-            return cx > base_cx + max(35.0, bw * 0.22)
+    def _yaw(face) -> float:
+        """눈 두 개 가운데에서 코가 얼마나 옆으로 갔는지 (눈 사이 거리 기준). 정면이면 0 근처.
+
+        YuNet 결과: [x, y, w, h, 눈1 x, y, 눈2 x, y, 코 x, y, 입꼬리1 x, y, 입꼬리2 x, y, 점수].
+        거울 화면 기준으로 사용자가 자기 왼쪽으로 고개를 돌리면 값이 음수가 된다.
+        """
+        if len(face) < 10:
+            return 0.0
+        e1x, e2x, nose_x = float(face[4]), float(face[6]), float(face[8])
+        eye_dist = max(abs(e1x - e2x), 1.0)
+        return (nose_x - (e1x + e2x) / 2) / eye_dist
+
+    @classmethod
+    def _pose(cls, face) -> tuple:
+        """기준 자세로 모을 값: 얼굴 박스 4개 + 좌우 각도."""
+        return (*map(float, face[:4]), cls._yaw(face))
+
+    @classmethod
+    def _passed(cls, challenge: str, face, baseline) -> bool:
+        _x, _y, w, h = map(float, face[:4])
+        _bx, _by, bw, bh, base_yaw = baseline
+        yaw = cls._yaw(face)
+        if challenge == "TURN LEFT":
+            return yaw < base_yaw - TURN_THRESHOLD
+        if challenge == "TURN RIGHT":
+            return yaw > base_yaw + TURN_THRESHOLD
         if challenge == "MOVE CLOSER":
             return w * h > bw * bh * 1.35
         return False
 
-    @staticmethod
-    def _centered(face, baseline) -> bool:
+    @classmethod
+    def _centered(cls, face, baseline) -> bool:
         x, _y, w, h = map(float, face[:4])
-        bx, _by, bw, bh = baseline
+        bx, _by, bw, bh, base_yaw = baseline
         return (
             abs((x + w / 2) - (bx + bw / 2)) < max(45.0, bw * 0.28)
             and 0.72 < (w * h) / (bw * bh) < 1.38
+            and abs(cls._yaw(face) - base_yaw) < CENTER_YAW
         )
 
     def _feature(self, frame, face) -> np.ndarray:
@@ -151,7 +175,11 @@ class OpenCVFace:
     def _capture_live_feature(self, purpose: str, on_status) -> np.ndarray:
         cap = self._open_camera()
         title = "BONGMIN KIOSK - Face check (ESC: cancel)"
-        challenges = random.sample(["MOVE LEFT", "MOVE RIGHT", "MOVE CLOSER"], 2)
+        # 등록은 한 번뿐이라 동작 2개, 로그인은 빠르게 1개 (아이폰처럼 정면 위주).
+        enrolling = purpose == "ENROLL"
+        challenges = random.sample(MOTIONS, 2 if enrolling else 1)
+        needed_samples = CAPTURE_SAMPLES if enrolling else LOGIN_SAMPLES
+        calibration_frames = 18 if enrolling else 12
         calibration = []
         stable_hits = 0
         step = 0
@@ -175,21 +203,23 @@ class OpenCVFace:
                 frame = cv2.flip(frame, 1)
                 frame_no += 1
                 face, count = self._detect_one(frame)
+                motion_ok = False
 
                 if face is not None:
-                    if len(calibration) < 18:
-                        # 얼굴이 ROI 타원 안에 있을 때만 기준 위치로 모은다.
+                    if len(calibration) < calibration_frames:
+                        # 얼굴이 ROI 타원 안에 있을 때만 기준 자세로 모은다.
                         if guide_view.frame_in_roi(frame, face):
-                            calibration.append(tuple(map(float, face[:4])))
+                            calibration.append(self._pose(face))
                     else:
                         baseline = tuple(np.median(np.asarray(calibration), axis=0))
                         if step < len(challenges):
-                            if self._passed(challenges[step], face, baseline):
+                            motion_ok = self._passed(challenges[step], face, baseline)
+                            if motion_ok:
                                 stable_hits += 1
                                 if stable_hits >= 4:
                                     step += 1
                                     stable_hits = 0
-                                    on_status(f"동작 {step}/2 확인 완료")
+                                    on_status(f"동작 {step}/{len(challenges)} 확인 완료")
                             else:
                                 stable_hits = max(0, stable_hits - 1)
                         else:
@@ -199,15 +229,16 @@ class OpenCVFace:
                                     samples.append(self._feature(frame, face))
                             else:
                                 return_hits = 0
-                            if len(samples) >= CAPTURE_SAMPLES:
+                            if len(samples) >= needed_samples:
                                 mean = np.mean(np.vstack(samples), axis=0).astype(np.float32)
                                 mean /= np.linalg.norm(mean)
                                 return mean
 
-                progress = (len(calibration) / 18 * 0.3 + step / len(challenges) * 0.4
-                            + len(samples) / CAPTURE_SAMPLES * 0.3)
-                display = guide_view.compose(frame, face, count, challenges, len(calibration) >= 18,
-                                             step, purpose, progress)
+                progress = (len(calibration) / calibration_frames * 0.3 + step / len(challenges) * 0.4
+                            + len(samples) / needed_samples * 0.3)
+                display = guide_view.compose(frame, face, count, challenges,
+                                             len(calibration) >= calibration_frames,
+                                             step, purpose, progress, motion_ok)
                 cv2.imshow(title, display)
                 if cv2.waitKey(1) & 0xFF == 27:
                     raise FaceError("사용자가 얼굴 인증을 취소했습니다")

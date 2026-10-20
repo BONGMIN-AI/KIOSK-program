@@ -17,10 +17,11 @@ ROI_CENTER = (PANEL_W // 2, 370)
 ROI_AXES = (150, 200)                         # 얼굴이 와야 할 타원의 가로·세로 반지름
 
 GREEN, RED, YELLOW = (70, 200, 70), (40, 40, 230), (0, 200, 255)   # BGR
+# 타원 색: 초록 = 지금 맞게 하는 중, 노랑 = 동작 단계에서 아직 덜 움직임, 빨강 = 얼굴 없음·위치 틀림
 
 MOTION_LABELS = {
-    "MOVE LEFT": "고개를 천천히 왼쪽으로",
-    "MOVE RIGHT": "고개를 천천히 오른쪽으로",
+    "TURN LEFT": "고개를 천천히 왼쪽으로",
+    "TURN RIGHT": "고개를 천천히 오른쪽으로",
     "MOVE CLOSER": "카메라 쪽으로 조금 가까이",
 }
 PURPOSE_TITLES = {"ENROLL": "얼굴 등록", "LOGIN": "얼굴 로그인", "VERIFY": "얼굴 확인"}
@@ -125,7 +126,7 @@ def render_panel(title: str, labels, current: int, alert: str, progress: float):
 
 
 def compose(frame, face, count: int, challenges, calibrated: bool, step: int,
-            purpose: str, progress: float):
+            purpose: str, progress: float, motion_ok: bool = False):
     """카메라 프레임과 현재 진행 상태로 1280x720 창 이미지를 만든다."""
     view, scale, offset = fit_camera(frame)
     in_roi = face is not None and face_in_roi(face, scale, offset)
@@ -137,7 +138,8 @@ def compose(frame, face, count: int, challenges, calibrated: bool, step: int,
         roi_color = RED
         alert = "한 사람만 화면에 보이게 해 주세요" if count > 1 else "얼굴이 보이지 않아요. 타원 안으로 와 주세요"
     elif moving:
-        roi_color = YELLOW            # 움직이는 단계라 타원을 벗어나도 괜찮다
+        # 움직이는 단계라 타원을 벗어나도 괜찮다. 요청한 동작을 하고 있으면 초록으로 알려 준다.
+        roi_color = GREEN if motion_ok else YELLOW
     elif in_roi:
         roi_color = GREEN
     else:

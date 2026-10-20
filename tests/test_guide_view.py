@@ -20,7 +20,7 @@ class GuideViewTest(unittest.TestCase):
         self.frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
     def test_steps_follow_the_random_motions(self):
-        labels = guide_view.step_labels(["MOVE RIGHT", "MOVE CLOSER"])
+        labels = guide_view.step_labels(["TURN RIGHT", "MOVE CLOSER"])
         self.assertEqual(labels[0], "타원 안에 얼굴 맞추기")
         self.assertEqual(labels[1:3], ["고개를 천천히 오른쪽으로", "카메라 쪽으로 조금 가까이"])
         self.assertEqual(labels[-1], "가운데로 돌아와 잠시 멈추기")
@@ -37,20 +37,21 @@ class GuideViewTest(unittest.TestCase):
         self.assertFalse(guide_view.frame_in_roi(self.frame, face_at(320, 250, 60)))    # 너무 멀어서 작음
 
     def test_compose_makes_side_by_side_window(self):
-        canvas = guide_view.compose(self.frame, face_at(320, 250, 160), 1, ["MOVE LEFT", "MOVE RIGHT"],
+        canvas = guide_view.compose(self.frame, face_at(320, 250, 160), 1, ["TURN LEFT", "TURN RIGHT"],
                                     True, 1, "ENROLL", 0.5)
         self.assertEqual(canvas.shape, (720, 1280, 3))
         self.assertGreater(int(canvas[:, 640:].mean()), 200)   # 오른쪽은 흰 안내 패널
 
     def test_roi_color_shows_state(self):
-        def roi_pixel(face, count=1, calibrated=False):
-            canvas = guide_view.compose(self.frame, face, count, ["MOVE LEFT", "MOVE RIGHT"],
-                                        calibrated, 0, "LOGIN", 0.0)
+        def roi_pixel(face, count=1, calibrated=False, motion_ok=False):
+            canvas = guide_view.compose(self.frame, face, count, ["TURN LEFT", "TURN RIGHT"],
+                                        calibrated, 0, "LOGIN", 0.0, motion_ok)
             cx, cy = guide_view.ROI_CENTER
             return tuple(int(v) for v in canvas[cy, cx - guide_view.ROI_AXES[0]])
         self.assertEqual(roi_pixel(face_at(320, 250, 160)), guide_view.GREEN)
         self.assertEqual(roi_pixel(None), guide_view.RED)
         self.assertEqual(roi_pixel(face_at(320, 250, 160), calibrated=True), guide_view.YELLOW)
+        self.assertEqual(roi_pixel(face_at(320, 250, 160), calibrated=True, motion_ok=True), guide_view.GREEN)
 
 
 if __name__ == "__main__":
