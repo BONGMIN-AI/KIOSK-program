@@ -1,0 +1,19 @@
+# 비밀/개인정보: 절대 올리지 않는다
+data/
+*.key
+*.enc
+keystore.json
+faces/
+*.jpg
+*.jpeg
+*.png
+*.npy
+# 암호화된 얼굴 특징은 data/에만 저장한다. 공식 ONNX 모델은 models/에서 버전 관리한다.
+
+__pycache__/
+.venv/
+venv/
+.vscode/
+.testtmp/
+*.bak
+*.tmp
