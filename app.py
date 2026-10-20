@@ -459,7 +459,7 @@ class KioskApp(App):
 
     def get_face_provider(self):
         if self.face_provider is None:
-            self.face_provider = create_face_provider(self.vault)
+            self.face_provider = create_face_provider(self.vault, camera_index=config.CAMERA_INDEX)
         return self.face_provider
 
     def settings(self) -> dict:

@@ -63,7 +63,17 @@ python -m venv .venv
 
 ```powershell
 .\.venv\Scripts\python.exe tools\check_camera.py
+.\.venv\Scripts\python.exe tools\preview_face_guide.py --camera 2
 .\.venv\Scripts\python.exe tools\register_face.py --login-id bomin
+```
+
+`preview_face_guide.py`는 얼굴 확인 창(왼쪽 카메라 + ROI 타원, 오른쪽 단계 안내)을 저장 없이 연습해 보는 도구다.
+USB 카메라를 쓸 때는 카메라 번호를 맞춘다. 팀장 노트북 기준 USB 카메라는 `2`번이다.
+앱에서도 같은 카메라를 쓰려면 앱을 켜기 전에 번호를 지정한다.
+
+```powershell
+$env:KIOSK_CAMERA = "2"
+.\.venv\Scripts\python.exe app.py
 ```
 
 얼굴 사진은 저장하지 않고 암호화된 특징값만 로컬 `data/`에 저장한다. 얼굴 등록은

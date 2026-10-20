@@ -19,13 +19,13 @@ import numpy as np
 
 import config
 from core.schema import now_iso
-from . import FaceError
+from . import FaceError, guide_view
 
 
 COSINE_THRESHOLD = 0.363
 SESSION_SECONDS = 45
 CAPTURE_SAMPLES = 10
-WINDOW_SIZE = (960, 720)   # 카메라 창을 크게 띄워 자기 얼굴 방향을 보면서 따라 할 수 있게 한다
+WINDOW_SIZE = guide_view.CANVAS_SIZE   # 왼쪽 카메라 + 오른쪽 단계 안내 (10-B)
 
 
 class OpenCVFace:
@@ -148,26 +148,6 @@ class OpenCVFace:
             raise FaceError("얼굴 특징을 만들지 못했습니다")
         return feature / norm
 
-    @staticmethod
-    def _draw_guide(display, prompt: str, color, detail: str, purpose: str, progress: float) -> None:
-        """가운데 얼굴 안내선, 방향 화살표, 진행 막대를 그린다. (OpenCV 글꼴은 영어만 쓴다)"""
-        h, w = display.shape[:2]
-        cx, cy = w // 2, h // 2 + 10
-        cv2.ellipse(display, (cx, cy), (w // 6, h // 4), 0, 0, 360, (255, 255, 255), 2, cv2.LINE_AA)
-        arrow = {"MOVE LEFT": ((cx - 40, cy), (cx - w // 3, cy)),
-                 "MOVE RIGHT": ((cx + 40, cy), (cx + w // 3, cy))}.get(prompt)
-        if arrow:
-            cv2.arrowedLine(display, arrow[0], arrow[1], (0, 220, 255), 8, cv2.LINE_AA, tipLength=0.25)
-        elif prompt == "MOVE CLOSER":
-            cv2.ellipse(display, (cx, cy), (w // 4, h // 3), 0, 0, 360, (0, 220, 255), 4, cv2.LINE_AA)
-        cv2.rectangle(display, (0, 0), (w, 84), (20, 20, 20), -1)
-        cv2.putText(display, prompt, (18, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.1, color, 3, cv2.LINE_AA)
-        cv2.putText(display, f"{purpose} | {detail} | ESC: cancel", (18, 72),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (230, 230, 230), 1, cv2.LINE_AA)
-        bar_w = int((w - 36) * max(0.0, min(1.0, progress)))
-        cv2.rectangle(display, (18, h - 30), (w - 18, h - 14), (60, 60, 60), -1)
-        cv2.rectangle(display, (18, h - 30), (18 + bar_w, h - 14), (70, 220, 70), -1)
-
     def _capture_live_feature(self, purpose: str, on_status) -> np.ndarray:
         cap = self._open_camera()
         title = "BONGMIN KIOSK - Face check (ESC: cancel)"
@@ -195,23 +175,16 @@ class OpenCVFace:
                 frame = cv2.flip(frame, 1)
                 frame_no += 1
                 face, count = self._detect_one(frame)
-                display = frame.copy()
-                prompt = "LOOK CENTER"
-                detail = "Keep exactly one face in the box"
-                color = (0, 200, 255)
 
                 if face is not None:
-                    x, y, w, h = face[:4].astype(int)
-                    cv2.rectangle(display, (x, y), (x + w, y + h), (70, 220, 70), 2)
                     if len(calibration) < 18:
-                        calibration.append(tuple(map(float, face[:4])))
-                        detail = f"Calibrating {len(calibration)}/18"
+                        # 얼굴이 ROI 타원 안에 있을 때만 기준 위치로 모은다.
+                        if guide_view.frame_in_roi(frame, face):
+                            calibration.append(tuple(map(float, face[:4])))
                     else:
                         baseline = tuple(np.median(np.asarray(calibration), axis=0))
                         if step < len(challenges):
-                            prompt = challenges[step]
-                            detail = f"Random liveness {step + 1}/{len(challenges)}"
-                            if self._passed(prompt, face, baseline):
+                            if self._passed(challenges[step], face, baseline):
                                 stable_hits += 1
                                 if stable_hits >= 4:
                                     step += 1
@@ -220,8 +193,6 @@ class OpenCVFace:
                             else:
                                 stable_hits = max(0, stable_hits - 1)
                         else:
-                            prompt = "RETURN TO CENTER"
-                            detail = "Capturing encrypted face features"
                             if self._centered(face, baseline):
                                 return_hits += 1
                                 if return_hits >= 5 and frame_no % 3 == 0:
@@ -232,16 +203,11 @@ class OpenCVFace:
                                 mean = np.mean(np.vstack(samples), axis=0).astype(np.float32)
                                 mean /= np.linalg.norm(mean)
                                 return mean
-                else:
-                    if count > 1:
-                        prompt, detail = "ONE PERSON ONLY", "Multiple faces detected"
-                    else:
-                        prompt, detail = "FACE NOT FOUND", "Move into the camera view"
-                    color = (0, 0, 255)
 
                 progress = (len(calibration) / 18 * 0.3 + step / len(challenges) * 0.4
                             + len(samples) / CAPTURE_SAMPLES * 0.3)
-                self._draw_guide(display, prompt, color, detail, purpose, progress)
+                display = guide_view.compose(frame, face, count, challenges, len(calibration) >= 18,
+                                             step, purpose, progress)
                 cv2.imshow(title, display)
                 if cv2.waitKey(1) & 0xFF == 27:
                     raise FaceError("사용자가 얼굴 인증을 취소했습니다")
