@@ -40,10 +40,10 @@ from ui.i18n import (
 )
 
 CATEGORY_TABS = {
-    "cat-coffee": "커피", "cat-noncoffee": "논커피", "cat-tea": "차",
+    "cat-coffee": "커피", "cat-decaf": "디카페인", "cat-noncoffee": "논커피", "cat-tea": "차",
     "cat-ade": "에이드", "cat-dessert": "디저트",
 }
-CATEGORY_ICONS = {"커피": "☕", "논커피": "🥛", "차": "🍵", "에이드": "🍹", "디저트": "🥐"}
+CATEGORY_ICONS = {"커피": "☕", "디카페인": "🌙", "논커피": "🥛", "차": "🍵", "에이드": "🍹", "디저트": "🥐"}
 DEMO_MEMBER_IDS = {"bomin", "member1", "member2", "member3"}
 
 # 손님 화면 위젯과 번역 키. 언어를 바꾸면 이 목록을 따라 문구를 다시 쓴다.
@@ -356,7 +356,7 @@ class KioskApp(App):
                     yield Select([], prompt="수정할 메뉴 선택 (새 메뉴는 선택 안 함)", id="admin-menu-id")
                     with Horizontal(classes="row"):
                         yield Input(placeholder="메뉴 이름", id="admin-menu-name")
-                        yield Input(placeholder="카테고리 (커피·논커피·차·에이드·디저트)", id="admin-category")
+                        yield Input(placeholder="카테고리 (커피·디카페인·논커피·차·에이드·디저트)", id="admin-category")
                     with Horizontal(classes="row"):
                         yield Input(placeholder="가격", type="integer", id="admin-price")
                         yield Input(placeholder="재고", type="integer", id="admin-stock")
@@ -1265,7 +1265,7 @@ class KioskApp(App):
             if not name or not category or price <= 0 or stock < 0:
                 raise ValueError("이름·분류·가격(1원 이상)·재고(0개 이상)를 확인하세요")
             if category not in CATEGORY_ICONS:
-                raise ValueError("카테고리는 커피·논커피·차·에이드·디저트 중 하나로 입력하세요")
+                raise ValueError("카테고리는 커피·디카페인·논커피·차·에이드·디저트 중 하나로 입력하세요")
             selected = self.query_one("#admin-menu-id", Select).value
             menu_id = schema.next_id("M", self.menu, width=3) if is_blank(selected) else str(selected)
             old = self.menu.get(menu_id, {})
@@ -1273,6 +1273,8 @@ class KioskApp(App):
                 **old, "id": menu_id, "name": name, "category": category, "price": price,
                 "stock": stock, "sold_count": old.get("sold_count", 0),
                 "sold_out": stock == 0, "allergens": old.get("allergens", []),
+                "caffeine_mg": 0 if category == "디카페인" else old.get("caffeine_mg", 0),
+                "decaf": category == "디카페인",
             }
             self.vault.write("menu", self.menu)
             self.audit("menu_save", menu_id)

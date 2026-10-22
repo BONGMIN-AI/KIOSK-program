@@ -170,8 +170,15 @@ class CustomerAndOrderTest(unittest.TestCase):
 
 
 class SeedTest(unittest.TestCase):
-    def test_exactly_fifty_menu_items(self):
-        self.assertEqual(len(make_menu()), 50)
+    def test_menu_has_at_least_fifty_items_with_caffeine(self):
+        menu = make_menu()
+        self.assertGreaterEqual(len(menu), 50)
+        decaf = [m for m in menu.values() if m["category"] == "디카페인"]
+        self.assertEqual(len(decaf), 10)
+        self.assertTrue(all(m["decaf"] and m["caffeine_mg"] == 0 for m in decaf))
+        americano = next(m for m in menu.values() if m["name"] == "아메리카노")
+        self.assertEqual(americano["caffeine_mg"], 150)
+        self.assertEqual(menu["M001"]["name"], "아메리카노")   # 기존 메뉴 ID는 그대로
 
     def test_seed_faces_require_real_registration(self):
         vault = MemoryVault()

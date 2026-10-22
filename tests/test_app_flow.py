@@ -138,8 +138,8 @@ class AppFlowTest(AppFlowBase):
             await self.press(app, pilot, "save-menu", **{"#admin-menu-name": "시즌 라떼", "#admin-category": "커피",
                                                         "#admin-price": "5200", "#admin-stock": "5"})
             menu = app.vault.read("menu")
-            self.assertEqual(len(menu), 51)
-            self.assertEqual(menu["M051"]["name"], "시즌 라떼")
+            self.assertEqual(len(menu), 61)   # 기본 60개 + 새로 저장한 1개
+            self.assertEqual(menu["M061"]["name"], "시즌 라떼")
         self.run_flow(flow)
 
 

@@ -1,6 +1,6 @@
 """메뉴 옵션 규칙. 와이어프레임 04 옵션 팝업(온도·사이즈·샷·시럽)과 같은 기준을 쓴다."""
 
-DRINK_CATEGORIES = ("커피", "논커피", "차", "에이드")
+DRINK_CATEGORIES = ("커피", "디카페인", "논커피", "차", "에이드")
 SIZE_PRICES = {"M": 0, "L": 1000}
 EXTRA_PRICES = {"shot": 500, "syrup": 500}
 EXTRA_LABELS = {"shot": "샷 1회 추가", "syrup": "시럽 추가"}
@@ -12,7 +12,7 @@ def available_options(item: dict) -> dict:
     if category not in DRINK_CATEGORIES:
         return {"temperatures": [], "sizes": [], "extras": []}
     temperatures = ["ICE"] if category == "에이드" else ["HOT", "ICE"]
-    extras = ["shot", "syrup"] if category == "커피" else ["syrup"]
+    extras = ["shot", "syrup"] if category in ("커피", "디카페인") else ["syrup"]
     return {"temperatures": temperatures, "sizes": list(SIZE_PRICES), "extras": extras}
 
 

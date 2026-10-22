@@ -255,6 +255,7 @@ TEXT = {
 
 CATEGORY_NAMES = {
     "커피": {"ko": "커피", "en": "Coffee", "ja": "コーヒー", "zh": "咖啡"},
+    "디카페인": {"ko": "디카페인", "en": "Decaf", "ja": "デカフェ", "zh": "低因咖啡"},
     "논커피": {"ko": "논커피", "en": "Non-coffee", "ja": "ノンコーヒー", "zh": "非咖啡"},
     "차": {"ko": "차", "en": "Tea", "ja": "お茶", "zh": "茶"},
     "에이드": {"ko": "에이드", "en": "Ade", "ja": "エード", "zh": "气泡饮"},
@@ -289,6 +290,11 @@ MENU_NAMES_EN = {
     "매실에이드": "Plum Ade", "수박에이드": "Watermelon Ade", "크루아상": "Croissant",
     "초코쿠키": "Chocolate Cookie", "마카롱": "Macaron", "치즈케이크": "Cheesecake", "티라미수": "Tiramisu",
     "베이글": "Bagel", "소금빵": "Salt Bread", "브라우니": "Brownie", "와플": "Waffle", "샌드위치": "Sandwich",
+    "에스프레소": "Espresso", "디카페인 카페라떼": "Decaf Caffe Latte", "디카페인 바닐라라떼": "Decaf Vanilla Latte",
+    "디카페인 카푸치노": "Decaf Cappuccino", "디카페인 카페모카": "Decaf Caffe Mocha",
+    "디카페인 카라멜마키아토": "Decaf Caramel Macchiato", "디카페인 콜드브루": "Decaf Cold Brew",
+    "디카페인 연유라떼": "Decaf Condensed Milk Latte", "디카페인 헤이즐넛라떼": "Decaf Hazelnut Latte",
+    "디카페인 에스프레소": "Decaf Espresso",
 }
 
 
