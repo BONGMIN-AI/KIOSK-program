@@ -17,12 +17,12 @@ ROI_CENTER = (PANEL_W // 2, 370)
 ROI_AXES = (150, 200)                         # 얼굴이 와야 할 타원의 가로·세로 반지름
 
 GREEN, RED, YELLOW = (70, 200, 70), (40, 40, 230), (0, 200, 255)   # BGR
-# 타원 색: 초록 = 지금 맞게 하는 중, 노랑 = 동작 단계에서 아직 덜 움직임, 빨강 = 얼굴 없음·위치 틀림
+# 타원 색: 초록 = 지금 맞게 하는 중, 노랑 = 진짜 얼굴 확인 중·가림·품질 안내, 빨강 = 얼굴 없음·위치 틀림
 
-MOTION_LABELS = {
-    "TURN LEFT": "고개를 천천히 왼쪽으로",
-    "TURN RIGHT": "고개를 천천히 오른쪽으로",
-    "MOVE CLOSER": "카메라 쪽으로 조금 가까이",
+# 10/29: 손님에게는 '입체 확인' 같은 기술 말 없이 할 일만 짧게
+CHECK_LABELS = {
+    "LIVE CHECK": "정면을 보고 잠시 멈추기",
+    "DEPTH CHECK": "정면을 보고 잠시 멈추기",
 }
 PURPOSE_TITLES = {"ENROLL": "얼굴 등록", "LOGIN": "얼굴 로그인", "VERIFY": "얼굴 확인"}
 
@@ -31,12 +31,12 @@ FONT_DIR = Path("C:/Windows/Fonts")
 _fonts: dict = {}
 
 
-def step_labels(challenges) -> list[str]:
-    return ["타원 안에 얼굴 맞추기", *[MOTION_LABELS[c] for c in challenges], "가운데로 돌아와 잠시 멈추기"]
+def step_labels(challenges, purpose: str = "ENROLL") -> list[str]:
+    return ["카메라 앞에 서기", *[CHECK_LABELS[c] for c in challenges], "확인 중"]
 
 
 def current_step(calibrated: bool, step: int, total_challenges: int) -> int:
-    """지금 강조할 단계 번호(0부터). 동작을 다 끝내면 마지막 단계가 된다."""
+    """지금 강조할 단계 번호(0부터). 진짜 얼굴 확인이 끝나면 마지막 단계가 된다."""
     if not calibrated:
         return 0
     return 1 + min(step, total_challenges)
@@ -79,6 +79,45 @@ def draw_camera(view, roi_color):
     out = np.where(mask[:, :, None] == 255, view, dark)
     cv2.ellipse(out, ROI_CENTER, ROI_AXES, 0, 0, 360, roi_color, 6, cv2.LINE_AA)
     return out
+
+
+def draw_face_id(progress: float, face_found: bool, done: bool = False):
+    """로그인용 얼굴 모양 화면 (아이폰 Face ID처럼). 카메라 영상은 보여 주지 않는다.
+
+    가운데 얼굴 기호(모서리 괄호·눈·코·입)와 둘레의 눈금 고리. 진행한 만큼 눈금이 초록으로 켜진다.
+    얼굴을 못 찾으면 회색, 찾으면 진하게, 끝나면 전체 초록 + 체크.
+    """
+    out = np.full((HEIGHT, PANEL_W, 3), 250, dtype=np.uint8)
+    cx, cy = ROI_CENTER
+    base = (60, 60, 60) if face_found or done else (190, 190, 190)
+    green = (90, 190, 70)
+    color = green if done else base
+    ticks, lit = 60, int(ticks_fraction(progress, done) * 60)
+    for i in range(ticks):
+        angle = 2 * np.pi * i / ticks - np.pi / 2
+        r1, r2 = 205, 235
+        p1 = (int(cx + r1 * np.cos(angle)), int(cy + r1 * np.sin(angle)))
+        p2 = (int(cx + r2 * np.cos(angle)), int(cy + r2 * np.sin(angle)))
+        cv2.line(out, p1, p2, green if i < lit else (215, 215, 215), 6, cv2.LINE_AA)
+    s = 120   # 얼굴 기호 크기 (반)
+    for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):   # 네 모서리 괄호
+        corner = (cx + sx * s, cy + sy * s)
+        cv2.line(out, corner, (corner[0] - sx * 50, corner[1]), color, 8, cv2.LINE_AA)
+        cv2.line(out, corner, (corner[0], corner[1] - sy * 50), color, 8, cv2.LINE_AA)
+    if done:
+        cv2.polylines(out, [np.array([(cx - 50, cy), (cx - 12, cy + 40), (cx + 60, cy - 45)])], False,
+                      green, 14, cv2.LINE_AA)
+    else:
+        for ex in (-40, 40):
+            cv2.line(out, (cx + ex, cy - 40), (cx + ex, cy - 15), color, 8, cv2.LINE_AA)
+        cv2.polylines(out, [np.array([(cx, cy - 20), (cx, cy + 15), (cx - 12, cy + 15)])], False, color, 6,
+                      cv2.LINE_AA)
+        cv2.ellipse(out, (cx, cy + 30), (40, 22), 0, 20, 160, color, 7, cv2.LINE_AA)
+    return out
+
+
+def ticks_fraction(progress: float, done: bool) -> float:
+    return 1.0 if done else max(0.0, min(1.0, progress))
 
 
 def _font(size: int, bold: bool = False):
@@ -126,25 +165,38 @@ def render_panel(title: str, labels, current: int, alert: str, progress: float):
 
 
 def compose(frame, face, count: int, challenges, calibrated: bool, step: int,
-            purpose: str, progress: float, motion_ok: bool = False):
-    """카메라 프레임과 현재 진행 상태로 1280x720 창 이미지를 만든다."""
+            purpose: str, progress: float, motion_ok: bool = False, done: bool = False, alert: str = ""):
+    """카메라 프레임과 현재 진행 상태로 1280x720 창 이미지를 만든다.
+
+    alert는 가림·품질 검사(face/quality.py) 안내 문구다. 있으면 타원을 노랑으로 하고 그 문구를 보여 준다.
+
+    등록(ENROLL)은 거울 카메라를 보여 주고, 로그인·확인은 얼굴을 직접 보여 주지 않고
+    얼굴 모양 기호만 보여 준다 (아이폰처럼).
+    """
     view, scale, offset = fit_camera(frame)
     in_roi = face is not None and face_in_roi(face, scale, offset)
-    labels = step_labels(challenges)
+    labels = step_labels(challenges, purpose)
     current = current_step(calibrated, step, len(challenges))
     moving = calibrated and step < len(challenges)
-    alert = ""
     if face is None:
         roi_color = RED
-        alert = "한 사람만 화면에 보이게 해 주세요" if count > 1 else "얼굴이 보이지 않아요. 타원 안으로 와 주세요"
+        if alert:
+            pass
+        else:   # 카메라 화면을 보여 주지 않으므로 '타원' 대신 카메라 앞에 서라고만 한다
+            alert = "한 사람만 카메라 앞에 서 주세요" if count > 1 else "카메라 앞에 서 주세요"
+    elif alert:
+        roi_color = YELLOW
     elif moving:
-        # 움직이는 단계라 타원을 벗어나도 괜찮다. 요청한 동작을 하고 있으면 초록으로 알려 준다.
+        # 진짜 얼굴 확인 중: 판정이 '진짜'로 나오는 동안 초록, 아니면 노랑.
         roi_color = GREEN if motion_ok else YELLOW
     elif in_roi:
         roi_color = GREEN
     else:
         roi_color = RED
         alert = "얼굴을 타원 안에 맞춰 주세요 (너무 멀면 조금 가까이)"
-    left = draw_camera(view, roi_color)
+    # 10/29: 등록도 로그인처럼 카메라 영상 대신 얼굴 기호만 (타원에 맞추기 어렵다는 의견). 50cm 안이면 된다.
+    left = draw_face_id(progress, face is not None, done)
+    if face is not None and roi_color == RED:
+        alert = ""              # 타원에 맞출 필요가 없다
     right = render_panel(PURPOSE_TITLES.get(purpose, purpose), labels, current, alert, progress)
     return np.hstack([left, right])

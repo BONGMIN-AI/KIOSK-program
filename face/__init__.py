@@ -9,6 +9,10 @@ class FaceError(ValueError):
     """카메라·생체 확인·얼굴 비교 과정의 사용자 표시용 오류."""
 
 
+class SpoofError(FaceError):
+    """사진·화면으로 판정됨. 얼굴 불일치처럼 실패 횟수에 넣는다."""
+
+
 class FakeFace:
     """자동 테스트용 대역. 실제 앱에서 사용하지 않는다."""
 

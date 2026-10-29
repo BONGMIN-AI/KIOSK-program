@@ -7,8 +7,12 @@ faces/
 *.jpg
 *.jpeg
 *.png
+# 메뉴 사진·로고 같은 화면 그림은 개인정보가 아니라서 올린다
+!gui/assets/**/*.png
 *.npy
 # 암호화된 얼굴 특징은 data/에만 저장한다. 공식 ONNX 모델은 models/에서 버전 관리한다.
+# ArcFace(약 170MB)는 GitHub 100MB 제한 때문에 빼고, tools/get_face_models.py로 받는다.
+models/face_recognition_arcface_w600k_r50.onnx
 
 __pycache__/
 .venv/
@@ -17,3 +21,6 @@ venv/
 .testtmp/
 *.bak
 *.tmp
+
+# 오류 기록 (손님 화면 오류·충돌)
+logs/

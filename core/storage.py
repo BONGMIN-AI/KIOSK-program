@@ -8,6 +8,8 @@
 - 쓰기는 '임시 파일 -> 교체' 방식이라 도중에 전원이 꺼져도 파일이 반쯤 쓰이지 않는다.
 - 이전 버전을 .bak 으로 남기고, 본 파일이 깨지면 .bak 으로 복구한다.
 - 개발/테스트 때는 MemoryVault 를 쓰면 키도 파일도 필요 없다 (API 동일).
+- 여러 파일을 한 묶음으로 바꿀 때(주문 = 회원·주문·재고·설정)는 write_together 를 쓴다.
+  먼저 묶음 전체를 journal 에 적고 나서 하나씩 쓰므로, 도중에 꺼져도 다음 실행 때 recover_journal 이 마저 쓴다.
 """
 import json
 import os
@@ -60,6 +62,27 @@ def _pack(data) -> bytes:
 
 def _unpack(raw: bytes):
     return json.loads(raw.decode("utf-8"))["data"]
+
+
+JOURNAL = "journal"
+
+
+def write_together(vault, datasets: dict) -> None:
+    """datasets({이름: 데이터})를 한 묶음으로 저장한다. 중간에 꺼지면 recover_journal 이 마저 쓴다."""
+    vault.write(JOURNAL, datasets)
+    for name, data in datasets.items():
+        vault.write(name, data)
+    vault.write(JOURNAL, {})
+
+
+def recover_journal(vault) -> list:
+    """지난번에 쓰다 만 묶음이 있으면 끝까지 쓰고, 다시 쓴 데이터 이름을 돌려준다."""
+    pending = vault.read(JOURNAL, default={}) or {}
+    for name, data in pending.items():
+        vault.write(name, data)
+    if pending:
+        vault.write(JOURNAL, {})
+    return sorted(pending)
 
 
 class Vault:

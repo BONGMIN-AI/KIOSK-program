@@ -13,12 +13,12 @@ CATEGORIES = {
               ("블루베리라떼", 4800, ["우유"])],
     "차": [("유자차", 4000, []), ("레몬차", 4000, []), ("자몽차", 4200, []), ("캐모마일", 3800, []),
            ("페퍼민트", 3800, []), ("얼그레이", 3800, []), ("루이보스", 3800, []), ("히비스커스", 4000, []),
-           ("녹차", 3500, []), ("복숭아 아이스티", 3800, [])],
+           ("녹차", 3500, []), ("복숭아 아이스티", 3800, ["복숭아"])],
     "에이드": [("레몬에이드", 4500, []), ("자몽에이드", 4500, []), ("청포도에이드", 4500, []),
               ("딸기에이드", 4700, []), ("망고에이드", 4700, []), ("블루레몬에이드", 4700, []),
               ("패션후르츠에이드", 4800, []), ("체리에이드", 4700, []), ("매실에이드", 4500, []),
               ("수박에이드", 4800, [])],
-    "디저트": [("크루아상", 3500, ["밀", "우유"]), ("초코쿠키", 2500, ["밀", "우유", "알류(달걀 등)"]),
+    "디저트": [("크루아상", 3500, ["밀", "우유", "알류(달걀 등)"]), ("초코쿠키", 2500, ["밀", "우유", "알류(달걀 등)"]),
               ("마카롱", 2800, ["우유", "알류(달걀 등)", "기타 견과류(헤이즐넛·아몬드 등)"]), ("치즈케이크", 5500, ["밀", "우유", "알류(달걀 등)"]),
               ("티라미수", 5800, ["밀", "우유", "알류(달걀 등)"]), ("베이글", 3300, ["밀"]),
               ("소금빵", 3200, ["밀", "우유"]), ("브라우니", 3800, ["밀", "우유", "알류(달걀 등)"]),
@@ -43,6 +43,14 @@ CAFFEINE_MG = {
 }
 
 
+# 온도·사이즈가 일반 음료와 다른 메뉴. 적지 않은 메뉴는 domain/options.py의 분류 기본값을 쓴다.
+TEMPERATURE_ONLY = {
+    "콜드브루": ["ICE"], "디카페인 콜드브루": ["ICE"], "복숭아 아이스티": ["ICE"],
+    "에스프레소": ["HOT"], "디카페인 에스프레소": ["HOT"],
+}
+SIZE_ONLY = {"에스프레소": ["M"], "디카페인 에스프레소": ["M"]}
+
+
 def make_menu() -> dict:
     menu = {}
     index = 1
@@ -53,6 +61,10 @@ def make_menu() -> dict:
                              "category": category, "allergens": allergens,
                              "caffeine_mg": CAFFEINE_MG.get(name, 0), "decaf": category == "디카페인",
                              "stock": 20, "sold_count": 0, "sold_out": False}
+            if name in TEMPERATURE_ONLY:
+                menu[menu_id]["temperatures"] = TEMPERATURE_ONLY[name]
+            if name in SIZE_ONLY:
+                menu[menu_id]["sizes"] = SIZE_ONLY[name]
             index += 1
     return menu
 
@@ -90,3 +102,24 @@ def run(vault) -> None:
     vault.write("customers", make_demo_customers())
     vault.write("orders", {})
     vault.write("face_profiles", {})
+
+
+DEMO_EVENTS = [
+    {"name": "가을 더블 포인트", "start": "2026-10-20", "end": "2026-11-11", "categories": ["커피"],
+     "rate": 3, "bonus_points": 200, "min_order": 10000, "theme": "season",
+     "message": "회원은 커피 3% 적립 + 1만원 이상 200P · 11/11까지"},
+    {"name": "할로윈 축제", "start": "2026-10-31", "end": "2026-10-31", "categories": [],
+     "rate": 0, "bonus_points": 300, "min_order": 0, "theme": "festival"},
+]
+
+
+def add_demo_events(vault) -> None:
+    """시연용 기간 이벤트를 운영자 정책에 넣는다. (자동 테스트는 이벤트 없이 기본 적립률로 계산)"""
+    from .policy import load_policy, upsert_event, validate_policy
+
+    settings = vault.read("settings", default={})
+    policy = load_policy(settings)
+    for event in DEMO_EVENTS:
+        policy, _ = upsert_event(policy, event)
+    settings["point_policy"] = validate_policy(policy)
+    vault.write("settings", settings)

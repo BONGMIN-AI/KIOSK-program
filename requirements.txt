@@ -2,5 +2,7 @@ cryptography>=42
 textual>=0.70
 numpy>=2
 opencv-python>=5.0
+onnxruntime>=1.20  # ArcFace 얼굴 비교 + MiniFASNet 사진 판정
 pillow>=10
+PySide6
 pyrealsense2>=2.55  # D435 깊이 입체 얼굴 확인 (선택)
