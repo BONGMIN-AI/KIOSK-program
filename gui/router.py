@@ -78,6 +78,8 @@ class Router(QStackedWidget):
                 screen = self.screens[name]
         elif name != "unlock":
             self.restart_timer()
+        if name != "login":
+            self.card_wait = None      # 카드 연결은 로그인 화면에서만 기다린다 (다른 화면에서 찍힌 카드를 잘못 연결하지 않게)
         if hasattr(screen, "on_show"):
             screen.on_show(**options)
         self.setCurrentWidget(screen)
@@ -172,8 +174,11 @@ class Router(QStackedWidget):
         return self.session.vault is not None and (
             self.card_wait is not None or self.current_name in self.CARD_SCREENS) and not self.camera_busy
 
-    def wait_card(self, on_card, seconds=15, on_timeout=None):
-        """카드 연결: seconds 안에 찍힌 카드 번호를 on_card로 넘긴다."""
+    def wait_card(self, on_card, seconds=15, on_timeout=None, owner=None):
+        """카드 연결: seconds 안에 찍힌 카드 번호를 on_card로 넘긴다.
+
+        owner(기다리는 화면)가 그 사이 없어지면(큰 글자로 바꿔 화면을 새로 만들 때 등) 타이머도 함께 취소된다.
+        """
         token = object()
         self.card_wait = on_card
         self._card_token = token
@@ -183,7 +188,7 @@ class Router(QStackedWidget):
                 self.card_wait = None
                 if on_timeout:
                     on_timeout()
-        QTimer.singleShot(seconds * 1000, expire)
+        QTimer.singleShot(seconds * 1000, owner or self, expire)
 
     def card_scanned(self, number):
         """카드가 찍혔다: 연결 중이면 그 화면에 넘기고, 아니면 그 회원으로 바로 얼굴 인증을 시작한다."""

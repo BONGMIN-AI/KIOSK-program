@@ -455,6 +455,7 @@ class DoneScreen(QWidget):
             name.setAlignment(Qt.AlignmentFlag.AlignCenter)
             column.addWidget(dot)
             column.addWidget(name)
+            column.addStretch()                  # 칸이 길어져도 점은 위에 붙어 선과 같은 높이에
             row.addLayout(column)
             self.status_parts.append((dot, name))
         return row
