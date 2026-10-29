@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cv2
 
 from core.storage import MemoryVault
-from face import create_face_provider
+from face import create_face_provider, quality
 
 
 def main() -> None:
@@ -30,14 +30,14 @@ def main() -> None:
             ok, frame = cap.read()
             if not ok:
                 continue
-            face, count = provider._detect_one(cv2.flip(frame, 1))
+            face, count, _far = provider._detect_one(cv2.flip(frame, 1))
             if time.monotonic() - last >= 0.5:
                 last = time.monotonic()
                 t = last - started
                 if face is None:
                     print(f"{t:5.1f}s  얼굴 {count}개")
                 else:
-                    yaw = provider._yaw(face)
+                    yaw = quality.yaw(face)
                     bar = "<" * int(max(0, -yaw) * 20) + "|" + ">" * int(max(0, yaw) * 20)
                     print(f"{t:5.1f}s  yaw {yaw:+.2f}  {bar}")
     finally:

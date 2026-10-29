@@ -98,18 +98,157 @@ def login_with_password(vault, login_id: str, password: str):
     customer = find_by_login_id(vault, login_id)
     if not customer or not verify_member_password(password, customer["extra"]["password_hash"]):
         raise ValueError("회원 ID 또는 비밀번호가 올바르지 않습니다")
+    reset_face_failures(vault, customer["id"])    # 본인이 비밀번호로 확인했으니 얼굴 잠금을 푼다
     return customer
 
 
+def card_hash(card_id: str) -> str:
+    """RFID 카드 번호는 그대로 두지 않고 해시로만 회원 카드에 적는다 (금고 안에서도)."""
+    card_id = (card_id or "").strip()
+    if len(card_id) < 4:
+        raise ValueError("카드 번호를 읽지 못했어요. 다시 대 주세요")
+    return hashlib.sha256(f"coffee-spoon-card:{card_id}".encode("utf-8")).hexdigest()
+
+
+def find_by_card(vault, card_id: str):
+    digest = card_hash(card_id)
+    customers = vault.read("customers", default={})
+    return next((record for record in customers.values()
+                 if record.get("extra", {}).get("card_hash") == digest), None)
+
+
+def link_card(vault, customer_id: str, card_id: str) -> dict:
+    """회원 카드(RFID)를 이 회원에게 연결한다. 다른 회원이 쓰는 카드면 거절, 예전 카드는 바뀐다."""
+    digest = card_hash(card_id)
+    customers = vault.read("customers", default={})
+    if customer_id not in customers:
+        raise ValueError("회원을 찾을 수 없어요")
+    owner = next((key for key, record in customers.items()
+                  if record.get("extra", {}).get("card_hash") == digest), None)
+    if owner and owner != customer_id:
+        raise ValueError("이미 다른 회원에게 연결된 카드예요")
+    record = customers[customer_id]
+    record["extra"]["card_hash"] = digest
+    schema.touch(record)
+    vault.write("customers", customers)
+    return record
+
+
+RESET_FAILURES = "reset_failures"   # {회원 ID 또는 'phone:번호': 본인 확인 연속 실패 횟수}
+MAX_RESET_FAILURES = 5
+
+
+def mask_login_id(login_id: str) -> str:
+    """kbm000608 -> kbm****08 (앞 3자·뒤 2자만 보여 준다)."""
+    if len(login_id) <= 5:
+        return login_id[:2] + "*" * (len(login_id) - 2)
+    return login_id[:3] + "*" * (len(login_id) - 5) + login_id[-2:]
+
+
+def _check_reset_lock(vault, key: str) -> None:
+    if vault.read(RESET_FAILURES, default={}).get(key, 0) >= MAX_RESET_FAILURES:
+        raise ValueError(f"본인 확인을 {MAX_RESET_FAILURES}번 틀려 잠겼어요. 직원을 불러 주세요")
+
+
+def _reset_failed(vault, key: str) -> None:
+    failures = vault.read(RESET_FAILURES, default={})
+    failures[key] = failures.get(key, 0) + 1
+    vault.write(RESET_FAILURES, failures)
+
+
+def _reset_passed(vault, key: str) -> None:
+    failures = vault.read(RESET_FAILURES, default={})
+    if failures.pop(key, None) is not None:
+        vault.write(RESET_FAILURES, failures)
+
+
+def find_login_id(vault, phone: str) -> str:
+    """아이디 찾기: 가입한 전화번호로 가린 아이디를 돌려준다 (화면 키보드는 영문·숫자뿐이라 이름 대신 전화번호)."""
+    normalized = normalize_phone(phone)
+    key = f"phone:{normalized}"
+    _check_reset_lock(vault, key)
+    customer = find_by_phone(vault, normalized)
+    if not customer or not customer["extra"].get("login_id"):
+        _reset_failed(vault, key)
+        raise ValueError("이 전화번호로 가입한 회원이 없어요")
+    _reset_passed(vault, key)
+    return mask_login_id(customer["extra"]["login_id"])
+
+
+def verify_identity(vault, login_id: str, phone: str):
+    """비밀번호 재설정 전 본인 확인: 아이디와 전화번호가 같은 회원인지. 5번 틀리면 잠근다."""
+    login_id = normalize_login_id(login_id)
+    _check_reset_lock(vault, login_id)
+    customer = find_by_login_id(vault, login_id)
+    try:
+        matched = customer is not None and customer["phone"] == normalize_phone(phone)
+    except ValueError:
+        matched = False
+    if not matched:
+        _reset_failed(vault, login_id)
+        left = MAX_RESET_FAILURES - vault.read(RESET_FAILURES, default={}).get(login_id, 0)
+        raise ValueError(f"아이디와 전화번호가 맞지 않아요 ({left}번 더 틀리면 잠겨요)" if left > 0
+                         else "아이디와 전화번호가 맞지 않아 잠겼어요. 직원을 불러 주세요")
+    _reset_passed(vault, login_id)
+    return customer
+
+
+def reset_member_password(vault, customer_id: str, password: str, confirm: str) -> dict:
+    """본인 확인을 마친 회원의 비밀번호를 새로 정한다. 얼굴 로그인 잠금도 함께 푼다."""
+    validate_password_pair(password, confirm)
+    customers = vault.read("customers", default={})
+    if customer_id not in customers:
+        raise ValueError("회원을 찾을 수 없어요")
+    record = customers[customer_id]
+    record["extra"]["password_hash"] = hash_member_password(password)
+    schema.touch(record)
+    vault.write("customers", customers)
+    reset_face_failures(vault, customer_id)
+    return record
+
+
+FACE_FAILURES = "face_failures"   # {회원 ID: 얼굴 로그인 연속 실패 횟수}
+MAX_FACE_FAILURES = 3
+
+
+def face_locked(vault, customer_id: str) -> bool:
+    return vault.read(FACE_FAILURES, default={}).get(customer_id, 0) >= MAX_FACE_FAILURES
+
+
+def reset_face_failures(vault, customer_id: str) -> None:
+    failures = vault.read(FACE_FAILURES, default={})
+    if failures.pop(customer_id, None) is not None:
+        vault.write(FACE_FAILURES, failures)
+
+
+def _add_face_failure(vault, customer_id: str) -> int:
+    failures = vault.read(FACE_FAILURES, default={})
+    failures[customer_id] = failures.get(customer_id, 0) + 1
+    vault.write(FACE_FAILURES, failures)
+    return failures[customer_id]
+
+
 def login_with_face(vault, login_id: str, face_provider, on_status=print):
+    """얼굴 불일치·사진 판정이 3번 이어지면 얼굴 로그인을 잠근다. 비밀번호로 로그인하면 풀린다."""
+    from face import SpoofError
     customer = find_by_login_id(vault, login_id)
     if not customer:
         raise ValueError("등록된 회원 ID가 없습니다")
     if not customer["extra"].get("face_enrolled"):
         raise ValueError("이 회원은 얼굴 정보가 없습니다. 비밀번호를 사용하세요")
-    matched_id = face_provider.identify_face(customer["id"], on_status)
+    if face_locked(vault, customer["id"]):
+        raise ValueError(f"얼굴 로그인이 {MAX_FACE_FAILURES}번 실패해 잠겼어요. 비밀번호로 로그인하면 풀려요")
+    try:
+        matched_id = face_provider.identify_face(customer["id"], on_status)
+    except SpoofError:
+        _add_face_failure(vault, customer["id"])
+        raise
     if matched_id != customer["id"]:
-        raise ValueError("얼굴이 일치하지 않습니다. 비밀번호를 사용하세요")
+        count = _add_face_failure(vault, customer["id"])
+        left = MAX_FACE_FAILURES - count
+        tail = f"{left}번 더 틀리면 얼굴 로그인이 잠겨요" if left > 0 else "얼굴 로그인이 잠겼어요"
+        raise ValueError(f"얼굴이 일치하지 않습니다 ({tail}). 비밀번호를 사용하세요")
+    reset_face_failures(vault, customer["id"])
     return customer
 
 
@@ -122,6 +261,7 @@ def set_face_enrolled(vault, customer_id: str, enrolled: bool = True) -> dict:
     record["extra"]["face_enrolled"] = bool(enrolled)
     schema.touch(record)
     vault.write("customers", customers)
+    reset_face_failures(vault, customer_id)
     return record
 
 

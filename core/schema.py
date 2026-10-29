@@ -6,7 +6,7 @@ DATASETS = ("customers", "menu", "orders", "settings", "face_profiles")
 DEFAULT_SETTINGS = {
     "high_contrast": False,
     "large_mode": False,
-    "store_name": "BONGMIN CAFE",
+    "store_name": "COFFEE & SPOON",
     "next_order_number": 1,
 }
 

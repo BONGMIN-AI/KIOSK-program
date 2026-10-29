@@ -13,7 +13,10 @@ def available_options(item: dict) -> dict:
         return {"temperatures": [], "sizes": [], "extras": []}
     temperatures = ["ICE"] if category == "에이드" else ["HOT", "ICE"]
     extras = ["shot", "syrup"] if category in ("커피", "디카페인") else ["syrup"]
-    return {"temperatures": temperatures, "sizes": list(SIZE_PRICES), "extras": extras}
+    # 메뉴에 따로 적힌 값이 있으면 그것을 쓴다 (예: 콜드브루는 ICE만, 에스프레소는 HOT·M만)
+    temperatures = item.get("temperatures", temperatures)
+    sizes = item.get("sizes", list(SIZE_PRICES))
+    return {"temperatures": temperatures, "sizes": sizes, "extras": extras}
 
 
 def normalize_options(item: dict, options: dict | None) -> dict:
@@ -25,12 +28,12 @@ def normalize_options(item: dict, options: dict | None) -> dict:
             raise ValueError(f"{item['name']}은(는) 옵션을 고를 수 없는 메뉴입니다")
         return {}
     temperature = options.get("temperature") or rules["temperatures"][-1]
-    size = options.get("size") or "M"
+    size = options.get("size") or rules["sizes"][0]
     extras = sorted(set(options.get("extras") or []))
     if temperature not in rules["temperatures"]:
         raise ValueError(f"{item['name']}은(는) {temperature}로 주문할 수 없습니다")
     if size not in rules["sizes"]:
-        raise ValueError("사이즈는 M 또는 L만 고를 수 있습니다")
+        raise ValueError(f"{item['name']}은(는) {'·'.join(rules['sizes'])} 사이즈만 고를 수 있습니다")
     for extra in extras:
         if extra not in rules["extras"]:
             raise ValueError(f"{item['name']}에는 {EXTRA_LABELS.get(extra, extra)}을(를) 고를 수 없습니다")

@@ -21,11 +21,15 @@ settings["point_policy"] = {
     "bonus_points": 200,                          # 조건을 만족한 주문마다 추가 포인트
     "min_order": 10000,                           # 보너스 포인트를 받을 최소 결제액
     "member_only": True,                          # 지금은 회원만 적립하므로 항상 True
+    "theme": "season",                            # 손님 화면 색: basic(기본)·season(시즌)·festival(축제)
+    "message": "회원은 커피 3% 적립 + …",          # 배너·대기 화면 띠에 보일 문구 (비우면 자동)
 }
 """
 from datetime import date, datetime, timedelta
 
 WEEKDAY_NAMES = ["월", "화", "수", "목", "금", "토", "일"]
+THEMES = {"basic": "기본", "season": "시즌", "festival": "축제"}
+MESSAGE_LIMIT = 60
 
 DEFAULT_POLICY = {
     "base_rate": 1.0,
@@ -141,6 +145,12 @@ def validate_event(raw: dict) -> dict:
         raise ValueError("보너스 포인트와 최소 결제액은 0 이상이어야 합니다")
     if rate == 0 and bonus == 0:
         raise ValueError("이벤트 적립률이나 보너스 포인트 중 하나는 입력하세요")
+    theme = raw.get("theme") or "basic"
+    if theme not in THEMES:
+        raise ValueError("테마는 기본·시즌·축제 중에서 고르세요")
+    message = str(raw.get("message") or "").strip()
+    if len(message) > MESSAGE_LIMIT:
+        raise ValueError(f"배너 문구는 {MESSAGE_LIMIT}자 이내로 입력하세요")
     categories = raw.get("categories") or []
     if isinstance(categories, str):
         categories = [c.strip() for c in categories.split(",") if c.strip()]
@@ -157,6 +167,8 @@ def validate_event(raw: dict) -> dict:
         "bonus_points": bonus,
         "min_order": min_order,
         "member_only": True,
+        "theme": theme,
+        "message": message,
     }
 
 
@@ -222,6 +234,30 @@ def describe_event(event: dict) -> str:
         cond = f" ({event['min_order']:,}원 이상)" if event.get("min_order") else ""
         parts.append(f"보너스 +{event['bonus_points']:,}P{cond}")
     return f"{event['start']}~{event['end']} · {days} · {hours} · {scope} · " + " · ".join(parts)
+
+
+def banner_message(event: dict) -> str:
+    """손님 화면에 보일 짧은 문구. 운영자가 적은 문구가 없으면 혜택으로 만든다."""
+    if event.get("message"):
+        return event["message"]
+    scope = "전 메뉴" if not event.get("categories") else "·".join(event["categories"])
+    parts = []
+    if event.get("rate"):
+        parts.append(f"{scope} {event['rate']:g}% 적립")
+    if event.get("bonus_points"):
+        cond = f"{event['min_order'] // 10000:g}만원 이상 " if event.get("min_order") else ""
+        parts.append(f"{cond}{event['bonus_points']:,}P")
+    return "회원은 " + " + ".join(parts) + f" · {int(event['end'][5:7])}/{int(event['end'][8:10])}까지"
+
+
+def display_event(policy: dict, now: datetime | None = None) -> dict | None:
+    """지금 진행 중인 이벤트 하나를 손님 화면용으로 돌려준다(없으면 None). 여러 개면 목록의 앞쪽."""
+    events = active_events(policy, now)
+    if not events:
+        return None
+    event = events[0]
+    return {"id": event["id"], "name": event["name"], "theme": event.get("theme", "basic"),
+            "message": banner_message(event)}
 
 
 def calculate_points(policy: dict, lines: list[dict], menu: dict, final_total: int,

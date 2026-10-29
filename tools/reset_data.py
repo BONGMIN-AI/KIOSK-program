@@ -25,17 +25,27 @@ def main():
     p.add_argument("--yes", action="store_true", help="data/ 폴더를 지우는 것에 동의")
     args = p.parse_args()
     if not args.yes:
-        sys.exit("data/ 폴더의 모든 데이터가 삭제됩니다. 계속하려면 --yes 를 붙이세요.")
-    password = args.password or getpass.getpass("새 관리자 비밀번호: ")
+        # VS Code ▶ 버튼처럼 --yes 없이 실행했을 때는 여기서 한 번 더 묻는다.
+        answer = input("data/ 폴더의 모든 데이터가 삭제됩니다. 계속하려면 yes 를 입력하세요: ")
+        if answer.strip().lower() != "yes":
+            sys.exit("취소했습니다. 데이터는 그대로입니다.")
+    password = args.password or getpass.getpass("새 관리자 비밀번호 (입력해도 화면에 안 보임): ")
+    if len(password) < 4:
+        sys.exit("비밀번호는 4자 이상이어야 합니다. 데이터는 그대로입니다.")
 
     shutil.rmtree(config.DATA_DIR, ignore_errors=True)
+    if config.KEYSTORE_PATH.exists():
+        sys.exit("data/ 폴더를 지우지 못했습니다. KIOSK 프로그램이나 data 폴더를 연 창을 닫고 다시 실행하세요.")
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     auth.init_keystore(config.KEYSTORE_PATH, args.admin, password)
     vault = auth.unlock(config.KEYSTORE_PATH, config.DATA_DIR, args.admin, password)
     vault.write("settings", schema.DEFAULT_SETTINGS)
 
     if importlib.util.find_spec("domain.seed"):
-        importlib.import_module("domain.seed").run(vault)
+        seed = importlib.import_module("domain.seed")
+        seed.run(vault)
+        if hasattr(seed, "add_demo_events"):
+            seed.add_demo_events(vault)
         print("샘플 데이터를 채웠습니다.")
     else:
         print("domain/seed.py 가 없어 샘플은 건너뜁니다.")

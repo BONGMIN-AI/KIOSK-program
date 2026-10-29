@@ -31,7 +31,7 @@ def main() -> None:
         raise SystemExit(f"회원 ID를 찾을 수 없습니다: {args.login_id}")
 
     print(f"등록 대상: {customer['extra']['nickname']} ({customer['id']})")
-    print("정면 보정 뒤 화면에 나오는 무작위 동작 2개를 따라 하세요. ESC는 취소입니다.")
+    print("정면을 보고 잠시 멈추세요 (마스크·선글라스·모자는 벗기). ESC는 취소입니다.")
     provider = create_face_provider(vault, camera_index=args.camera)
     provider.enroll_face(customer["id"], print)
     set_face_enrolled(vault, customer["id"], True)

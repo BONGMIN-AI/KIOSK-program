@@ -38,7 +38,7 @@ def main() -> None:
             color, depth = cam.read()
             if color is None:
                 continue
-            face, count = detector._detect_one(color)
+            face, count, _far = detector._detect_one(color, depth)
             view = color.copy()
             if face is None:
                 label, col, line = (f"FACES: {count}", RED, f"얼굴 {count}개")
