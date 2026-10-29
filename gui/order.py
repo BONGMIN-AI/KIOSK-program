@@ -1,6 +1,6 @@
 """한 손님의 주문 상태. 화면은 여기만 부르고, 계산은 모두 domain/ 함수가 한다."""
 
-from datetime import date
+from datetime import date, datetime
 
 from domain.benefits import apply_benefits, coupons_of, max_usable_points
 from domain.cart import add_item, cart_lines, change_quantity
@@ -10,12 +10,14 @@ from domain.options import available_options, option_price
 from domain.orders import complete_order
 from domain.payment import insert_cash, payment_status
 from domain.policy import display_event, load_policy
+from domain.tickets import TicketOffice
 from domain.titles import count_stats, customer_lines, progress
 from core.schema import now_iso
 
 # 왼쪽 카테고리 줄 순서. 회원이면 맨 앞에 My Menu가 붙는다.
 CATEGORY_ORDER = ["커피", "디카페인", "논커피", "차", "에이드", "디저트"]
 MY_MENU = "My Menu"
+TICKET = "승차권"               # 승차권 탭(T1): My Menu 다음, 커피 앞
 CASH_RECORD = "cash_session"    # 지금 손님이 넣은 현금. 키오스크가 갑자기 꺼져도 얼마가 남아 있었는지 알 수 있다
 
 
@@ -23,6 +25,8 @@ class OrderSession:
     def __init__(self, vault):
         self.vault = vault
         self._inserted = 0
+        self.office = TicketOffice()   # 시연용 승차권 판매소 (프로그램이 켜져 있는 동안 판 좌석을 기억)
+        self.tickets = []
         self.reset()
 
     @property
@@ -52,6 +56,7 @@ class OrderSession:
     def reset(self):
         """새 손님. 장바구니·넣은 현금·회원 정보를 모두 비운다."""
         self.cart = {}
+        self.clear_tickets()          # 잡아 둔 좌석도 풀어 준다
         self.customer = None          # 비회원이면 None
         self.coupon_id = None
         self.use_points = 0
@@ -74,7 +79,11 @@ class OrderSession:
         return self.customer
 
     def categories(self):
-        return ([MY_MENU] if self.is_member() else []) + CATEGORY_ORDER
+        return ([MY_MENU] if self.is_member() else []) + ([TICKET] if self.ticket_sales_on() else []) + CATEGORY_ORDER
+
+    def ticket_sales_on(self):
+        """승차권 탭을 보일지. 운영자 설정 settings["ticket_sales"]가 False인 매장만 숨긴다 (기본은 켬)."""
+        return self.vault is None or self.vault.read("settings", default={}).get("ticket_sales", True) is not False
 
     def policy(self):
         return load_policy(self.vault.read("settings", default={}))
@@ -143,21 +152,56 @@ class OrderSession:
         self.cart = new_cart
 
     def lines(self):
+        """음료 줄만. 승차권은 tickets에 따로 있다."""
         return cart_lines(self.cart, self.menu()) if self.cart else []
 
     def count(self):
-        return sum(line["quantity"] for line in self.lines())
+        return sum(line["quantity"] for line in self.lines()) + sum(t["count"] for t in self.tickets)
+
+    def drink_total(self):
+        return sum(line["subtotal"] for line in self.lines())
+
+    def ticket_total(self):
+        return sum(ticket["total"] for ticket in self.tickets)
 
     def total(self):
-        return sum(line["subtotal"] for line in self.lines())
+        """음료 + 승차권. 쿠폰·포인트는 음료 금액(drink_total)에만 쓴다."""
+        return self.drink_total() + self.ticket_total()
+
+    def is_empty(self):
+        return not self.cart and not self.tickets
+
+    # 승차권 (승차권 탭)
+    def add_ticket(self, item):
+        self.tickets = self.tickets + [item]
+
+    def remove_ticket(self, hold_id):
+        self.office.release(hold_id)
+        self.tickets = [t for t in self.tickets if t["hold_id"] != hold_id]
+
+    def clear_tickets(self):
+        for ticket in self.tickets:
+            self.office.release(ticket["hold_id"])
+        self.tickets = []
+
+    def ticket_seconds(self, ticket, now=None):
+        return self.office.hold_seconds(ticket["hold_id"], now)
+
+    def expire_tickets(self, now=None):
+        """좌석 잡아 둔 시간이 끝난 승차권을 장바구니에서 빼고, 뺀 것을 돌려준다."""
+        gone = [t for t in self.tickets if not self.ticket_seconds(t, now)]
+        for ticket in gone:
+            self.remove_ticket(ticket["hold_id"])
+        return gone
 
     # 쿠폰·포인트 (회원)
     def coupons(self):
         return coupons_of(self.customer) if self.customer else []
 
     def _apply_benefit(self):
-        return apply_benefits(self.total(), self.customer, self.coupon_id, self.use_points,
-                              date.today().isoformat(), self.policy())
+        result = apply_benefits(self.drink_total(), self.customer, self.coupon_id, self.use_points,
+                                date.today().isoformat(), self.policy())
+        return dict(result, final_total=result["final_total"] + self.ticket_total())   # 승차권은 할인 제외
 
     def benefit(self):
         """지금 고른 쿠폰·포인트로 할인 계산. 비회원이면 할인 없음.
@@ -177,7 +221,7 @@ class OrderSession:
     def max_points(self):
         if not self.customer:
             return 0
-        after_coupon = self.total() - self.benefit()["coupon_discount"]
+        after_coupon = self.drink_total() - self.benefit()["coupon_discount"]
         return max_usable_points(after_coupon, self.customer["extra"]["points"], self.policy())
 
     def set_benefit(self, coupon_id, use_points):
@@ -207,13 +251,21 @@ class OrderSession:
 
     def pay(self):
         change_to_points = self.change_to_points and self.is_member() and self.status()["change"] > 0
+        now = datetime.now()
+        for ticket in self.tickets:                # 좌석 잡아 둔 시간이 지났으면 결제하지 않는다
+            self.office.check_hold(ticket["hold_id"], now)
+        tickets = [{k: v for k, v in t.items() if k != "hold_id"} for t in self.tickets]
         order = complete_order(self.vault, self.cart, self.inserted,
                                customer_id=self.customer["id"] if self.customer else None,
                                coupon_id=self.coupon_id, use_points=self.use_points,
                                change_to_points=change_to_points,
-                               also_write={CASH_RECORD: self.cash_record(0)})   # 주문과 함께 현금 기록도 0으로
+                               also_write={CASH_RECORD: self.cash_record(0)},   # 주문과 함께 현금 기록도 0으로
+                               tickets=tickets)
+        for ticket in self.tickets:                # 잡아 둔 좌석을 판 좌석으로
+            self.office.confirm(ticket["hold_id"], now)
         self.last_order = order
         self.cart = {}
+        self.tickets = []
         self._inserted = 0
         self.coupon_id, self.use_points, self.change_to_points = None, 0, False
         self.reload_customer()

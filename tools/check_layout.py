@@ -11,6 +11,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QLabel, QLineEdit, QRadioButton,
                                QScrollArea, QWidget)
 
@@ -250,6 +251,94 @@ def states(window):
         session.set_benefit(None, 3000)
         router.show_screen("cash")
 
+    # 승차권 탭(T1)
+    def ticket_tab(member=None):
+        if member:
+            router.start_member_order(member)
+        else:
+            router.open_action("guest")
+        menu = router.screens["menu"]
+        menu.show_category("승차권")
+        return menu.ticket_panel
+
+    def ticket_lookup_error():
+        panel = ticket_tab()
+        panel.open_lookup()
+        panel.name_field.setText("홍길동")
+        panel.birth_field.setText("9001")
+        panel.lookup()
+
+    def ticket_printed():
+        panel = ticket_tab(bomin)
+        panel.open_lookup()
+        panel.name_field.setText("홍길동")
+        panel.birth_field.setText("900101")
+        panel.lookup()
+        panel.print_selected()
+
+    def ticket_route():
+        panel = ticket_tab()
+        panel.open_route()
+        panel.dest_field.setText("대")
+
+    def ticket_timetable(member=None):
+        panel = ticket_tab(member)
+        panel.open_route()
+        panel.dest_field.setText("대전복합")
+        panel.day_buttons[1].setChecked(True)
+        panel.search()
+        return panel
+
+    def ticket_seats(grade, adults=2):
+        def run():
+            panel = ticket_timetable(bomin)
+            item = next(b for b in panel.time_buttons if b.isEnabled() and b.bus["grade"] == grade)
+            item.setChecked(True)
+            panel.open_seats()
+            for _ in range(adults - 1):
+                panel.change_count("어른", 1)
+            panel.change_count("초등생", 1)
+            for seat in [s for s, b in panel.seat_buttons.items() if b.isEnabled()][:adults + 1]:
+                panel.toggle_seat(seat, True)
+            return panel
+        return run
+
+    def ticket_confirm():
+        panel = ticket_seats("우등")()
+        panel.confirm_seats()
+        panel.set_benefit(1, "장애인")
+
+    def ticket_with_drink(member=None):
+        def run():
+            panel = ticket_seats("일반")() if member else None
+            if panel is None:
+                panel = ticket_timetable()
+                next(b for b in panel.time_buttons if b.isEnabled()).setChecked(True)
+                panel.open_seats()
+                panel.toggle_seat(next(s for s, b in panel.seat_buttons.items() if b.isEnabled()), True)
+            panel.confirm_seats()
+            panel.add_to_cart(panel.on_drinks)
+            session.add("M001", {"temperature": "ICE", "size": "L"}, 1)
+            router.screens["menu"].refresh()
+        return run
+
+    def ticket_cart():
+        ticket_with_drink(bomin)()
+        router.show_screen("cart")
+
+    def ticket_done(drinks=True):
+        def run():
+            panel = ticket_seats("우등")()
+            panel.confirm_seats()
+            panel.set_benefit(0, "경로")
+            panel.add_to_cart(panel.on_drinks)
+            if drinks:
+                session.add("M001", {"temperature": "ICE", "size": "L"}, 2)
+            session.insert(100000)
+            session.pay()
+            router.show_screen("done")
+        return run
+
     return [
         ("00 대기", lambda: router.show_screen("idle")),
         ("01 시작", lambda: router.show_screen("home")),
@@ -265,6 +354,19 @@ def states(window):
         ("03 비회원 장바구니 많음", big_cart),
         ("03 My Menu 빈 회원", member_menu(member2)),
         ("03 My Menu 채운 회원", filled_member),
+        ("T1-0 승차권 비회원", ticket_tab),
+        ("T1-0 승차권 회원", lambda: ticket_tab(bomin)),
+        ("T1-1 예매표 조회 오류", ticket_lookup_error),
+        ("T1-2 예매표 출력됨", ticket_printed),
+        ("T1-3 노선 입력", ticket_route),
+        ("T1-4 시간표", lambda: ticket_timetable(bomin)),
+        ("T1-5 좌석 우등", ticket_seats("우등")),
+        ("T1-5B 좌석 일반", ticket_seats("일반")),
+        ("T1-6 혜택·확인", ticket_confirm),
+        ("T1-7 음료와 같은 장바구니", ticket_with_drink()),
+        ("T1 05 장바구니 승차권", ticket_cart),
+        ("T1-8 완료 승차권+음료", ticket_done()),
+        ("T1-8 완료 승차권만", ticket_done(drinks=False)),
         ("04 옵션", option("M001")),
         ("04-A 알레르기", option("M002", allergy=True)),
         ("04 옵션 오류문구", option("M006", error=True)),
@@ -327,6 +429,8 @@ def main():
             count += 1
             window.close()
             window.deleteLater()
+            # 창을 바로 지운다. processEvents만으로는 안 지워져 창마다 앱 전체 이벤트 필터가 쌓이다가 멈췄다
+            app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             app.processEvents()
     print(f"점검한 경우: {count}개 (화면·상태 {len(names)}개 × 크기 {len(SIZES)}개 × 글자 {len(displays)}가지)")
     for line in grown:

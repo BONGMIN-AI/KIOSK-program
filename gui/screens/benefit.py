@@ -97,7 +97,8 @@ class BenefitScreen(QWidget):
         balance = self.session.customer["extra"]["points"]
         self.points_title.setText(f"사용할 포인트 · 보유 {balance:,}P")
         self.rule.setText(f"1P = 1원 · {policy['point_unit']}P 단위 · 최소 {policy['min_use']:,}P · "
-                          f"결제액의 {policy['max_use_percent']}%까지")
+                          f"결제액의 {policy['max_use_percent']}%까지"
+                          + ("\n승차권 금액은 쿠폰·포인트 할인에서 빠져요 (음료에만 적용)" if self.session.tickets else ""))
         self.update_summary()                      # 장바구니가 바뀌었으면 여기서 선택이 풀린다
         self.points_field.setText(str(self.session.use_points))
         if self.session.benefit_note:
