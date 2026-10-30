@@ -10,7 +10,11 @@
 | **시연 모드** 켜기 (샘플 데이터, 저장 안 됨, 카메라 필요 없음) | `run_kiosk.bat` |
 | 실제 모드 켜기 (암호화 금고 + 카메라) | `run_kiosk_real.bat` |
 
+- `setup.bat`는 이미 설치된 것은 `[있음]`으로 건너뛰고, 없는 것만 "다음을 설치하겠습니다"로 보여 준 뒤
+  `[Press any key to proceed]`에서 아무 키나 누르면 설치한다.
 - `run_kiosk.bat`만 눌러도 준비가 안 되어 있으면 `setup.bat`를 알아서 먼저 실행한다(처음엔 몇 분).
+- 폴더 경로가 90자보다 길면 PySide6 설치가 `Long Path` 오류로 실패할 수 있다. 저장소를 `C:\kiosk-base-prototype`처럼
+  짧은 곳에 두거나, Windows `긴 경로 사용`(LongPathsEnabled)을 관리자 권한으로 켠다.
 - 시연 모드 운영자 로그인: `admin` / `demo`. 끄기: `Ctrl+Shift+Q` 또는 창 닫기.
 - 실제 모드는 `data\` 금고가 없으면 관리자 비밀번호를 새로 정하는 단계부터 한다.
   USB 카메라를 쓰면 `run_kiosk_real.bat`를 메모장으로 열어 `KIOSK_CAMERA=0`의 `0`을 카메라 번호(팀장 노트북은 `2`)로 바꾼다.

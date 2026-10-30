@@ -7,10 +7,11 @@ cd /d "%~dp0"
 title COFFEE ^& SPOON 키오스크 - 시연 모드
 set "PY=.venv\Scripts\python.exe"
 
-if exist "%PY%" goto run
-echo 처음 실행이라 준비부터 합니다. 몇 분 걸립니다...
+rem .venv 가 없거나 설치가 덜 되었으면 setup.bat 로 준비부터 한다.
+if exist "%PY%" "%PY%" -c "import PySide6, cryptography" >nul 2>&1 && goto run
+echo 아직 준비가 안 되어 있어 준비부터 합니다.
 call setup.bat auto
-if errorlevel 1 goto fail
+if errorlevel 1 exit /b 1
 
 :run
 echo 시연 모드로 키오스크를 켭니다.  운영자 로그인: admin / demo   끄기: Ctrl+Shift+Q 또는 창 닫기

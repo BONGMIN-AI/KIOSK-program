@@ -10,10 +10,11 @@ rem USB 카메라를 쓰면 아래 0 을 카메라 번호로 바꾼다. 팀장 �
 if not defined KIOSK_CAMERA set "KIOSK_CAMERA=0"
 
 set "PY=.venv\Scripts\python.exe"
-if exist "%PY%" goto check_data
-echo 처음 실행이라 준비부터 합니다. 몇 분 걸립니다...
+rem .venv 가 없거나 설치가 덜 되었으면 setup.bat 로 준비부터 한다.
+if exist "%PY%" "%PY%" -c "import PySide6, cryptography, cv2, onnxruntime" >nul 2>&1 && goto check_data
+echo 아직 준비가 안 되어 있어 준비부터 합니다.
 call setup.bat auto
-if errorlevel 1 goto fail
+if errorlevel 1 exit /b 1
 
 :check_data
 if exist "data\keystore.json" goto check_model
