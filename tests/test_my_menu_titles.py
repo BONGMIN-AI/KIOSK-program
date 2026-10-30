@@ -5,7 +5,8 @@ from datetime import date, datetime
 from core import schema
 from core.storage import MemoryVault
 from domain import seed
-from domain.my_menu import caffeine_of, caffeine_report, toggle_like, usual_order, likes_of
+from domain.my_menu import (caffeine_of, caffeine_report, likes_of, recent_order,
+                            toggle_like, usual_order)
 from domain.orders import complete_order
 from domain.policy import banner_message, display_event, load_policy, validate_event
 from domain.titles import count_stats, progress

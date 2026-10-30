@@ -1,6 +1,9 @@
 """발표와 연습에 쓰는 KIOSK 샘플 데이터."""
+import zlib
+
 from core import schema
 from .customers import hash_member_password
+from .options import TEMPERATURE_ONLY
 
 CATEGORIES = {
     "커피": [("아메리카노", 3000, []), ("카페라떼", 4000, ["우유"]), ("바닐라라떼", 4500, ["우유"]),
@@ -43,12 +46,33 @@ CAFFEINE_MG = {
 }
 
 
-# 온도·사이즈가 일반 음료와 다른 메뉴. 적지 않은 메뉴는 domain/options.py의 분류 기본값을 쓴다.
-TEMPERATURE_ONLY = {
-    "콜드브루": ["ICE"], "디카페인 콜드브루": ["ICE"], "복숭아 아이스티": ["ICE"],
-    "에스프레소": ["HOT"], "디카페인 에스프레소": ["HOT"],
-}
+# 온도·사이즈가 일반 음료와 다른 메뉴. 온도 표는 domain/options.py에 있다 (예전 데이터에도 적용되게).
 SIZE_ONLY = {"에스프레소": ["M"], "디카페인 에스프레소": ["M"]}
+
+
+# 인기 탭 시연용 기본값 (10/31): (좋아요 수, 누적 판매 잔 수). 적지 않은 메뉴는 작은 값을 자동으로 정한다.
+POPULAR_DEMO = {
+    "아메리카노": (48, 1250), "카페라떼": (41, 860), "바닐라라떼": (52, 640), "카라멜마키아토": (37, 410),
+    "콜드브루": (29, 380), "연유라떼": (33, 300), "딸기라떼": (58, 520), "초코라떼": (26, 330),
+    "말차라떼": (35, 290), "고구마라떼": (22, 240), "밀크티": (24, 210), "레몬에이드": (31, 450),
+    "자몽에이드": (27, 360), "청포도에이드": (30, 340), "복숭아 아이스티": (25, 480), "유자차": (28, 390),
+    "치즈케이크": (34, 280), "소금빵": (39, 310), "크루아상": (21, 260), "디카페인 아메리카노": (18, 230),
+}
+# 계절마다 잘 팔리는 비율 (봄·여름·가을·겨울, 합 1). 분류 기본값 위에 메뉴별 값을 덮어쓴다.
+SEASON_SHARE = {
+    "에이드": (0.25, 0.45, 0.2, 0.1), "차": (0.2, 0.1, 0.3, 0.4), "디저트": (0.25, 0.25, 0.25, 0.25),
+    "딸기라떼": (0.35, 0.1, 0.15, 0.4), "고구마라떼": (0.1, 0.05, 0.4, 0.45), "복숭아 아이스티": (0.2, 0.55, 0.2, 0.05),
+    "콜드브루": (0.25, 0.4, 0.25, 0.1), "유자차": (0.15, 0.05, 0.3, 0.5),
+}
+DEFAULT_SHARE = (0.25, 0.3, 0.25, 0.2)
+
+
+def popularity(name: str, category: str) -> dict:
+    """메뉴 하나의 시연용 인기 값: demo_likes · sold_count · demo_season(계절별 판매 잔 수)."""
+    likes, sold = POPULAR_DEMO.get(name, (3 + zlib.crc32(name.encode()) % 15, 40 + zlib.crc32(name.encode()) % 160))
+    share = SEASON_SHARE.get(name, SEASON_SHARE.get(category, DEFAULT_SHARE))
+    seasons = dict(zip(("봄", "여름", "가을", "겨울"), (round(sold * part) for part in share)))
+    return {"demo_likes": likes, "sold_count": sold, "demo_season": seasons}
 
 
 def make_menu() -> dict:
@@ -60,7 +84,8 @@ def make_menu() -> dict:
             menu[menu_id] = {"id": menu_id, "name": name, "price": price,
                              "category": category, "allergens": allergens,
                              "caffeine_mg": CAFFEINE_MG.get(name, 0), "decaf": category == "디카페인",
-                             "stock": 20, "sold_count": 0, "sold_out": False}
+                             "stock": 20, "sold_count": 0, "sold_out": False,
+                             **popularity(name, category)}
             if name in TEMPERATURE_ONLY:
                 menu[menu_id]["temperatures"] = TEMPERATURE_ONLY[name]
             if name in SIZE_ONLY:

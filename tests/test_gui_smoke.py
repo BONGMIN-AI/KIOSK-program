@@ -174,13 +174,15 @@ def test_home_buttons_follow_flowchart(window):
 def test_inactivity_returns_to_idle(window):
     router = window.router
     assert router.timer.interval() == 60_000
-    router.timer.setInterval(120)
     router.show_screen("home")
-    QTest.qWait(70)
+    QTest.qWait(50)                      # 시작 화면 첫 그림(사진·페이드)이 느려도 시간에 걸리지 않게 먼저 그린다
+    router.timer.setInterval(400)
+    router.timer.start()
+    QTest.qWait(200)
     QTest.keyClick(router.screens["home"], Qt.Key.Key_Space)
-    QTest.qWait(70)
+    QTest.qWait(250)
     assert router.current_name == "home"
-    QTest.qWait(150)
+    QTest.qWait(400)
     assert router.current_name == "idle"
     assert not router.timer.isActive()
 

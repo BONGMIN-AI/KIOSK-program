@@ -297,7 +297,7 @@ def buy_to_confirm(panel, keys="ㄷㅐㅈㅓㄴ", seats=1):
 def test_ticket_tab_sits_after_my_menu_and_keeps_coffee_first(window):
     router, menu, panel = ticket_tab(window)
     names = [b.objectName() for b in menu.category_buttons.buttons()]
-    assert names[:3] == ["category_My Menu", "category_승차권", "category_커피"]
+    assert names[:4] == ["category_My Menu", "category_인기", "category_승차권", "category_커피"]
     assert menu.middle_stack.currentWidget() is panel and panel.page_name() == "home"
     menu.show_category("커피")
     assert menu.middle_stack.currentWidget() is menu.grid_area

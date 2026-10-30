@@ -53,6 +53,18 @@ def pay_as_member(router):
     return member
 
 
+def wait_until(condition, timeout_ms):
+    """condition()이 참이 될 때까지 화면 일을 처리하며 기다린다 (PySide6에는 qWaitFor가 없다)."""
+    from PySide6.QtTest import QTest
+    waited = 0
+    while not condition():
+        if waited >= timeout_ms:
+            return False
+        QTest.qWait(20)
+        waited += 20
+    return True
+
+
 # ---------------------------------------------------------------- 08 더 주문
 def test_done_asks_to_order_more_and_keeps_login(window):
     router = window.router
@@ -261,3 +273,56 @@ def test_phone_number_takes_shape_while_typing(window):
     find_phone = router.screens["find"].phone
     find_phone.insert("01011112222")
     assert find_phone.text() == "010-1111-2222"
+
+
+def test_start_screen_slideshow_turns_and_fades_in(window, app):
+    """10/31: 01 시작 화면 — 위 로고, 왼쪽 돌아가는 광고·사진, 오른쪽 회원/비회원 버튼, 들어올 때 페이드 인."""
+    from PySide6.QtTest import QTest
+    router = window.router
+    router.show_screen("home")
+    home = router.screens["home"]
+    assert home.content.graphicsEffect() is not None          # 흐릿하게 시작
+    # 시간 대신 결과를 기다린다 (전체 시험을 돌리면 PC가 바빠 늦어질 수 있다)
+    assert wait_until(lambda: home.content.graphicsEffect() is None, 5000)   # 다 보이면 효과를 뗀다
+    show = home.slideshow
+    assert show.timer.isActive() and len(show.slides) >= 2
+    assert all(not picture.isNull() for picture, _caption, _fit in show.slides)   # 그림 파일이 다 있다
+    show.timer.stop()                                         # 자동 넘김과 겹치지 않게
+    start = show.index
+    show.next_slide()
+    assert wait_until(lambda: show.index == (start + 1) % len(show.slides), 5000)
+    show.timer.start()
+    router.show_screen("idle")
+    assert not show.timer.isActive()                          # 안 보일 때는 멈춘다
+
+
+def test_enroll_face_shows_inside_screen(window):
+    """10/31: 10-B 얼굴 등록도 창 전체를 덮지 않고 왼쪽 칸에 얼굴 기호, 오른쪽에 '지금 할 일'."""
+    import numpy as np
+    from face import FaceError
+    router = window.router
+    seen = []
+
+    class InlineFace:
+        def __init__(self):
+            self.viewer = None
+            self.on_step = None
+
+        def enroll_face(self, customer_id, on_status=print):
+            enroll = router.screens["enroll"]
+            self.on_step("정면을 보고 잠시 멈춰 주세요")
+            for _ in range(3):
+                seen.append((enroll.face_panel.isVisible(), router.camera_view.isVisible(), enroll.now_text.text()))
+                if self.viewer(np.zeros((720, 1280, 3), np.uint8), 1):
+                    raise FaceError("사용자가 얼굴 인증을 취소했습니다")
+            return True
+
+    router.face_factory = lambda vault: InlineFace()
+    member = first_member(router)
+    router.session.login(member)
+    router.show_screen("enroll", customer=member)
+    enroll = router.screens["enroll"]
+    enroll.enroll()
+    assert seen and all(panel and not cover for panel, cover, _text in seen)
+    assert seen[0][2] == "정면을 보고 잠시 멈춰 주세요"
+    assert not enroll.face_panel.isVisible() and "등록 완료" in enroll.steps.text()

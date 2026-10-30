@@ -142,9 +142,12 @@ def states(window):
 
     def filled_member():
         session.login(bomin)
-        for _ in range(2):
+        for _ in range(3):                        # 최근 주문에 4가지가 담긴다
             session.add("M001", {"temperature": "ICE", "size": "L", "extras": ["shot", "syrup"]}, 1)
-            session.insert(10000)
+            session.add("M044", None, 1)
+            session.add("M014", {"temperature": "HOT"}, 2)
+            session.add("M031", None, 1)
+            session.insert(50000)
             session.pay()
         session.toggle_like("M003")
         session.toggle_like("M014")
@@ -208,6 +211,12 @@ def states(window):
         signup.allergy_search.setText("류")
         signup.submit()
 
+    def enroll_running():
+        router.show_screen("enroll", customer=bomin)
+        enroll = router.screens["enroll"]
+        enroll.show_running(True)
+        enroll.now_text.setText("한 사람만 카메라 앞에 서 주세요")
+
     def admin(tab, error=""):
         def run():
             router.admin_id = "admin"
@@ -250,6 +259,18 @@ def states(window):
         session.add("M001", None, 1)
         session.set_benefit(None, 3000)
         router.show_screen("cash")
+
+    # 인기 탭 (10/31)
+    def popular(sort, member=None):
+        def run():
+            if member:
+                router.start_member_order(member)
+            else:
+                router.open_action("guest")
+            menu = router.screens["menu"]
+            menu.popular_sort = sort
+            menu.show_category("인기")
+        return run
 
     # 승차권 탭(T1)
     def ticket_tab(member=None):
@@ -370,6 +391,9 @@ def states(window):
         ("03 비회원 장바구니 많음", big_cart),
         ("03 My Menu 빈 회원", member_menu(member2)),
         ("03 My Menu 채운 회원", filled_member),
+        ("03 인기 좋아요순 비회원", popular("좋아요순")),
+        ("03 인기 판매순 회원", popular("판매순", bomin)),
+        ("03 인기 계절 인기순 회원", popular("계절 인기순", bomin)),
         ("T1-0 승차권 비회원", ticket_tab),
         ("T1-0 승차권 회원", lambda: ticket_tab(bomin)),
         ("T1-1 예매표 조회 오류", ticket_lookup_error),
@@ -396,6 +420,7 @@ def states(window):
         ("08 완료 회원", done_member),
         ("10 회원가입 오류", signup_error),
         ("10-B 얼굴 등록", lambda: router.show_screen("enroll", customer=bomin)),
+        ("10-B 얼굴 등록 중", enroll_running),
         ("09-A 운영자 로그인 오류", admin_login_error),
         ("09-B 메뉴", admin("menu", "재고가 0개입니다. 재고를 먼저 채우고 저장하세요")),
         ("09-C 회원·주문", admin("members")),

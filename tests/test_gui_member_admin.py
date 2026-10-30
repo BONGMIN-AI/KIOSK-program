@@ -106,15 +106,18 @@ def test_quick_order_and_like(window):
     router = window.router
     login_with_password(router, "member1")
     session = router.session
-    session.add("M001", {"temperature": "ICE"}, 1)
-    session.insert(3000)
-    session.pay()                                    # 평소 주문 기록 만들기
+    session.add("M001", {"temperature": "ICE"}, 2)
+    session.add("M014", {"temperature": "HOT"}, 1)
+    session.insert(20000)
+    session.pay()                                    # 여러 잔 주문 기록 만들기
     router.start_member_order(session.customer)
     menu = router.screens["menu"]
     assert menu.quick_button is not None
-    menu.quick_button.click()                        # 바로 주문 ▶ → 장바구니 건너뜀
-    assert router.current_name == "benefit"
-    assert [line["name"] for line in session.lines()] == ["아메리카노"]
+    menu.quick_button.click()                        # 최근 주문 그대로 다시 담기 → 장바구니에서 확인
+    assert router.current_name == "cart"
+    # 10/31: 예전 Quick Order는 첫 잔만 담겼다 → 이제 지난 주문이 통째로
+    assert sorted((line["name"], line["quantity"]) for line in session.lines()) == [("말차라떼", 1), ("아메리카노", 2)]
+    session.cart = {}
 
     router.start_member_order(session.customer)
     menu.show_category("논커피")

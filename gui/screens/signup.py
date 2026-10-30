@@ -7,14 +7,14 @@
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from domain.allergens import ALLERGENS, search
 from domain.customers import register_customer, set_face_enrolled, validate_password_pair
 from face import FaceError
 from gui import theme
 from gui.screens.login import nav_bar
-from gui.widgets import Card, button, label, message_label, phone_field, text_field
+from gui.widgets import Card, FacePanel, button, label, message_label, phone_field, text_field
 
 
 def check_box(text, bold=False):
@@ -58,24 +58,30 @@ class SignupScreen(QWidget):
         right_card = Card()
         right = QVBoxLayout(right_card)
         right.setContentsMargins(22, 18, 22, 18)
-        right.setSpacing(6)
+        right.setSpacing(18 if theme.SCALE == 1 else 8)   # 묶음과 묶음 사이 (큰 글자는 창 높이에 맞춰 좁게)
+
+        def section(title_widget, *widgets):
+            """제목과 그 선택 칸을 한 묶음으로 붙여 둔다 (10/31: 창이 크면 제목과 칸이 벌어졌다)."""
+            box = QVBoxLayout()
+            box.setSpacing(4)
+            box.addWidget(title_widget)
+            for widget in widgets:
+                box.addWidget(widget)
+            right.addLayout(box)
+
         self.allergy_title = label("알레르기 선택 (0개)", 18, bold=True)
-        right.addWidget(self.allergy_title)
         self.allergy_search = text_field("검색 (예: 우유)")
         self.allergy_search.textChanged.connect(self.show_allergies)
-        right.addWidget(self.allergy_search)
         self.allergy_area = QScrollArea()
         self.allergy_area.setWidgetResizable(True)
         self.allergy_area.setFixedHeight(170)
-        right.addWidget(self.allergy_area)
-        right.addWidget(label("약관 동의", 18, bold=True))
+        section(self.allergy_title, self.allergy_search, self.allergy_area)
         self.privacy = check_box("[필수] 개인정보 수집·이용 동의", bold=True)
         self.marketing = check_box("[선택] 마케팅 정보 수신 동의")
-        right.addWidget(self.privacy)
-        right.addWidget(self.marketing)
-        right.addWidget(label("얼굴 정보 등록", 18, bold=True))
+        section(label("약관 동의", 18, bold=True), self.privacy, self.marketing)
         self.face_consent = check_box("[선택] 얼굴 정보(특징값) 등록 동의 → 다음 화면 10-B")
-        right.addWidget(self.face_consent)
+        section(label("얼굴 정보 등록", 18, bold=True), self.face_consent)
+        right.addStretch(1)                      # 남는 높이는 여기로 (버튼은 맨 아래)
         self.message = message_label()
         right.addWidget(self.message)
         right.addWidget(button("다음 →", "primary", self.submit))
@@ -154,12 +160,19 @@ class EnrollScreen(QWidget):
         camera = Card()
         left = QVBoxLayout(camera)
         left.setContentsMargins(24, 22, 24, 22)
-        left.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        left.addWidget(label("카메라 화면 (거울 모드)", 24, title=True), alignment=Qt.AlignmentFlag.AlignCenter)
-        left.addWidget(label("버튼을 누르면 이 화면에 카메라가 나와요.\n가운데 얼굴 타원 안 = 초록 · 벗어나면 빨강",
+        # 10/31: 창 전체를 덮는 카메라 화면 대신, 이 왼쪽 칸 안에 얼굴 기호를 그린다 (로그인과 같은 방식)
+        self.idle_text = QWidget()
+        idle = QVBoxLayout(self.idle_text)
+        idle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        idle.addWidget(label("얼굴 등록", 24, title=True), alignment=Qt.AlignmentFlag.AlignCenter)
+        idle.addWidget(label("버튼을 누르면 이 칸에 얼굴 기호가 나와요.\n카메라 앞 50cm 안에서 정면을 보면 돼요.",
                              16, muted=True), alignment=Qt.AlignmentFlag.AlignCenter)
         self.camera_kind = label("", 16, bold=True)
-        left.addWidget(self.camera_kind, alignment=Qt.AlignmentFlag.AlignCenter)
+        idle.addWidget(self.camera_kind, alignment=Qt.AlignmentFlag.AlignCenter)
+        left.addWidget(self.idle_text, 1)
+        self.face_panel = FacePanel()
+        self.face_panel.hide()
+        left.addWidget(self.face_panel, 1)
         body.addWidget(camera, 1)
         steps_card = Card()
         steps_card.setFixedWidth(460)
@@ -170,6 +183,16 @@ class EnrollScreen(QWidget):
         self.steps = label("", 17)
         self.steps.setWordWrap(True)
         right.addWidget(self.steps)
+        self.now_box = QFrame()                  # 등록하는 동안 '지금 할 일' 한 줄을 크게
+        self.now_box.setStyleSheet(f"background: {theme.CREAM}; border-radius: 16px;")
+        now = QVBoxLayout(self.now_box)
+        now.setContentsMargins(16, 12, 16, 12)
+        now.addWidget(label("지금 할 일", 14, muted=True))
+        self.now_text = label("", 22, bold=True)
+        self.now_text.setWordWrap(True)
+        now.addWidget(self.now_text)
+        self.now_box.hide()
+        right.addWidget(self.now_box)
         privacy = label("사진은 저장하지 않고 특징값만 암호화해 저장합니다 · ESC 취소", 13, muted=True)
         privacy.setWordWrap(True)
         right.addWidget(privacy)
@@ -195,19 +218,37 @@ class EnrollScreen(QWidget):
                            "3  확인되면 등록 완료")
 
     def enroll(self):
-        self.message.setText("카메라를 켜는 중이에요…")
-        self.repaint()
+        if self.face_panel.isVisible():          # 등록 중에 누르면 '취소'
+            self.face_panel.cancel()
+            return
+        self.message.setText("")
+        self.show_running(True)
         try:
-            self.router.run_face(lambda provider: provider.enroll_face(self.customer["id"], lambda text: None))
+            self.router.run_face(lambda provider: provider.enroll_face(self.customer["id"], lambda text: None),
+                                 viewer=self.face_panel.show_frame, on_step=self.now_text.setText)
             set_face_enrolled(self.router.session.vault, self.customer["id"], True)
         except (FaceError, ValueError) as error:
+            self.show_running(False)
             self.message.setText(f"{error} · 나중에 다시 등록할 수 있어요")
             return
+        self.show_running(False)
         self.router.session.reload_customer()
         self.message.setText("")
         self.steps.setText("✓ 얼굴 등록 완료\n다음부터 회원 ID + 얼굴로 로그인할 수 있어요.")
         self.start_button.setEnabled(False)
         self.skip_button.setText("주문 시작 →")
+
+    def show_running(self, running):
+        """등록 중: 왼쪽은 얼굴 기호, 오른쪽은 '지금 할 일' 크게 · 시작 버튼은 '취소'로."""
+        self.idle_text.setVisible(not running)
+        self.face_panel.setVisible(running)
+        self.now_box.setVisible(running)
+        self.now_text.setText("카메라를 켜는 중이에요…" if running else "")
+        self.start_button.setText("등록 취소" if running else "카메라 켜고 등록 시작")
+        self.skip_button.setEnabled(not running)
+        if running:
+            self.face_panel.reset()
+        self.repaint()
 
     def go_order(self):
         self.router.start_member_order(self.router.session.reload_customer() or self.customer)

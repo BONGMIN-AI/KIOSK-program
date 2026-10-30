@@ -5,7 +5,8 @@ from datetime import date, datetime
 from domain.benefits import apply_benefits, coupons_of, max_usable_points
 from domain.cart import add_item, cart_lines, change_quantity
 from domain.customers import allergy_warnings
-from domain.my_menu import caffeine_report, likes_of, toggle_like, usual_order
+from domain.popular import ranking
+from domain.my_menu import caffeine_report, likes_of, recent_order, toggle_like, usual_order
 from domain.options import available_options, option_price
 from domain.orders import complete_order
 from domain.payment import insert_cash, payment_status
@@ -18,6 +19,7 @@ from core.schema import now_iso
 CATEGORY_ORDER = ["커피", "디카페인", "논커피", "차", "에이드", "디저트"]
 MY_MENU = "My Menu"
 TICKET = "승차권"               # 승차권 탭(T1): My Menu 다음, 커피 앞
+POPULAR = "인기"                # 인기 탭(10/31): 좋아요순 · 판매순 · 계절 인기순 (회원·비회원 모두)
 CASH_RECORD = "cash_session"    # 지금 손님이 넣은 현금. 키오스크가 갑자기 꺼져도 얼마가 남아 있었는지 알 수 있다
 
 
@@ -79,7 +81,8 @@ class OrderSession:
         return self.customer
 
     def categories(self):
-        return ([MY_MENU] if self.is_member() else []) + ([TICKET] if self.ticket_sales_on() else []) + CATEGORY_ORDER
+        return (([MY_MENU] if self.is_member() else []) + [POPULAR]
+                + ([TICKET] if self.ticket_sales_on() else []) + CATEGORY_ORDER)
 
     def ticket_sales_on(self):
         """승차권 탭을 보일지. 운영자 설정 settings["ticket_sales"]가 False인 매장만 숨긴다 (기본은 켬)."""
@@ -120,6 +123,24 @@ class OrderSession:
 
     def usual(self):
         return usual_order(self.orders(), self.customer["id"], self.menu())
+
+    def popular(self, sort):
+        """인기 탭 순위 [{item, value, text}] (domain/popular.py)."""
+        return ranking(sort, self.menu(), self.vault.read("customers", default={}), self.orders())
+
+    def recent(self):
+        """최근 주문 한 건 (My Menu '최근 주문 보기')."""
+        return recent_order(self.orders(), self.customer["id"], self.menu())
+
+    def add_lines(self, lines):
+        """여러 줄을 한 번에 담는다. 하나라도 안 되면(재고 등) 하나도 담지 않고 ValueError."""
+        before = dict(self.cart)
+        try:
+            for line in lines:
+                self.add(line["menu_id"], line["options"], line["quantity"])
+        except ValueError:
+            self.cart = before
+            raise
 
     def likes(self):
         menu = self.menu()

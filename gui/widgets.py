@@ -454,6 +454,11 @@ class CategoryIcon(QWidget):
         painter.drawLine(QPointF(d * 0.12, d * 0.7), QPointF(d * 0.88, d * 0.62))
         painter.drawEllipse(QRectF(d * 0.66, d * 0.26, d * 0.14, d * 0.14))           # 딸기
 
+    def draw_crown(self, painter, d):
+        points = [(0.12, 0.78), (0.12, 0.34), (0.32, 0.54), (0.5, 0.22), (0.68, 0.54), (0.88, 0.34), (0.88, 0.78)]
+        painter.drawPolygon(QPolygonF([QPointF(d * x, d * y) for x, y in points]))
+        painter.drawLine(QPointF(d * 0.12, d * 0.88), QPointF(d * 0.88, d * 0.88))
+
     def draw_star(self, painter, d):
         points = []
         for i in range(10):
@@ -463,8 +468,8 @@ class CategoryIcon(QWidget):
         painter.drawPolygon(QPolygonF(points))
 
 
-CATEGORY_SHAPES = {"My Menu": "star", "커피": "cup", "디카페인": "decaf", "논커피": "milk", "차": "tea",
-                   "에이드": "ade", "디저트": "cake"}
+CATEGORY_SHAPES = {"My Menu": "star", "인기": "crown", "커피": "cup", "디카페인": "decaf", "논커피": "milk",
+                   "차": "tea", "에이드": "ade", "디저트": "cake"}
 
 
 # ---------------------------------------------------------------- 입력
@@ -610,6 +615,126 @@ class PromoBanner(QWidget):
         painter.drawPixmap(target, self.picture, source)
 
 
+class Slideshow(QWidget):
+    """광고·사진이 몇 초마다 부드럽게 넘어가는 칸 (01 시작 화면 왼쪽). 화면에 보일 때만 돌아간다.
+
+    slides: (그림 파일, 아래에 쓸 글, 'cover'=칸을 꽉 채우고 넘치면 자름 / 'contain'=그림 전체가 보이게)
+    """
+
+    INTERVAL_MS = 5000
+    FADE_MS = 700
+
+    def __init__(self, slides, parent=None):
+        super().__init__(parent)
+        self.slides = [(QPixmap(str(theme.ASSETS / name)), caption, fit) for name, caption, fit in slides]
+        # 'contain' 그림 뒤에 깔 흐린 배경: 아주 작게 줄였다가 크게 늘리면 흐려진다 (크림색 빈 띠 대신)
+        self.blurred = [picture.scaled(12, 12, Qt.AspectRatioMode.KeepAspectRatio,
+                                       Qt.TransformationMode.SmoothTransformation)
+                        if fit == "contain" and not picture.isNull() else None
+                        for picture, _caption, fit in self.slides]
+        self.index = 0
+        self.progress = 0.0           # 0 = 지금 그림만, 1 = 다음 그림으로 다 바뀜
+        self.setMinimumSize(240, 200)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.timer = QTimer(self)
+        self.timer.setInterval(self.INTERVAL_MS)
+        self.timer.timeout.connect(self.next_slide)
+        self.fade = QVariantAnimation(self)
+        self.fade.setDuration(self.FADE_MS)
+        self.fade.setStartValue(0.0)
+        self.fade.setEndValue(1.0)
+        self.fade.valueChanged.connect(self.set_progress)
+        self.fade.finished.connect(self.finish_fade)
+
+    def showEvent(self, event):
+        self.timer.start()
+        super().showEvent(event)
+
+    def hideEvent(self, event):
+        self.timer.stop()
+        super().hideEvent(event)
+
+    def next_slide(self):
+        if len(self.slides) > 1 and self.fade.state() != QVariantAnimation.State.Running:
+            self.fade.start()
+
+    def set_progress(self, value):
+        self.progress = float(value)
+        self.update()
+
+    def finish_fade(self):
+        self.index = (self.index + 1) % len(self.slides)
+        self.progress = 0.0
+        self.update()
+
+    @staticmethod
+    def draw_cover(painter, target, picture):
+        """칸을 꽉 채우고 넘치는 부분은 가운데 기준으로 자른다."""
+        scale = max(target.width() / picture.width(), target.height() / picture.height())
+        width, height = target.width() / scale, target.height() / scale
+        source = QRectF((picture.width() - width) / 2, (picture.height() - height) / 2, width, height)
+        painter.drawPixmap(target, picture, source)
+
+    def draw_slide(self, painter, target, slide, opacity, blurred=None):
+        picture, caption, fit = slide
+        painter.setOpacity(opacity)
+        painter.fillRect(target, QColor(theme.CREAM))
+        if not picture.isNull():
+            if fit == "cover":
+                self.draw_cover(painter, target, picture)
+            else:
+                # 배너는 글자가 잘리면 안 되니 전체를 보이게 두고, 남는 곳은 같은 그림을 흐리게 깔아 채운다
+                if blurred is not None:
+                    self.draw_cover(painter, target, blurred)
+                    painter.fillRect(target, QColor(255, 248, 240, 70))
+                margin = 18
+                room = target.adjusted(margin, margin, -margin, -margin)
+                scale = min(room.width() / picture.width(), room.height() / picture.height())
+                width, height = picture.width() * scale, picture.height() * scale
+                box = QRectF(room.x() + (room.width() - width) / 2, room.y() + (room.height() - height) / 2,
+                             width, height)
+                painter.save()
+                shadow = QPainterPath()
+                shadow.addRoundedRect(box.translated(0, 6), 18, 18)
+                painter.fillPath(shadow, QColor(40, 20, 5, int(60 * opacity)))   # 살짝 떠 보이게
+                corner = QPainterPath()
+                corner.addRoundedRect(box, 18, 18)
+                painter.setClipPath(corner, Qt.ClipOperation.IntersectClip)
+                painter.drawPixmap(box, picture, QRectF(picture.rect()))
+                painter.restore()
+        if caption:
+            band = QRectF(target.x(), target.bottom() - 72, target.width(), 72)
+            painter.fillRect(band, QColor(40, 20, 5, 150))
+            painter.setPen(QColor("#FFFFFF"))
+            painter.setFont(theme.font(22, bold=True))
+            painter.drawText(band.adjusted(24, 0, -24, 0), int(Qt.AlignmentFlag.AlignVCenter), caption)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        target = QRectF(self.rect())
+        path = QPainterPath()
+        path.addRoundedRect(target, 24, 24)
+        painter.setClipPath(path)
+        if not self.slides:
+            painter.fillRect(target, QColor(theme.CARAMEL_LIGHT))
+            return
+        self.draw_slide(painter, target, self.slides[self.index], 1.0, self.blurred[self.index])
+        if self.progress > 0:
+            following = (self.index + 1) % len(self.slides)
+            self.draw_slide(painter, target, self.slides[following], self.progress, self.blurred[following])
+        painter.setOpacity(1.0)
+        # 아래 가운데 점: 지금 몇 번째 그림인지
+        count, gap = len(self.slides), 16
+        x = target.center().x() - (count - 1) * gap / 2
+        current = (self.index + (1 if self.progress > 0.5 else 0)) % count
+        painter.setPen(Qt.PenStyle.NoPen)
+        for i in range(count):
+            painter.setBrush(QColor(255, 255, 255, 240 if i == current else 120))
+            painter.drawEllipse(QPointF(x + i * gap, target.bottom() - 88), 4.5, 4.5)
+
+
 def promo_row(*filenames):
     """홍보 배너 여러 장을 같은 크기로 나란히 놓는다 (예: 사진 찍기 · 스마일 할인)."""
     row = QWidget()
@@ -619,6 +744,45 @@ def promo_row(*filenames):
     for filename in filenames:
         layout.addWidget(PromoBanner(filename), 1)
     return row
+
+
+class FacePanel(QLabel):
+    """화면 안 한 칸에 얼굴 기호(Face ID 모양)를 그린다. 창 전체를 덮는 CameraView 대신 쓴다 (10-B 등록).
+
+    얼굴 공급자가 프레임마다 show_frame(1280x720 안내 그림, 기다릴 ms)을 부른다. 취소했으면 True.
+    """
+
+    ROI_CENTER = (320, 370)      # face/guide_view.ROI_CENTER와 같다 (얼굴 기호 가운데)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.cancelled = False
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.setStyleSheet("background: rgb(250, 250, 250); border-radius: 16px;")   # 얼굴 기호 바탕색
+
+    def reset(self):
+        self.cancelled = False
+        self.clear()
+
+    def cancel(self):
+        self.cancelled = True
+
+    def show_frame(self, image, wait_ms=1):
+        cx, cy = self.ROI_CENTER
+        part = image[cy - 250:cy + 250, cx - 250:cx + 250]
+        if not part.flags["C_CONTIGUOUS"]:
+            part = part.copy()
+        height, width = part.shape[:2]
+        frame = QImage(part.data, width, height, part.strides[0], QImage.Format.Format_BGR888).copy()
+        self.setPixmap(QPixmap.fromImage(frame).scaled(
+            self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        clock = QElapsedTimer()
+        clock.start()
+        while True:
+            QApplication.processEvents()
+            if self.cancelled or clock.elapsed() >= wait_ms:
+                return self.cancelled
 
 
 class CameraView(QFrame):

@@ -33,6 +33,24 @@ def usual_order(orders: dict, customer_id: str, menu: dict) -> dict | None:
             "unit_price": line["unit_price"], "times": counts[best]}
 
 
+def _repeat_line(line: dict, menu: dict) -> dict:
+    return {"menu_id": line["menu_id"], "name": menu[line["menu_id"]]["name"],
+            "options": line.get("options") or {}, "option_label": line.get("option_label", ""),
+            "quantity": line["quantity"]}
+
+
+def recent_order(orders: dict, customer_id: str, menu: dict) -> dict | None:
+    """가장 최근 주문 한 건의 음료·디저트 줄 전부 (10/31: 평소 주문은 첫 잔만 담겨서 이것으로 바꿨다).
+
+    지금 메뉴에 없는 줄은 뺀다. 주문이 없으면 None.
+    """
+    for lines in reversed(customer_lines(orders, customer_id)):
+        kept = [_repeat_line(line, menu) for line in lines if line.get("menu_id") in menu]
+        if kept:
+            return {"lines": kept, "count": sum(line["quantity"] for line in kept)}
+    return None
+
+
 # ---------------------------------------------------------------- 좋아요
 def likes_of(customer: dict) -> list[str]:
     return list(customer["extra"].get("likes", []))

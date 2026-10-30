@@ -4,6 +4,13 @@ DRINK_CATEGORIES = ("커피", "디카페인", "논커피", "차", "에이드")
 SIZE_PRICES = {"M": 0, "L": 1000}
 EXTRA_PRICES = {"shot": 500, "syrup": 500}
 EXTRA_LABELS = {"shot": "샷 1회 추가", "syrup": "시럽 추가"}
+# 온도가 한쪽만 되는 메뉴 (메뉴 이름 기준). 메가MGC커피 공식 메뉴(10/31 조사)를 참고했다:
+# 에이드·스무디·과일 라떼(딸기라떼 등)는 ICE만, 에스프레소는 HOT만. 저장된 메뉴에 값이 없어도 이 표를 쓴다.
+TEMPERATURE_ONLY = {
+    "콜드브루": ["ICE"], "디카페인 콜드브루": ["ICE"], "복숭아 아이스티": ["ICE"],
+    "에스프레소": ["HOT"], "디카페인 에스프레소": ["HOT"],
+    "딸기라떼": ["ICE"], "망고라떼": ["ICE"], "블루베리라떼": ["ICE"], "민트초코": ["ICE"],
+}
 
 
 def available_options(item: dict) -> dict:
@@ -13,8 +20,8 @@ def available_options(item: dict) -> dict:
         return {"temperatures": [], "sizes": [], "extras": []}
     temperatures = ["ICE"] if category == "에이드" else ["HOT", "ICE"]
     extras = ["shot", "syrup"] if category in ("커피", "디카페인") else ["syrup"]
-    # 메뉴에 따로 적힌 값이 있으면 그것을 쓴다 (예: 콜드브루는 ICE만, 에스프레소는 HOT·M만)
-    temperatures = item.get("temperatures", temperatures)
+    # 메뉴에 따로 적힌 값 → 이름별 표 → 분류 기본값 순서 (예: 콜드브루는 ICE만, 에스프레소는 HOT·M만)
+    temperatures = item.get("temperatures") or TEMPERATURE_ONLY.get(item.get("name"), temperatures)
     sizes = item.get("sizes", list(SIZE_PRICES))
     return {"temperatures": temperatures, "sizes": sizes, "extras": extras}
 
