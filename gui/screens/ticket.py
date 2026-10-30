@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, Q
 
 from domain import hangul, tickets
 from gui import theme
-from gui.widgets import CategoryIcon, button, label, message_label, text_field
+from gui.widgets import Card, CategoryIcon, button, label, message_label, text_field
 
 NOTICE = "승차권은 키오스크 아래 출력구에서 나와요. 잊지 말고 꼭 챙겨 주세요!"
 STEPS = ["① 노선", "② 시간", "③ 인원·좌석", "④ 혜택·확인"]
@@ -220,6 +220,47 @@ class TicketCartLine(QFrame):
         self.time_label.setText(f"좌석 유지 {seconds_text(self.session.ticket_seconds(self.ticket))}")
 
 
+def saved_routes_card(session, on_open, on_remove):
+    """My Menu의 '★ 저장한 노선' 카드: 승차권을 살 때 '저장'을 고른 노선만, 최근에 쓴 순.
+
+    줄을 누르면 그 노선 오늘 시간표로, ×를 누르면 저장을 지운다.
+    """
+    card = Card()
+    column = QVBoxLayout(card)
+    column.setContentsMargins(18, 14, 18, 16)
+    column.setSpacing(8)
+    column.addWidget(label("★ 저장한 노선 · 최근·자주 가는 곳", 14, bold=True))
+    routes = session.saved_routes()
+    for route in routes[:5]:
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        item = button("", "option", lambda checked=False, r=route: on_open(r["origin"], r["destination"]))
+        item.setMinimumHeight(round(56 * theme.SCALE))
+        item.setObjectName(f"route_{route['origin']}_{route['destination']}")
+        inner = QHBoxLayout(item)
+        inner.setContentsMargins(14, 4, 14, 4)
+        when = date.fromisoformat(route["last"]) if route.get("last") else None
+        parts = [label(f"{route['origin']} → {route['destination']}", 17, bold=True),
+                 label(f"{route.get('times', 1)}번 이용" + (f" · 최근 {when.month}/{when.day}" if when else ""),
+                       14, muted=True)]
+        for part in parts:
+            part.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        inner.addWidget(parts[0], 1)
+        inner.addWidget(parts[1])
+        row.addWidget(item, 1)
+        remove = button("×", "outline", lambda checked=False, r=route: on_remove(r["origin"], r["destination"]))
+        side = 44 if theme.SCALE == 1 else 52
+        remove.setFixedSize(side, side)
+        remove.setStyleSheet("padding: 0;")
+        row.addWidget(remove)
+        column.addLayout(row)
+    if not routes:
+        hint = label("승차권을 살 때 '예 · 저장'을 고르면 여기에 모여요", 15, muted=True)
+        hint.setWordWrap(True)
+        column.addWidget(hint)
+    return card
+
+
 class TicketPanel(QStackedWidget):
     """승차권 탭의 가운데 칸. 화면 등록 없이 메뉴 화면 안에서 단계만 바꾼다."""
 
@@ -295,6 +336,8 @@ class TicketPanel(QStackedWidget):
         self.picked = []
         for field in (self.name_field, self.birth_field, self.number_field, self.dest_field):
             field.clear()
+        self.origin_field.setText(tickets.ORIGIN)
+        self.origin = tickets.ORIGIN
         self.go(self.home_page)
 
     def release_hold(self):
@@ -329,7 +372,8 @@ class TicketPanel(QStackedWidget):
         rules = box_frame()
         inner = QVBoxLayout(rules)
         inner.setContentsMargins(18, 14, 18, 14)
-        for text in (f"· 이 터미널({tickets.ORIGIN}) 출발 표만 · 출발 {tickets.SALES_CLOSE_MINUTES}분 전까지 판매·출력",
+        for text in (f"· 출발지는 이 터미널({tickets.ORIGIN})이 기본 · 다른 터미널 출발 표도 살 수 있어요",
+                     f"· 오늘부터 {tickets.DAYS_AHEAD}일 안의 표 · 출발 {tickets.SALES_CLOSE_MINUTES}분 전까지 판매·출력",
                      "· 할인(경로·보훈·군인·장애인)은 승차 때 증명서 확인",
                      "· 취소·환불은 터미널 매표소 · 승차권은 카페 쿠폰·포인트 할인 제외",
                      "· 시연용 시간표·좌석이에요 (실제 버스 회사와 연결되지 않음)"):
@@ -512,35 +556,37 @@ class TicketPanel(QStackedWidget):
         column.addLayout(step_bar(1))
         fields = QHBoxLayout()
         fields.setSpacing(14)
-        for title, field in (("출발지", text_field(text=f"{tickets.ORIGIN} (이 터미널)")),
-                             ("도착지", text_field("글자나 초성 (예: ㄷㅈ)"))):
+        self.origin_field = text_field("출발지", text=tickets.ORIGIN)
+        self.dest_field = text_field("글자나 초성 (예: ㄷㅈ)")
+        for title, field in (("출발지 (기본: 이 터미널)", self.origin_field), ("도착지", self.dest_field)):
             part = QVBoxLayout()
             part.addWidget(label(title, 14, bold=True, muted=True))
             part.addWidget(field)
             fields.addLayout(part, 1)
-            if title == "출발지":
-                field.setReadOnly(True)
-            else:
-                self.dest_field = field
-        self.dest_field.setMaxLength(8)
-        self.dest_field.textChanged.connect(self.update_candidates)
+            field.setMaxLength(8)
+            field.installEventFilter(self)          # 누른 칸의 후보를 아래에 보여 준다
+            field.textChanged.connect(lambda text, f=field: self.choose_field(f))
+        self.active_field = self.dest_field
         column.addLayout(fields)
+        self.candidate_title = label("", 14, bold=True, muted=True)
+        column.addWidget(self.candidate_title)
         self.candidates = QGridLayout()
         self.candidates.setSpacing(8)
         column.addLayout(self.candidates)
-        column.addWidget(label("날짜", 14, bold=True, muted=True))
-        days = QHBoxLayout()
+        column.addWidget(label(f"날짜 · 오늘부터 {tickets.DAYS_AHEAD}일", 14, bold=True, muted=True))
+        days = QGridLayout()
+        days.setSpacing(8)
         self.day_group = QButtonGroup(self)
         self.day_buttons = []
         for offset in range(tickets.DAYS_AHEAD):
             chip = button("", "pill")
             chip.setCheckable(True)
-            chip.setFont(theme.font(17, bold=True))
+            chip.setFont(theme.font(16, bold=True))
+            chip.setMinimumHeight(46)
             chip.setProperty("offset", offset)
             self.day_group.addButton(chip)
             self.day_buttons.append(chip)
-            days.addWidget(chip)
-        days.addStretch()
+            days.addWidget(chip, offset // 4, offset % 4)
         column.addLayout(days)
         actions = QHBoxLayout()
         actions.addWidget(button("← 승차권", "outline", self.reset))
@@ -549,10 +595,20 @@ class TicketPanel(QStackedWidget):
         self.route_message = message_label()
         column.addWidget(self.route_message)
         self.route_keyboard = HangulKeyboard()
-        self.route_keyboard.attach(self.dest_field)
+        self.route_keyboard.attach(self.dest_field, self.origin_field)
         column.addWidget(self.route_keyboard)
         column.addStretch()
         return area
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.FocusIn and watched in (self.origin_field, self.dest_field):
+            self.choose_field(watched)
+        return False
+
+    def choose_field(self, field):
+        self.active_field = field
+        self.route_keyboard.target = field
+        self.update_candidates()
 
     def open_route(self):
         today = date.today()
@@ -561,34 +617,63 @@ class TicketPanel(QStackedWidget):
         if self.day_group.checkedButton() is None:
             self.day_buttons[0].setChecked(True)
         self.route_message.setText("")
-        self.update_candidates(self.dest_field.text())
+        self.choose_field(self.dest_field)
         self.go(self.route_page)
 
-    def update_candidates(self, text):
-        """입력한 글자·초성에 맞는 도착지 후보 (그림 카드 없이 글자 칩만)."""
+    def open_route_for(self, origin, destination):
+        """My Menu의 저장한 노선: 출발지·도착지를 채우고 오늘 시간표로 바로 간다."""
+        self.reset()
+        self.origin_field.setText(origin)
+        self.dest_field.setText(destination)
+        self.day_buttons[0].setChecked(True)
+        self.open_route()
+        self.search()
+
+    def update_candidates(self, *_):
+        """누른 칸(출발지·도착지)의 글자·초성에 맞는 터미널 후보 (그림 카드 없이 글자 칩만)."""
         clear(self.candidates)
-        names = tickets.search_destinations(text)[:8]
+        field = self.active_field
+        text = field.text().strip()
+        other = (self.dest_field if field is self.origin_field else self.origin_field).text().strip()
+        names = tickets.search_terminals(text, exclude=other)[:8]
+        self.candidate_title.setText("출발지 고르기" if field is self.origin_field else "도착지 고르기")
         columns = 4 if theme.SCALE == 1 else 3
         for index, name in enumerate(names):
-            chip = button(name, "pill", lambda checked=False, n=name: self.dest_field.setText(n))
+            chip = button(name, "pill", lambda checked=False, n=name, f=field: f.setText(n))
             chip.setCheckable(True)
             chip.setChecked(name == text)
             chip.setFont(theme.font(17, bold=True))
             chip.setMinimumHeight(46)
             self.candidates.addWidget(chip, index // columns, index % columns)
         if not names:
-            self.candidates.addWidget(label("맞는 도착지가 없어요 · 다시 입력해 주세요", 15, muted=True), 0, 0, 1, columns)
+            self.candidates.addWidget(label("맞는 터미널이 없어요 · 다시 입력해 주세요", 15, muted=True), 0, 0, 1, columns)
+
+    def picked_terminal(self, field, exclude=None):
+        """칸의 글자를 터미널 이름으로. 후보가 하나뿐이면 그것으로 채운다. 못 정하면 None."""
+        text = field.text().strip()
+        if text in tickets.TERMINAL_NAMES:
+            return text
+        names = tickets.search_terminals(text, exclude=exclude)
+        if text and len(names) == 1:
+            field.setText(names[0])
+            return names[0]
+        return None
 
     def search(self):
-        text = self.dest_field.text().strip()
-        names = tickets.search_destinations(text)
-        if text not in tickets.DESTINATION_NAMES:
-            if len(names) != 1 or not text:
-                self.route_message.setText("도착지를 입력하고 아래 목록에서 골라 주세요")
-                return
-            text = names[0]
-            self.dest_field.setText(text)
-        self.destination = text
+        origin = self.picked_terminal(self.origin_field)
+        if origin is None:
+            self.choose_field(self.origin_field)
+            self.route_message.setText("출발지를 입력하고 아래 목록에서 골라 주세요")
+            return
+        destination = self.picked_terminal(self.dest_field, exclude=origin)
+        if destination is None:
+            self.choose_field(self.dest_field)
+            self.route_message.setText("도착지를 입력하고 아래 목록에서 골라 주세요")
+            return
+        if origin == destination:
+            self.route_message.setText("출발지와 도착지가 같아요 · 다시 골라 주세요")
+            return
+        self.origin, self.destination = origin, destination
         checked = self.day_group.checkedButton()
         self.day = date.today() + timedelta(days=checked.property("offset") if checked else 0)
         self.show_timetable()
@@ -628,9 +713,11 @@ class TicketPanel(QStackedWidget):
         self.time_group = QButtonGroup(self)
         self.time_buttons = []
         today = date.today()
-        self.time_title.setText(f"{tickets.ORIGIN} → {self.destination} · {tickets.day_text(self.day, today)}"
-                                f"({tickets.WEEKDAYS[self.day.weekday()]})")
-        buses = self.office.timetable(self.destination, self.day)
+        when = tickets.day_text(self.day, today)
+        if "(" not in when:                         # '오늘 10/31' 같은 말에는 요일을 붙인다
+            when += f"({tickets.WEEKDAYS[self.day.weekday()]})"
+        self.time_title.setText(f"{self.origin} → {self.destination} · {when}")
+        buses = self.office.timetable(self.destination, self.day, origin=self.origin)
         for bus in buses:
             seats = {"ok": f"{bus['seats_left']} / {bus['seats_total']}", "sold_out": "매진",
                      "closed": "마감"}[bus["status"]]
@@ -850,6 +937,8 @@ class TicketPanel(QStackedWidget):
             self.summary_values[key] = value
         grid.setColumnStretch(1, 1)
         column.addWidget(summary)
+        self.save_box = self.make_save_question()       # 회원만: 이 노선을 My Menu에 저장할까요?
+        column.addWidget(self.save_box)
         self.hold_label = label("", 15, bold=True)
         self.hold_label.setStyleSheet(f"color: {theme.ACCENT};")
         column.addWidget(self.hold_label)
@@ -898,8 +987,53 @@ class TicketPanel(QStackedWidget):
             self.benefit_rows.addLayout(row)
         self.confirm_message.setText("")
         self.update_summary()
+        member = self.session.is_member()
+        self.save_box.setVisible(member)
+        if member:
+            saved = self.session.is_route_saved(self.bus["origin"], self.bus["destination"])
+            self.save_route = saved
+            self.save_buttons[saved].setChecked(True)
+            self.save_note.setText("이미 저장한 노선이에요 · 이용 횟수가 늘어나요" if saved
+                                   else "저장하면 My Menu에서 바로 시간표를 열 수 있어요")
         self.go(self.confirm_page)
         self.tick()
+
+    def make_save_question(self):
+        """'★ 이 노선을 My Menu에 저장할까요?' 예 / 아니요 (회원만 보인다)."""
+        box = box_frame()
+        column = QVBoxLayout(box)
+        column.setContentsMargins(16, 10, 16, 10)
+        column.setSpacing(6)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        question = label("★ 이 노선을 My Menu에 저장할까요?", 16, bold=True)
+        if theme.SCALE == 1:
+            row.addWidget(question)
+            row.addStretch()
+        else:                                     # 큰 글자는 질문 아래 줄에 예/아니요
+            column.addWidget(question)
+        group = QButtonGroup(self)
+        self.save_buttons = {}
+        for value, text in ((True, "예 · 저장"), (False, "아니요")):
+            chip = button(text, "pill", lambda checked=False, v=value: self.set_save_route(v))
+            chip.setCheckable(True)
+            chip.setFont(theme.font(16, bold=True))
+            chip.setMinimumHeight(44)
+            chip.setObjectName(f"save_route_{'yes' if value else 'no'}")
+            group.addButton(chip)
+            self.save_buttons[value] = chip
+            row.addWidget(chip)
+        if theme.SCALE > 1:
+            row.addStretch()
+        column.addLayout(row)
+        self.save_note = label("", 13, muted=True)
+        column.addWidget(self.save_note)
+        self.save_route = False
+        return box
+
+    def set_save_route(self, value):
+        self.save_route = value
+        self.save_buttons[value].setChecked(True)
 
     def set_benefit(self, index, name):
         self.passengers[index]["benefit"] = name
@@ -933,7 +1067,9 @@ class TicketPanel(QStackedWidget):
         except ValueError as error:
             self.show_seats(str(error))
             return
-        self.session.add_ticket(self.office.make_item(self.bus, self.passengers, self.hold_id))
+        item = self.office.make_item(self.bus, self.passengers, self.hold_id)
+        item["save_route"] = self.session.is_member() and self.save_route   # 결제가 끝나면 My Menu에 저장
+        self.session.add_ticket(item)
         self.hold_id = None              # 이제 장바구니가 들고 있다
         self.reset()
         then()

@@ -281,6 +281,22 @@ def states(window):
         panel.open_route()
         panel.dest_field.setText("대")
 
+    def ticket_other_origin():
+        panel = ticket_tab()
+        panel.open_route()
+        panel.origin_field.setText("대전복합")
+        panel.choose_field(panel.origin_field)
+        panel.day_buttons[5].setChecked(True)
+
+    def my_menu_routes():
+        customers = session.vault.read("customers")
+        customers[bomin["id"]]["extra"]["saved_routes"] = [
+            {"origin": "서울경부", "destination": "대전복합", "times": 12, "last": "2026-10-30"},
+            {"origin": "서울경부", "destination": "동대구", "times": 3, "last": "2026-10-21"},
+            {"origin": "대전복합", "destination": "서울경부", "times": 9, "last": "2026-10-29"}]
+        session.vault.write("customers", customers)
+        router.start_member_order(customers[bomin["id"]])
+
     def ticket_timetable(member=None):
         panel = ticket_tab(member)
         panel.open_route()
@@ -359,6 +375,8 @@ def states(window):
         ("T1-1 예매표 조회 오류", ticket_lookup_error),
         ("T1-2 예매표 출력됨", ticket_printed),
         ("T1-3 노선 입력", ticket_route),
+        ("T1-3 다른 출발지", ticket_other_origin),
+        ("03 My Menu 저장한 노선", my_menu_routes),
         ("T1-4 시간표", lambda: ticket_timetable(bomin)),
         ("T1-5 좌석 우등", ticket_seats("우등")),
         ("T1-5B 좌석 일반", ticket_seats("일반")),

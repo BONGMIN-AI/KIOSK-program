@@ -10,7 +10,7 @@ from domain.options import available_options, option_price
 from domain.orders import complete_order
 from domain.payment import insert_cash, payment_status
 from domain.policy import display_event, load_policy
-from domain.tickets import TicketOffice
+from domain.tickets import TicketOffice, forget_route, is_saved, saved_routes
 from domain.titles import count_stats, customer_lines, progress
 from core.schema import now_iso
 
@@ -186,6 +186,17 @@ class OrderSession:
 
     def ticket_seconds(self, ticket, now=None):
         return self.office.hold_seconds(ticket["hold_id"], now)
+
+    def saved_routes(self):
+        """회원이 저장한 노선 (My Menu). 비회원은 빈 목록."""
+        return saved_routes(self.customer)
+
+    def is_route_saved(self, origin, destination):
+        return is_saved(self.customer, origin, destination)
+
+    def forget_route(self, origin, destination):
+        forget_route(self.vault, self.customer["id"], origin, destination)
+        self.reload_customer()
 
     def expire_tickets(self, now=None):
         """좌석 잡아 둔 시간이 끝난 승차권을 장바구니에서 빼고, 뺀 것을 돌려준다."""

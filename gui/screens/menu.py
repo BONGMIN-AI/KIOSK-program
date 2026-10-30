@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, Q
 from gui import theme
 from gui.order import CATEGORY_ORDER, MY_MENU, TICKET
 from gui.screens.option import OptionPopup
-from gui.screens.ticket import BusIcon, TicketCartLine, TicketPanel
+from gui.screens.ticket import BusIcon, TicketCartLine, TicketPanel, saved_routes_card
 from gui.widgets import (Card, CategoryIcon, CupIcon, ElidedLabel, WeekBars, button, label, menu_icon,
                          menu_photo_path, trimmed_pixmap)
 CARD_MIN_WIDTH = 200     # 화면이 넓으면 한 줄에 카드를 더 놓는다 (최소 3칸)
@@ -306,10 +306,21 @@ class MenuScreen(QWidget):
         column.setSpacing(14)
         # Quick Order / 좋아요한 음료 / 카페인 리포트 — 세 구간을 각각 카드 블록으로 나눈다
         column.addWidget(self.make_quick_order())
+        if self.session.ticket_sales_on():       # 승차권을 살 때 저장한 노선 (회원)
+            column.addWidget(saved_routes_card(self.session, self.open_saved_route, self.forget_route))
         column.addWidget(self.make_likes_card())
         column.addWidget(self.make_caffeine_card())
         column.addStretch()
         return page
+
+    def open_saved_route(self, origin, destination):
+        self.show_category(TICKET)
+        self.ticket_panel.open_route_for(origin, destination)
+
+    def forget_route(self, origin, destination):
+        self.session.forget_route(origin, destination)
+        # 누른 버튼이 들어 있는 화면을 바꾸므로 클릭이 끝난 뒤에 다시 그린다
+        QTimer.singleShot(0, lambda: self.category == MY_MENU and self.grid_area.setWidget(self.make_my_menu()))
 
     def make_likes_card(self):
         card = Card()

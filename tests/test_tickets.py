@@ -400,3 +400,99 @@ def test_lookup_error_stays_on_lookup(window):
     panel.number_field.setText("99999999")
     panel.lookup()
     assert panel.page_name() == "lookup" and "조회된 예매가 없어요" in panel.lookup_message.text()
+
+
+# ---------------------------------------------------------------- 다른 출발지 · 7일 · 저장한 노선 (10/31)
+def test_other_origins_have_their_own_timetable():
+    office = TicketOffice(NOW)
+    buses = office.timetable("부산", TOMORROW, NOW, origin="대전복합")
+    assert buses and all(b["origin"] == "대전복합" and "|대전복합|부산|" in b["id"] for b in buses)
+    there, _, _, _, _ = tickets.route_info("대전복합", "부산")
+    back, _, _, _, _ = tickets.route_info("부산", "대전복합")
+    assert there == back and 10000 < there < tickets.route_info("서울경부", "부산")[0] + 10000
+    assert tickets.route_info("대전복합", "서울경부")[0] == 13700        # 서울 노선은 돌아오는 길도 같은 요금
+    with pytest.raises(ValueError, match="같아요"):
+        tickets.route_info("부산", "부산")
+    with pytest.raises(ValueError):
+        office.timetable("부산", TOMORROW, NOW, origin="평양")
+    bus = next(b for b in buses if b["status"] == "ok")
+    assert office.bus(bus["id"], NOW)["origin"] == "대전복합"
+
+
+def test_terminal_search_excludes_the_other_field_and_dates_cover_a_week():
+    assert "서울경부" in tickets.search_terminals("ㅅ")
+    assert "서울경부" not in tickets.search_terminals("ㅅ", exclude="서울경부")
+    assert tickets.search_destinations("ㅅ", origin="부산")[0] == "서울경부"
+    assert tickets.DAYS_AHEAD == 7
+    today = date(2026, 10, 31)
+    assert tickets.day_text(today, today) == "오늘 10/31"
+    assert tickets.day_text(date(2026, 11, 3), today) == "11/3(화)"
+
+
+def test_route_saved_only_when_member_says_yes(vault):
+    office = TicketOffice()
+    item = ticket_item(office)
+    item.pop("hold_id")
+    complete_order(vault, {}, item["total"], customer_id="C0002", tickets=[dict(item, save_route=False)])
+    assert tickets.saved_routes(vault.read("customers")["C0002"]) == []
+    complete_order(vault, {}, item["total"], customer_id="C0002", tickets=[dict(item, save_route=True)])
+    complete_order(vault, {}, item["total"], customer_id="C0002", tickets=[item])   # 이미 저장 -> 횟수만 +1
+    routes = tickets.saved_routes(vault.read("customers")["C0002"])
+    assert [(r["origin"], r["destination"], r["times"]) for r in routes] == [
+        (item["origin"], item["destination"], 2)]
+    tickets.forget_route(vault, "C0002", item["origin"], item["destination"])
+    assert tickets.saved_routes(vault.read("customers")["C0002"]) == []
+
+
+def test_route_page_lets_origin_change_and_shows_seven_days(window):
+    router, menu, panel = ticket_tab(window)
+    panel.buy_choice.click()
+    assert len(panel.day_buttons) == 7 and panel.day_buttons[0].text().startswith("오늘")
+    assert panel.origin_field.text() == "서울경부"
+    panel.choose_field(panel.origin_field)
+    panel.origin_field.clear()
+    for key in "ㄷㅐㅈㅓㄴㅂ":
+        panel.route_keyboard.type(key)
+    assert panel.origin_field.text() == "대전ㅂ"
+    panel.search()                                  # 후보가 '대전복합' 하나라 채워지고, 도착지가 비었다고 알린다
+    assert panel.origin_field.text() == "대전복합" and "도착지" in panel.route_message.text()
+    panel.dest_field.setText("부산")
+    panel.day_buttons[6].click()
+    panel.search()
+    assert panel.page_name() == "timetable" and panel.time_title.text().startswith("대전복합 → 부산")
+    panel.reset()
+    assert panel.origin_field.text() == "서울경부"
+
+
+def test_member_saves_route_and_opens_it_from_my_menu(window):
+    router = window.router
+    member = router.session.vault.read("customers")["C0002"]
+    router.start_member_order(member)
+    menu = router.screens["menu"]
+    menu.show_category("승차권")
+    panel = menu.ticket_panel
+    buy_to_confirm(panel)
+    assert panel.save_box.isVisibleTo(panel) and not panel.save_route
+    panel.save_buttons[True].click()
+    panel.pay_now_button.click()
+    router.screens["cart"].go_pay()
+    cash = router.screens["cash"]
+    cash.insert(50000)
+    cash.finish()
+    assert router.session.saved_routes()[0]["destination"] == "대전복합"
+    router.screens["done"].order_more()             # 회원 그대로 My Menu
+    assert menu.category == "My Menu"
+    route = menu.grid_area.widget().findChild(type(menu.check_button), "route_서울경부_대전복합")
+    assert route is not None
+    route.click()
+    assert menu.category == "승차권" and panel.page_name() == "timetable"
+    assert panel.time_title.text().startswith("서울경부 → 대전복합")
+    menu.show_category("My Menu")
+    menu.forget_route("서울경부", "대전복합")
+    assert router.session.saved_routes() == []
+
+
+def test_guest_is_not_asked_to_save_route(window):
+    router, menu, panel = ticket_tab(window)
+    buy_to_confirm(panel)
+    assert not panel.save_box.isVisibleTo(panel)

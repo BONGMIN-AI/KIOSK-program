@@ -8,6 +8,7 @@ from .cart import cart_lines
 from .customers import add_point_history
 from .payment import change_breakdown, payment_status
 from .policy import calculate_points, load_policy
+from .tickets import is_saved, remember_route
 from .titles import customer_lines, update_titles
 
 
@@ -24,6 +25,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     also_write({이름: 데이터})는 주문과 같은 묶음으로 함께 저장한다 (예: 키오스크의 투입 현금 기록을 0으로).
     tickets(승차권 탭에서 담은 승차권 묶음 목록)는 결제 금액에만 더하고 쿠폰·포인트·적립에서는 뺀다.
     이동 정보에 동의한 회원(extra["travel_consent"])이면 회원 카드 trips에 기록만 남긴다.
+    회원이 '저장'을 고른 노선(ticket["save_route"])이나 이미 저장한 노선은 My Menu용 saved_routes를 고친다.
     """
     now = now or datetime.now()
     tickets = tickets or []
@@ -94,6 +96,9 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
             extra.setdefault("trips", []).extend(
                 {"order_id": order_id, "origin": t["origin"], "destination": t["destination"],
                  "depart": t["depart"], "count": t["count"]} for t in tickets)
+        for ticket in tickets:
+            if ticket.get("save_route") or is_saved(customer, ticket["origin"], ticket["destination"]):
+                remember_route(customer, ticket["origin"], ticket["destination"], now.date().isoformat())
         history = customer_lines(orders, customer_id) + [lines]
         new_titles = update_titles(customer, history, menu)
         schema.touch(customer)

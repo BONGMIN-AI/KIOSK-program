@@ -9,6 +9,10 @@
 - 혜택(경로·보훈·군인·장애인)은 승객마다 하나. 승객 종류 할인과 겹치지 않고 더 싼 쪽을 쓴다.
 - 100원 아래는 버린다.
 - 승차권은 카페 쿠폰·포인트 할인과 적립에서 빠진다 (OrderSession·complete_order가 따로 더한다).
+
+출발지는 이 터미널(서울경부)이 기본이지만 다른 터미널도 고를 수 있다. 서울경부 노선은 아래 표 값,
+나머지 노선은 터미널 사이 거리로 요금·시간을 어림한 시연 값이다.
+회원이 '저장'을 고른 노선은 회원 카드 extra["saved_routes"]에 모여 My Menu에 보인다.
 """
 import random
 import zlib
@@ -18,7 +22,7 @@ ORIGIN = "서울경부"
 SALES_CLOSE_MINUTES = 10       # 출발 10분 전 판매·출력 마감
 HOLD_SECONDS = 5 * 60          # 고른 좌석을 잡아 두는 시간
 MAX_PASSENGERS = 6
-DAYS_AHEAD = 3                 # 오늘 · 내일 · 모레
+DAYS_AHEAD = 7                 # 오늘부터 7일
 WEEKDAYS = "월화수목금토일"
 GRADES = {"우등": 28, "일반": 45}
 COMPANIES = ["금호", "동양", "중앙", "천일"]
@@ -43,6 +47,35 @@ DESTINATIONS = [
     ("포항", 33500, 250, 60, 12),
 ]
 DESTINATION_NAMES = [row[0] for row in DESTINATIONS]
+TERMINAL_NAMES = [ORIGIN] + DESTINATION_NAMES
+# 서울경부를 (0, 0)으로 둔 대략의 위치 (동쪽 x, 북쪽 y, km). 서울경부가 아닌 노선의 요금·시간을 어림한다.
+POSITIONS = {
+    "서울경부": (0, 0), "천안": (10, -85), "대전복합": (25, -140), "대전청사": (20, -138),
+    "대전도룡": (22, -132), "청주": (45, -110), "세종": (10, -120), "공주": (-15, -125),
+    "전주": (-10, -195), "광주": (-60, -270), "동대구": (130, -210), "부산": (165, -290),
+    "진주": (85, -280), "포항": (205, -200),
+}
+ROAD_FACTOR = 1.3              # 직선거리 -> 도로 거리
+FARE_PER_KM = 75               # 우등 어른 요금 (원/km, 시연 값)
+
+
+def route_info(origin, destination):
+    """노선 (우등 어른 요금, 걸리는 분, 배차 간격 분, 승차장, 순번)."""
+    if origin not in TERMINAL_NAMES or destination not in TERMINAL_NAMES:
+        raise ValueError("터미널을 목록에서 골라 주세요")
+    if origin == destination:
+        raise ValueError("출발지와 도착지가 같아요")
+    if ORIGIN in (origin, destination):              # 서울경부 노선은 표 값 (돌아오는 길도 같은 값)
+        other = destination if origin == ORIGIN else origin
+        index = DESTINATION_NAMES.index(other)
+        _, base, minutes, every, platform = DESTINATIONS[index]
+        return base, minutes, every, platform, index
+    (x1, y1), (x2, y2) = POSITIONS[origin], POSITIONS[destination]
+    km = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5 * ROAD_FACTOR
+    base = max(4000, round(km * FARE_PER_KM / 100) * 100)
+    minutes = round((km / 85 * 60 + 15) / 5) * 5
+    index = zlib.crc32(f"{origin}|{destination}".encode("utf-8"))
+    return base, minutes, 60, index % 12 + 1, index
 
 
 def seat_rows(grade):
@@ -93,8 +126,11 @@ def depart_text(iso):
 
 
 def day_text(day, today):
-    word = {0: "오늘", 1: "내일", 2: "모레"}.get((day - today).days, "")
-    return f"{word} {day.month}/{day.day}".strip()
+    """날짜 칩 글자: '오늘 10/31' · '내일 11/1' · '모레 11/2' · '11/3(화)'"""
+    word = {0: "오늘", 1: "내일", 2: "모레"}.get((day - today).days)
+    if word:
+        return f"{word} {day.month}/{day.day}"
+    return f"{day.month}/{day.day}({WEEKDAYS[day.weekday()]})"
 
 
 def until_text(depart, now):
@@ -109,9 +145,49 @@ def until_text(depart, now):
     return f"{(depart.date() - now.date()).days}일 뒤"
 
 
-def search_destinations(query):
+def search_terminals(query, exclude=None):
+    """글자·초성으로 터미널 찾기. exclude(예: 이미 고른 출발지)는 빼고."""
     from .hangul import matches
-    return [name for name in DESTINATION_NAMES if matches(name, query)]
+    return [name for name in TERMINAL_NAMES if name != exclude and matches(name, query)]
+
+
+def search_destinations(query, origin=ORIGIN):
+    return search_terminals(query, exclude=origin)
+
+
+# 저장한 노선 (회원 My Menu)
+def saved_routes(customer):
+    """회원이 저장한 노선, 최근에 쓴 순."""
+    if not customer:
+        return []
+    routes = customer["extra"].get("saved_routes", [])
+    return sorted(routes, key=lambda r: r.get("last", ""), reverse=True)
+
+
+def is_saved(customer, origin, destination):
+    return any(r["origin"] == origin and r["destination"] == destination for r in saved_routes(customer))
+
+
+def remember_route(customer, origin, destination, when):
+    """노선을 저장하거나, 이미 있으면 이용 횟수·최근 날짜를 고친다 (회원 카드만 바꾼다)."""
+    routes = customer["extra"].setdefault("saved_routes", [])
+    for route in routes:
+        if route["origin"] == origin and route["destination"] == destination:
+            route["times"] = route.get("times", 0) + 1
+            route["last"] = when
+            return route
+    route = {"origin": origin, "destination": destination, "times": 1, "last": when}
+    routes.append(route)
+    return route
+
+
+def forget_route(vault, customer_id, origin, destination):
+    """저장한 노선을 지운다 (금고에 바로 저장)."""
+    customers = vault.read("customers", default={})
+    extra = customers[customer_id]["extra"]
+    extra["saved_routes"] = [r for r in extra.get("saved_routes", [])
+                             if not (r["origin"] == origin and r["destination"] == destination)]
+    vault.write("customers", customers)
 
 
 def ticket_summary(item):
@@ -132,18 +208,17 @@ class TicketOffice:
         self.seed_reservations(now)
 
     # 시간표
-    def buses_on(self, destination, day):
-        """그날 그 도착지로 가는 모든 차 (정적인 정보만)."""
-        index = DESTINATION_NAMES.index(destination)
-        _, base, minutes, every, platform = DESTINATIONS[index]
+    def buses_on(self, origin, destination, day):
+        """그날 그 노선의 모든 차 (정적인 정보만)."""
+        base, minutes, every, platform, index = route_info(origin, destination)
         first = datetime.combine(day, time(6, 0)) + timedelta(minutes=index * 5 % every)
         last = datetime.combine(day, time(22, 30))
         buses, depart, number = [], first, 0
         while depart <= last:
             grade = "우등" if number % 2 == 0 else "일반"
             buses.append({
-                "id": f"{day.isoformat()}|{destination}|{depart:%H:%M}",
-                "origin": ORIGIN, "destination": destination,
+                "id": f"{day.isoformat()}|{origin}|{destination}|{depart:%H:%M}",
+                "origin": origin, "destination": destination,
                 "depart": depart.isoformat(timespec="minutes"),
                 "arrive": (depart + timedelta(minutes=minutes)).isoformat(timespec="minutes"),
                 "grade": grade, "company": COMPANIES[(index + number) % len(COMPANIES)],
@@ -155,18 +230,20 @@ class TicketOffice:
         return buses
 
     def bus(self, bus_id, now=None):
-        day, destination, _ = bus_id.split("|")
-        for bus in self.buses_on(destination, date.fromisoformat(day)):
+        day, origin, destination, _ = bus_id.split("|")
+        for bus in self.buses_on(origin, destination, date.fromisoformat(day)):
             if bus["id"] == bus_id:
                 return self.with_status(bus, now or datetime.now())
         raise ValueError("없는 차편입니다")
 
-    def timetable(self, destination, day, now=None):
+    def timetable(self, destination, day, now=None, origin=ORIGIN):
         """고른 날짜의 아직 출발하지 않은 차. 마감(출발 10분 전)·매진도 흐리게 보여 주려고 넣는다."""
         now = now or datetime.now()
-        if destination not in DESTINATION_NAMES:
+        if destination not in TERMINAL_NAMES:
             raise ValueError("도착지를 목록에서 골라 주세요")
-        buses = [self.with_status(bus, now) for bus in self.buses_on(destination, day)]
+        if origin not in TERMINAL_NAMES:
+            raise ValueError("출발지를 목록에서 골라 주세요")
+        buses = [self.with_status(bus, now) for bus in self.buses_on(origin, destination, day)]
         return [bus for bus in buses if bus["status"] != "departed"]
 
     def with_status(self, bus, now):
@@ -259,7 +336,7 @@ class TicketOffice:
     # 예매표 출력
     def first_bus_after(self, destination, moment):
         for offset in range(DAYS_AHEAD + 1):
-            for bus in self.buses_on(destination, moment.date() + timedelta(days=offset)):
+            for bus in self.buses_on(ORIGIN, destination, moment.date() + timedelta(days=offset)):
                 if datetime.fromisoformat(bus["depart"]) >= moment:
                     return bus
         raise ValueError("차편이 없습니다")
