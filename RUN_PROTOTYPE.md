@@ -13,8 +13,9 @@
 - `setup.bat`는 이미 설치된 것은 `[있음]`으로 건너뛰고, 없는 것만 "다음을 설치하겠습니다"로 보여 준 뒤
   `[Press any key to proceed]`에서 아무 키나 누르면 설치한다.
 - `run_kiosk.bat`만 눌러도 준비가 안 되어 있으면 `setup.bat`를 알아서 먼저 실행한다(처음엔 몇 분).
-- 폴더 경로가 90자보다 길면 PySide6 설치가 `Long Path` 오류로 실패할 수 있다. 저장소를 `C:\kiosk-base-prototype`처럼
-  짧은 곳에 두거나, Windows `긴 경로 사용`(LongPathsEnabled)을 관리자 권한으로 켠다.
+- Python 가상환경은 저장소 폴더가 아니라 `%LOCALAPPDATA%\CoffeeSpoonKiosk\venv`
+  (예: `C:\Users\이름\AppData\Local\CoffeeSpoonKiosk\venv`)에 설치된다. 저장소가 깊은 폴더에 있어도
+  Windows 경로 길이 한도에 걸리지 않고, 관리자 권한도 필요 없다. 저장소를 여러 개 복사해 써도 한 번만 설치하면 된다.
 - 시연 모드 운영자 로그인: `admin` / `demo`. 끄기: `Ctrl+Shift+Q` 또는 창 닫기.
 - 실제 모드는 `data\` 금고가 없으면 관리자 비밀번호를 새로 정하는 단계부터 한다.
   USB 카메라를 쓰면 `run_kiosk_real.bat`를 메모장으로 열어 `KIOSK_CAMERA=0`의 `0`을 카메라 번호(팀장 노트북은 `2`)로 바꾼다.
@@ -23,7 +24,7 @@
 
 **VS Code에서**: 폴더를 연 뒤 왼쪽 `실행 및 디버그`(▷) → 위쪽 목록에서
 `1. 키오스크 시연 모드`를 고르고 **F5**. 실제 모드·전체 화면·데이터 초기화·자동검사도 같은 목록에 있다.
-(처음 한 번 `setup.bat`로 `.venv`를 만들어 둔다. VS Code가 Python 확장을 설치하라고 하면 설치한다.)
+(처음 한 번 `setup.bat`로 가상환경을 만들어 둔다. VS Code가 Python 확장을 설치하라고 하면 설치한다.)
 
 ---
 

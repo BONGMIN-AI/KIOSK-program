@@ -1,6 +1,7 @@
 @echo off
 rem COFFEE & SPOON KIOSK launcher with auto-restart.
-rem - Runs the GUI full screen from this project's .venv.
+rem - Runs the GUI full screen from the venv made by setup.bat (%LOCALAPPDATA%\CoffeeSpoonKiosk\venv),
+rem   or from this project's .venv if that one does not exist.
 rem - If the program stops unexpectedly (exit code not 0), it starts again after 3 seconds.
 rem - If staff ends it normally (KIOSK exit button or Ctrl+Shift+Q, exit code 0), it stays closed.
 rem - To start automatically when Windows boots: press Win+R, type  shell:startup , and put a
@@ -10,7 +11,8 @@ rem Add  --demo  after the file name to run with in-memory sample data, e.g.  ru
 chcp 65001 >nul
 cd /d "%~dp0.."
 if not exist logs mkdir logs
-set PYTHON=.venv\Scripts\python.exe
+set "PYTHON=%LOCALAPPDATA%\CoffeeSpoonKiosk\venv\Scripts\python.exe"
+if not exist "%PYTHON%" set "PYTHON=.venv\Scripts\python.exe"
 if not exist "%PYTHON%" set PYTHON=python
 
 :start
