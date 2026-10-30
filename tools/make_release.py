@@ -1,4 +1,4 @@
-"""배포용 실행 폴더를 만든다. 사용: python tools/make_release.py [만들 폴더]
+r"""배포용 실행 폴더를 만든다. 사용: python tools/make_release.py [만들 폴더]
 
 기본 위치는 팀장 PC의 작업 폴더 AI프로젝트\최신본_2026-10-19\07_배포_실행폴더\COFFEE_SPOON_KIOSK 이고,
 그 폴더가 없는 PC에서는 바탕화면의 COFFEE_SPOON_KIOSK 이다. 이 폴더를 그대로 압축해 나눠 주면
