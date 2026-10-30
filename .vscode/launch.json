@@ -1,0 +1,61 @@
+{
+    // VS Code 왼쪽 '실행 및 디버그'(▷ 모양) → 위쪽 목록에서 하나 고르고 F5.
+    // 처음 한 번은 저장소 폴더의 1_처음설치.bat 을 더블클릭해 Python 가상환경을 만들어 둔다.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "1. 키오스크 시연 모드 (샘플 데이터, 저장 안 됨)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "gui.main",
+            "args": ["--demo"],
+            "python": "${env:LOCALAPPDATA}/CoffeeSpoonKiosk/venv/Scripts/python.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "2. 키오스크 실제 모드 (금고·카메라)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "gui.main",
+            "python": "${env:LOCALAPPDATA}/CoffeeSpoonKiosk/venv/Scripts/python.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            // USB 카메라를 쓰면 "0"을 카메라 번호(예: "2")로 바꾼다.
+            "env": {"KIOSK_CAMERA": "0"},
+            "justMyCode": true
+        },
+        {
+            "name": "3. 키오스크 실제 모드 · 전체 화면 (끄기: Ctrl+Shift+Q)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "gui.main",
+            "args": ["--fullscreen"],
+            "python": "${env:LOCALAPPDATA}/CoffeeSpoonKiosk/venv/Scripts/python.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "env": {"KIOSK_CAMERA": "0"},
+            "justMyCode": true
+        },
+        {
+            "name": "4. 데이터 초기화 (관리자 비밀번호 새로 정하기)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/reset_data.py",
+            "python": "${env:LOCALAPPDATA}/CoffeeSpoonKiosk/venv/Scripts/python.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "5. 자동검사 (pytest)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["-q"],
+            "python": "${env:LOCALAPPDATA}/CoffeeSpoonKiosk/venv/Scripts/python.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        }
+    ]
+}
