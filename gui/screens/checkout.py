@@ -3,13 +3,18 @@
 플로차트: 05 → (회원) 06 쿠폰·포인트 → 07 현금 / (비회원) 07 현금
 07: 부족하면 추가 투입, 충분하면 거스름돈 계산 → 회원만 '잔돈을 포인트로' 체크 카드
 08: 회원은 [칭호] 닉네임 · 적립 포인트 · 잔돈 포인트 · 새 칭호, 비회원은 번호만
+승차권(승차권 탭)이 있으면 05에 승차권 줄, 08에 출력된 승차권과 '꼭 챙겨 주세요' 안내 (쿠폰·포인트는 음료에만)
 """
+
+from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from domain.payment import breakdown_text
+from domain.tickets import depart_text, ticket_summary, until_text
 from gui import theme
+from gui.screens.ticket import TicketCartLine, notice_label
 from gui.widgets import Card, button, label, menu_icon
 
 CASH_UNITS = (50000, 10000, 5000, 1000, 500, 100)
@@ -97,16 +102,24 @@ class CartScreen(QWidget):
         layout.addLayout(body, 1)
 
     def on_show(self):
+        if self.session.expire_tickets():
+            self.router.notify("좌석을 잡아 둔 5분이 지나 승차권을 장바구니에서 뺐어요 · 다시 골라 주세요", 6)
         clear(self.lines)
+        for ticket in self.session.tickets:
+            self.lines.addWidget(TicketCartLine(self.session, ticket, self.remove_ticket, big=True))
         lines = self.session.lines()
         for line in lines:
             self.lines.addWidget(self.make_line(line))
-        if not lines:
+        if self.session.is_empty():
             self.lines.addWidget(label("장바구니가 비어 있어요", 18, muted=True))
         self.lines.addStretch()
         self.count_value.setText(f"{self.session.count()}개")
         self.total_value.setText(theme.won(self.session.total()))
-        self.pay_button.setEnabled(bool(lines))
+        self.pay_button.setEnabled(not self.session.is_empty())
+
+    def remove_ticket(self, hold_id):
+        self.session.remove_ticket(hold_id)
+        self.on_show()
 
     def make_line(self, line):
         box = QFrame()
@@ -142,8 +155,8 @@ class CartScreen(QWidget):
         self.on_show()
 
     def go_pay(self):
-        # 회원은 06 쿠폰·포인트 화면을 거치고, 비회원은 바로 07 현금 결제
-        self.router.show_screen("benefit" if self.session.is_member() else "cash")
+        # 회원은 06 쿠폰·포인트 화면을 거치고, 비회원은 바로 07 현금 결제 (승차권만 있으면 06은 건너뜀)
+        self.router.show_screen("benefit" if self.session.is_member() and self.session.cart else "cash")
 
 
 class CashScreen(QWidget):
@@ -315,7 +328,7 @@ class CashScreen(QWidget):
 
     def back(self):
         amount = self.session.refund()
-        self.router.show_screen("benefit" if self.session.is_member() else "cart")
+        self.router.show_screen("benefit" if self.session.is_member() and self.session.cart else "cart")
         if amount:
             self.router.notify(f"넣은 현금 {theme.won(amount)}을 반환했어요")
 
@@ -348,12 +361,17 @@ class DoneScreen(QWidget):
         left.setContentsMargins(28, 28, 28, 28)
         left.setAlignment(Qt.AlignmentFlag.AlignCenter)
         left.addWidget(center(label("주문이 완료되었습니다", 26, title=True)))
-        left.addWidget(center(label("대기 번호", 18, muted=True)))
+        self.ticket_box = self.make_ticket_box()                    # 승차권을 산 주문만
+        self.ticket_box.hide()
+        left.addWidget(self.ticket_box)
+        self.number_title = center(label("대기 번호", 18, muted=True))
+        left.addWidget(self.number_title)
         self.number = center(label("", 110 if theme.SCALE == 1 else 84, bold=True))   # 큰 글자에서도 한 화면에
         left.addWidget(self.number)
         self.waiting = center(label("", 24, bold=True))
         left.addWidget(self.waiting)
-        left.addWidget(center(label("준비되면 번호로 불러 드릴게요.", 18, muted=True)))
+        self.ready_hint = center(label("준비되면 번호로 불러 드릴게요.", 18, muted=True))
+        left.addWidget(self.ready_hint)
         self.change_notice = center(label("", 20, bold=True))      # 거스름돈이 나왔을 때만
         self.change_notice.setStyleSheet(f"background: {theme.WARN_BG}; border-radius: 12px; padding: 10px;")
         left.addWidget(self.change_notice)
@@ -387,6 +405,30 @@ class DoneScreen(QWidget):
         self.seconds_left = 0
 
     ASK_SECONDS = 15
+
+    def make_ticket_box(self):
+        """T1-8: 나온 승차권 내용 + 바로 아래 '꼭 챙겨 주세요' 안내."""
+        box = QFrame()
+        box.setStyleSheet(f"QFrame {{ background: {theme.CARAMEL_LIGHT}; border-radius: 16px; }}")
+        column = QVBoxLayout(box)
+        column.setContentsMargins(18, 12, 18, 12)
+        column.setSpacing(6)
+        column.addWidget(center(label("승차권이 나왔어요", 22, bold=True)))
+        self.ticket_rows = QVBoxLayout()
+        self.ticket_rows.setSpacing(4)
+        column.addLayout(self.ticket_rows)
+        column.addWidget(notice_label())
+        return box
+
+    def show_tickets(self, order):
+        clear(self.ticket_rows)
+        for ticket in order.get("tickets", []):
+            seats = ", ".join(str(p["seat"]) for p in ticket["passengers"])
+            depart = datetime.fromisoformat(ticket["depart"])
+            # 자동 줄바꿈은 큰 글자에서 눌려서 줄을 직접 나눈다
+            lines = [f"{ticket['origin']} → {ticket['destination']} · {depart_text(ticket['depart'])} · {ticket['grade']}",
+                     f"좌석 {seats} · {ticket['platform']}번 승차장 · {until_text(depart, datetime.now())}"]
+            self.ticket_rows.addWidget(center(label("\n".join(lines), 16, bold=True)))
     # 디자인 템플릿의 Order Status. 매장 주문 화면과 아직 연결되지 않아 시간에 따라 넘어가는 시연용 표시다.
     ORDER_STEPS = (("주문 접수", 0), ("만드는 중", 3), ("마무리", 9), ("픽업 대기", 13))
 
@@ -413,6 +455,7 @@ class DoneScreen(QWidget):
             name.setAlignment(Qt.AlignmentFlag.AlignCenter)
             column.addWidget(dot)
             column.addWidget(name)
+            column.addStretch()                  # 칸이 길어져도 점은 위에 붙어 선과 같은 높이에
             row.addLayout(column)
             self.status_parts.append((dot, name))
         return row
@@ -466,6 +509,21 @@ class DoneScreen(QWidget):
             return
         number = int(order["id"][1:])
         self.number.setText(f"{number:03d}")
+        has_tickets, has_drinks = bool(order.get("tickets")), bool(order["lines"])
+        self.ticket_box.setVisible(has_tickets)
+        if has_tickets:
+            self.show_tickets(order)
+        # 승차권이 있으면 번호를 줄이고, 승차권만 샀으면 음료 대기 번호를 숨긴다
+        self.number.setFont(theme.font((64 if theme.SCALE == 1 else 48) if has_tickets
+                                       else (110 if theme.SCALE == 1 else 84), bold=True))
+        for widget in (self.number, self.waiting):
+            widget.setVisible(has_drinks)
+        self.number_title.setVisible(has_drinks and not (has_tickets and theme.SCALE > 1))
+        self.ready_hint.setVisible(has_drinks and not has_tickets)
+        show_status = has_drinks and not (has_tickets and theme.SCALE > 1)   # 큰 글자는 승차권 안내가 먼저
+        for part in self.status_parts:
+            for widget in (part if isinstance(part, tuple) else (part,)):
+                widget.setVisible(show_status)
         member = order.get("customer")
         if member:
             title = f"[{member['title']}] " if member.get("title") else ""
@@ -485,6 +543,17 @@ class DoneScreen(QWidget):
             row.addStretch()
             row.addWidget(label(theme.won(line["subtotal"]), 15, bold=True))
             self.receipt.addLayout(row)
+        for ticket in order.get("tickets", []):
+            row = QHBoxLayout()
+            row.addWidget(label(f"승차권 {ticket['origin']}→{ticket['destination']} × {ticket['count']}\n"
+                                f"  {ticket_summary(ticket)}", 15))
+            row.addStretch()
+            row.addWidget(label(theme.won(ticket["total"]), 15, bold=True))
+            self.receipt.addLayout(row)
+        if order.get("tickets"):
+            self.receipt.addWidget(label("  (승차권은 쿠폰·포인트 할인·적립 제외)", 13, muted=True))
+        if any(p["benefit"] != "없음" for t in order.get("tickets", []) for p in t["passengers"]):
+            self.receipt.addWidget(label("  할인 승차권은 승차 때 증명서 확인", 13, muted=True))
         self.receipt.addStretch()
         discount = order.get("coupon_discount", 0) + order.get("points_used", 0)
         rows = [("주문 금액", theme.won(order["total"]))]

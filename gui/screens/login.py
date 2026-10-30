@@ -282,7 +282,8 @@ class LoginScreen(QWidget):
             self.router.notify("회원 카드를 연결했어요.\n다음부터 카드를 대면 바로 얼굴 인증으로 넘어가요.", 6)
 
         self.router.wait_card(on_card, 15,
-                              on_timeout=lambda: self.message.setText("카드가 확인되지 않았어요. 다시 눌러 주세요"))
+                              on_timeout=lambda: self.message.setText("카드가 확인되지 않았어요. 다시 눌러 주세요"),
+                              owner=self)
 
     def customer_exists(self, login_id):
         return find_by_login_id(self.vault(), login_id) is not None

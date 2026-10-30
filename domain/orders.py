@@ -14,7 +14,7 @@ from .titles import customer_lines, update_titles
 def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
                    coupon_id: str | None = None, use_points: int = 0,
                    now: datetime | None = None, change_to_points: bool = False,
-                   also_write: dict | None = None) -> dict:
+                   also_write: dict | None = None, tickets: list | None = None) -> dict:
     """현금이 충분할 때만 주문·재고·회원 카드를 한 번에 저장한다.
 
     현금이 부족하면 ValueError를 내고 아무것도 바꾸지 않는다.
@@ -22,9 +22,12 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     change_to_points=True이면(회원만) 거스름돈을 현금 대신 포인트로 적립한다(서브 기능 C1).
     주문이 끝나면 칭호 달성도 검사한다(서브 기능 A1).
     also_write({이름: 데이터})는 주문과 같은 묶음으로 함께 저장한다 (예: 키오스크의 투입 현금 기록을 0으로).
+    tickets(승차권 탭에서 담은 승차권 묶음 목록)는 결제 금액에만 더하고 쿠폰·포인트·적립에서는 뺀다.
+    이동 정보에 동의한 회원(extra["travel_consent"])이면 회원 카드 trips에 기록만 남긴다.
     """
     now = now or datetime.now()
-    if not cart:
+    tickets = tickets or []
+    if not cart and not tickets:
         raise ValueError("장바구니가 비어 있습니다")
     menu = vault.read("menu", default={})
     lines = cart_lines(cart, menu)
@@ -41,7 +44,8 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     benefit = apply_benefits(total, customer, coupon_id, use_points,
                              now.date().isoformat(), policy)
 
-    payment = payment_status(benefit["final_total"], cash)
+    ticket_total = sum(ticket["total"] for ticket in tickets)
+    payment = payment_status(benefit["final_total"] + ticket_total, cash)
     if not payment["paid"]:
         raise ValueError(f"현금이 {payment['shortage']:,}원 부족합니다")
 
@@ -86,6 +90,10 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
             coupons.append(new_coupon)
             issued_coupon = new_coupon["name"]
         extra["coupons"] = coupons
+        if tickets and extra.get("travel_consent"):
+            extra.setdefault("trips", []).extend(
+                {"order_id": order_id, "origin": t["origin"], "destination": t["destination"],
+                 "depart": t["depart"], "count": t["count"]} for t in tickets)
         history = customer_lines(orders, customer_id) + [lines]
         new_titles = update_titles(customer, history, menu)
         schema.touch(customer)
@@ -102,11 +110,13 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     order = {
         "id": order_id,
         "lines": lines,
-        "total": total,
+        "total": total + ticket_total,
         "coupon_name": benefit["coupon"]["name"] if benefit["coupon"] else None,
         "coupon_discount": benefit["coupon_discount"],
         "points_used": benefit["points_used"],
-        "final_total": benefit["final_total"],
+        "final_total": benefit["final_total"] + ticket_total,
+        "tickets": tickets,
+        "ticket_total": ticket_total,
         "cash": cash,
         "change": cash_change,
         "change_breakdown": change_breakdown(cash_change),

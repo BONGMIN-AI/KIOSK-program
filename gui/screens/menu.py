@@ -2,17 +2,19 @@
 
 회원이면 위에 회원 카드 줄([칭호] 닉네임 · 포인트 · 쿠폰 · 방문)이 나오고, 첫 탭이 My Menu다.
 My Menu = Quick Order(평소 주문, '바로 주문 ▶'은 장바구니를 건너뛰고 06 쿠폰·포인트로) · ♥ 좋아요 · 카페인 리포트.
+승차권 탭(T1)은 My Menu 다음에 있고, 가운데 칸만 승차권 화면(gui/screens/ticket.py)으로 바뀐다.
 """
 
 from datetime import date
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QSizePolicy,
-                               QScrollArea, QVBoxLayout, QWidget)
+                               QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from gui import theme
-from gui.order import CATEGORY_ORDER, MY_MENU
+from gui.order import CATEGORY_ORDER, MY_MENU, TICKET
 from gui.screens.option import OptionPopup
+from gui.screens.ticket import BusIcon, TicketCartLine, TicketPanel
 from gui.widgets import (Card, CategoryIcon, CupIcon, ElidedLabel, WeekBars, button, label, menu_icon,
                          menu_photo_path, trimmed_pixmap)
 CARD_MIN_WIDTH = 200     # 화면이 넓으면 한 줄에 카드를 더 놓는다 (최소 3칸)
@@ -109,11 +111,21 @@ class MenuScreen(QWidget):
         self.grid_area = QScrollArea()
         self.grid_area.setWidgetResizable(True)
         self.grid_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        middle.addWidget(self.grid_area, 1)
+        self.ticket_panel = TicketPanel(self.session, on_drinks=lambda: self.show_category(CATEGORY_ORDER[0]),
+                                        on_pay=lambda: self.router.show_screen("cart"))
+        self.middle_stack = QStackedWidget()      # 메뉴 카드 칸 | 승차권 탭 화면
+        self.middle_stack.addWidget(self.grid_area)
+        self.middle_stack.addWidget(self.ticket_panel)
+        middle.addWidget(self.middle_stack, 1)
         layout.addLayout(middle, 1)
         layout.addWidget(self.make_cart_panel())
         self.popup = OptionPopup(self, self.session, on_added=self.after_popup)
         self.popup.hide()
+        self.ticket_lines = []
+        self.ticket_clock = QTimer(self)          # 장바구니 승차권 줄의 좌석 유지 시간
+        self.ticket_clock.setInterval(1000)
+        self.ticket_clock.timeout.connect(self.tick_tickets)
+        self.ticket_clock.start()
 
     # 왼쪽 카테고리 줄
     def make_sidebar(self):
@@ -133,15 +145,16 @@ class MenuScreen(QWidget):
         column.addWidget(brand)
         column.addSpacing(4)
         self.category_buttons = QButtonGroup(self)
-        for name in [MY_MENU] + CATEGORY_ORDER:
+        for name in [MY_MENU, TICKET] + CATEGORY_ORDER:
             item = button("", "category", lambda checked=False, name=name: self.show_category(name))
             item.setCheckable(True)
-            item.setFixedHeight(70)
+            item.setFixedHeight(64)             # 승차권 탭이 늘어 회원 8칸이 큰 글자에서도 한 화면에
             inside = QVBoxLayout(item)          # 아이콘은 크게, 이름은 작게 두 줄로
             inside.setContentsMargins(0, 6, 0, 6)
             inside.setSpacing(0)
             if theme.SCALE == 1:                # 큰 글자에서는 이름만 크게 (칸 높이는 그대로)
-                inside.addWidget(CategoryIcon(name, 30), alignment=Qt.AlignmentFlag.AlignCenter)
+                icon = BusIcon(name, 30) if name == TICKET else CategoryIcon(name, 30)
+                inside.addWidget(icon, alignment=Qt.AlignmentFlag.AlignCenter)
             part = label(name, 15, bold=True)
             part.setAlignment(Qt.AlignmentFlag.AlignCenter)
             part.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -232,10 +245,13 @@ class MenuScreen(QWidget):
         self.popup.hide()
         self.update_banner()
         self.update_top_bar()
+        self.ticket_panel.reset()
         member = self.session.is_member()
         for item in self.category_buttons.buttons():
             if item.objectName() == f"category_{MY_MENU}":
                 item.setVisible(member)
+            if item.objectName() == f"category_{TICKET}":
+                item.setVisible(self.session.ticket_sales_on())
         # 회원은 My Menu가 먼저, 비회원은 커피 탭부터 (플로차트)
         self.show_category(MY_MENU if member else CATEGORY_ORDER[0])
 
@@ -243,6 +259,10 @@ class MenuScreen(QWidget):
         self.category = name
         for item in self.category_buttons.buttons():
             item.setChecked(item.objectName() == f"category_{name}")
+        self.middle_stack.setCurrentWidget(self.ticket_panel if name == TICKET else self.grid_area)
+        if name == TICKET:
+            self.refresh()
+            return
         if name == MY_MENU:
             self.grid_area.setWidget(self.make_my_menu())
             self.refresh()
@@ -370,15 +390,34 @@ class MenuScreen(QWidget):
             widget = self.cart_list.takeAt(0).widget()
             if widget is not None:
                 widget.setParent(None)   # 바로 화면에서 떼어 낸다
+        self.ticket_lines = [TicketCartLine(self.session, ticket, self.remove_ticket)
+                             for ticket in self.session.tickets]
+        for line in self.ticket_lines:            # 승차권 줄이 먼저, 음료 줄은 아래 (와이어프레임 T1-7)
+            self.cart_list.addWidget(line)
         lines = self.session.lines()
         for line in lines:
             self.cart_list.addWidget(self.make_cart_line(line))
-        if not lines:
+        if self.session.is_empty():
             empty = label("메뉴를 고르면 여기에 담겨요", 15, muted=True)
             self.cart_list.addWidget(empty)
         self.cart_title.setText(f"장바구니 · {self.session.count()}개")
         self.total_label.setText(theme.won(self.session.total()))
-        self.check_button.setEnabled(bool(lines))
+        self.check_button.setEnabled(not self.session.is_empty())
+
+    def remove_ticket(self, hold_id):
+        self.session.remove_ticket(hold_id)
+        self.refresh()
+
+    def tick_tickets(self):
+        """좌석 유지 시간을 줄이고, 다 지난 승차권은 장바구니에서 빼고 알린다."""
+        if not self.isVisible() or not self.session.tickets:
+            return
+        if self.session.expire_tickets():
+            self.router.notify("좌석을 잡아 둔 5분이 지나 승차권을 장바구니에서 뺐어요 · 다시 골라 주세요", 6)
+            self.refresh()
+            return
+        for line in self.ticket_lines:
+            line.update_time()
 
     def make_cart_line(self, line):
         box = QFrame()

@@ -223,3 +223,20 @@ def test_number_keys_still_type_on_login(window, app):
         QTest.keyClick(handle, key, Qt.KeyboardModifier.NoModifier)
     app.processEvents()
     assert login.login_id.text() == "kb0608"
+
+
+def test_card_wait_is_cancelled_by_leaving_or_rebuilding(window, app):
+    """10/30: 카드 연결을 기다리는 중 큰 글자로 바꾸면 지워진 화면에 글을 써서 오류가 났다."""
+    router = window.router
+    member = first_member(router)
+    router.open_action("member")
+    login = router.screens["login"]
+    login.set_mode("password")
+    login.login_id.setText(member["extra"]["login_id"])
+    login.password.setText("1234")
+    login.password_then_card()
+    router.set_display(large=True)                    # 화면을 새로 만든다 (옛 로그인 화면은 지워짐)
+    assert router.current_name == "login"
+    router.show_screen("menu")                        # 로그인 화면을 떠나면 기다리기도 끝
+    assert router.card_wait is None
+    app.processEvents()
