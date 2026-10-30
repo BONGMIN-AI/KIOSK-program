@@ -21,7 +21,8 @@
   USB 카메라를 쓰면 `run_kiosk_real.bat`를 메모장으로 열어 `KIOSK_CAMERA=0`의 `0`을 카메라 번호(팀장 노트북은 `2`)로 바꾼다.
 - 얼굴 로그인용 ArcFace 모델이 없으면 `setup.bat`가 받을지 물어본다(시연 모드에는 필요 없음).
 - 매장처럼 전체 화면 + 멈추면 자동 재시작: `tools\run_kiosk.bat`.
-- 배포용 실행 폴더 만들기: `python tools\make_release.py` → 바탕화면에 `COFFEE_SPOON_KIOSK` 폴더가 생긴다
+- 배포용 실행 폴더 만들기: `python tools\make_release.py` → `AI프로젝트\최신본_2026-10-19\07_배포_실행폴더\COFFEE_SPOON_KIOSK`
+  (그 폴더가 없는 PC는 바탕화면)에 생긴다
   (실행에 필요한 파일만, 테스트·문서·`data\` 제외). 다시 실행하면 코드만 새로 바꾸고 그 폴더의 `data\`·`logs\`는 그대로 둔다.
 
 **VS Code에서**: 폴더를 연 뒤 왼쪽 `실행 및 디버그`(▷) → 위쪽 목록에서
