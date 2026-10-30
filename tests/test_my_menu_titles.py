@@ -121,7 +121,7 @@ class MyMenuTest(unittest.TestCase):
         self.assertEqual(report["total"], 300)
         self.assertEqual(report["last_week_total"], 150)
         self.assertEqual(report["change_percent"], 100)
-        self.assertEqual(report["message"], "이번 주는 매일 카페인을 드셨네요")
+        self.assertEqual(report["message"], "월요일에 가장 많은 카페인을 섭취했어요!")
         self.assertTrue(report["suggest_decaf"])
 
 

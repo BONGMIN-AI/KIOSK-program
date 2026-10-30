@@ -2,6 +2,7 @@
 
 회원이면 오른쪽 위 ♡ 좋아요 토글(My Menu 좋아요 목록)이 있고,
 회원 알레르기와 겹치는 메뉴를 담으려 하면 04-A 알레르기 경고(취소 · 다른 메뉴 / 그래도 담기)를 먼저 보여 준다.
+카페인 알리미 제한을 넘으면 '그래도 담을까요?'(아니요 / 예, 담기)를 묻는다.
 비회원은 메뉴의 알레르기 성분 표시만 본다.
 """
 
@@ -136,7 +137,7 @@ class OptionPopup(QWidget):
         self.body.addWidget(self.actions)
 
     def make_warning(self):
-        """04-A 알레르기 경고. 처음에는 숨겨 둔다."""
+        """04-A 알레르기 경고 · 카페인 알리미 질문 (같은 상자를 같이 쓴다). 처음에는 숨겨 둔다."""
         box = QWidget()
         box.setObjectName("allergy_warning")
         box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -144,17 +145,29 @@ class OptionPopup(QWidget):
         box.setStyleSheet(f"QWidget#allergy_warning {{ background: {theme.WARN_BG}; border-radius: 16px; }}")
         column = QVBoxLayout(box)
         column.setContentsMargins(18, 14, 18, 14)
-        column.addWidget(label("!  알레르기 주의", 24, bold=True))
+        self.warning_title = label("", 24, bold=True)
+        column.addWidget(self.warning_title)
         self.warning_text = label("", 17)
         self.warning_text.setWordWrap(True)
         column.addWidget(self.warning_text)
         row = QHBoxLayout()
-        row.addWidget(button("취소 · 다른 메뉴", "outline", self.hide))
-        self.confirm_button = button("그래도 담기", "primary", lambda: self.add_to_cart(confirmed=True))
+        self.warning_cancel = button("", "outline", self.hide)
+        row.addWidget(self.warning_cancel)
+        self.confirm_button = button("", "primary", lambda: self.warning_action())
         row.addWidget(self.confirm_button, 1)
         column.addLayout(row)
         box.hide()
         return box
+
+    def ask(self, title, text, cancel, confirm, action):
+        """담기 전에 한 번 묻는다. 아니요 = 팝업 닫기, 예 = action()."""
+        self.warning_title.setText(title)
+        self.warning_text.setText(text)
+        self.warning_cancel.setText(cancel)
+        self.confirm_button.setText(confirm)
+        self.warning_action = action
+        self.warning.show()
+        self.actions.hide()
 
     def option_row(self, title, choices, exclusive):
         group = QButtonGroup(self)
@@ -212,16 +225,22 @@ class OptionPopup(QWidget):
         self.like_button.setText("♥ 좋아요" if liked else "♡ 좋아요")
         self.like_button.setChecked(liked)
 
-    def add_to_cart(self, confirmed=False):
+    def add_to_cart(self, confirmed=False, caffeine_ok=False):
         found = self.session.allergy_warning(self.menu_id)
         if found and not confirmed:
-            self.warning_text.setText(f"{self.item['name']}에 {', '.join(found)}이(가) 들어 있어요.\n"
-                                      f"회원 카드에 등록된 알레르기: {', '.join(found)}")
-            self.warning.show()
-            self.actions.hide()
+            self.ask("!  알레르기 주의",
+                     f"{self.item['name']}에 {', '.join(found)}이(가) 들어 있어요.\n"
+                     f"회원 카드에 등록된 알레르기: {', '.join(found)}",
+                     "취소 · 다른 메뉴", "그래도 담기", lambda: self.add_to_cart(confirmed=True))
+            return
+        line = {"menu_id": self.menu_id, "options": self.chosen_options(), "quantity": self.quantity}
+        note = None if caffeine_ok else self.session.caffeine_warning([line])
+        if note:                                 # 카페인 알리미 (10/31): 예 = 담기, 아니요 = 나가기
+            self.ask("카페인 알리미", note + "\n그래도 담을까요?", "아니요", "예, 담기",
+                     lambda: self.add_to_cart(confirmed=True, caffeine_ok=True))
             return
         try:
-            self.session.add(self.menu_id, self.chosen_options(), self.quantity)
+            self.session.add(self.menu_id, line["options"], self.quantity)
         except ValueError as error:
             self.message.setText(str(error))
             return

@@ -564,28 +564,99 @@ class TouchKeyboard(QWidget):
             self.target.backspace()
 
 
-class WeekBars(QWidget):
-    """카페인 리포트의 요일별 막대 그래프 (오늘은 카라멜색)."""
+class TrendBars(QWidget):
+    """카페인 막대 그래프 (이번 주 요일별 · 주별 · 월별). 지금 칸은 카라멜색, 칸이 넓으면 위에 mg.
 
-    def __init__(self, values, today_index, parent=None):
+    limit: 주별 그래프에 그을 '주 제한' 점선(mg). 누르면 on_click() — 다음 보기로 넘긴다.
+    """
+
+    def __init__(self, labels, values, current, limit=None, on_click=None, parent=None):
         super().__init__(parent)
-        self.values = values
-        self.today_index = today_index
-        self.setFixedSize(240, 120)
+        self.labels, self.values, self.current = labels, values, current
+        self.limit = limit
+        self.on_click = on_click
+        self.setMinimumSize(240, 130)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(130)
+        if on_click:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        if self.on_click:
+            self.on_click()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        top = max(max(self.values), 1)
-        painter.setFont(theme.font(12))
-        for index, (day, value) in enumerate(zip("월화수목금토일", self.values)):
-            x = 8 + index * 33
-            height = 0 if value == 0 else max(6, value / top * 80)
+        top = max(max(self.values), self.limit or 0, 1)
+        slot = self.width() / len(self.values)
+        bar = min(34, slot * 0.6)
+        floor, room = 102, 80
+        for index, (name, value) in enumerate(zip(self.labels, self.values)):
+            x = index * slot + (slot - bar) / 2
+            height = 0 if value == 0 else max(6, value / top * room)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(theme.CARAMEL if index == self.today_index else "#D9BFA3"))
-            painter.drawRoundedRect(QRectF(x, 92 - height, 22, height), 6, 6)
+            painter.setBrush(QColor(theme.CARAMEL if index == self.current else "#D9BFA3"))
+            painter.drawRoundedRect(QRectF(x, floor - height, bar, height), 6, 6)
             painter.setPen(QColor(theme.TEXT2))
-            painter.drawText(QRectF(x - 4, 96, 30, 20), Qt.AlignmentFlag.AlignCenter, day)
+            painter.setFont(theme.font(12))
+            painter.drawText(QRectF(index * slot, floor + 4, slot, 20), Qt.AlignmentFlag.AlignCenter, name)
+            if value and slot >= 44:
+                painter.setFont(theme.font(10))
+                painter.drawText(QRectF(index * slot, floor - height - 18, slot, 16),
+                                 Qt.AlignmentFlag.AlignCenter, f"{value:,}")
+        if self.limit:
+            y = floor - self.limit / top * room
+            painter.setPen(QPen(QColor(theme.ACCENT), 1.5, Qt.PenStyle.DashLine))
+            painter.drawLine(QPointF(0, y), QPointF(self.width(), y))
+
+
+class ConfirmBox(QWidget):
+    """화면 위에 덮어 한 번 묻는 상자 (아니요 / 예). 예를 누르면 on_yes()."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.on_yes = None
+        outer = QVBoxLayout(self)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card = Card()
+        card.setFixedWidth(560)
+        outer.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
+        column = QVBoxLayout(card)
+        column.setContentsMargins(28, 24, 28, 24)
+        column.setSpacing(12)
+        self.title = label("", 24, bold=True)
+        column.addWidget(self.title)
+        self.text = label("", 17)
+        self.text.setWordWrap(True)
+        column.addWidget(self.text)
+        row = QHBoxLayout()
+        self.no_button = button("아니요", "outline", self.hide)
+        row.addWidget(self.no_button)
+        self.yes_button = button("예", "primary", self.yes)
+        row.addWidget(self.yes_button, 1)
+        column.addLayout(row)
+        self.hide()
+
+    def ask(self, title, text, yes_text, on_yes):
+        self.title.setText(title)
+        self.text.setText(text)
+        self.yes_button.setText(yes_text)
+        self.on_yes = on_yes
+        self.setGeometry(self.parentWidget().rect())
+        self.show()
+        self.raise_()
+
+    def yes(self):
+        self.hide()
+        if self.on_yes:
+            self.on_yes()
+
+    def paintEvent(self, event):
+        QPainter(self).fillRect(self.rect(), QColor(40, 20, 5, 110))   # 뒤 화면을 어둡게
+
+    def mousePressEvent(self, event):
+        event.accept()
 
 
 class PromoBanner(QWidget):

@@ -260,6 +260,22 @@ def states(window):
         session.set_benefit(None, 3000)
         router.show_screen("cash")
 
+    # 카페인 알리미 (10/31)
+    def caffeine_limit(view="주별", ask=None):
+        def run():
+            filled_member()
+            menu = router.screens["menu"]
+            menu.change_limit(unit="잔")
+            menu.change_limit(step=-1)
+            menu.set_caffeine_view(view)
+            if ask == "popup":
+                menu.show_category("커피")
+                menu.popup.open_for("M001")
+                menu.popup.add_to_cart()
+            elif ask == "reorder":
+                menu.reorder(session.recent()["lines"])
+        return run
+
     # 인기 탭 (10/31)
     def popular(sort, member=None):
         def run():
@@ -391,6 +407,10 @@ def states(window):
         ("03 비회원 장바구니 많음", big_cart),
         ("03 My Menu 빈 회원", member_menu(member2)),
         ("03 My Menu 채운 회원", filled_member),
+        ("03 카페인 알리미 주별", caffeine_limit()),
+        ("03 카페인 월별", caffeine_limit("월별")),
+        ("04 카페인 알리미 질문", caffeine_limit(ask="popup")),
+        ("03 카페인 알리미 다시 담기 질문", caffeine_limit(ask="reorder")),
         ("03 인기 좋아요순 비회원", popular("좋아요순")),
         ("03 인기 판매순 회원", popular("판매순", bomin)),
         ("03 인기 계절 인기순 회원", popular("계절 인기순", bomin)),

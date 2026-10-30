@@ -6,7 +6,9 @@ from domain.benefits import apply_benefits, coupons_of, max_usable_points
 from domain.cart import add_item, cart_lines, change_quantity
 from domain.customers import allergy_warnings
 from domain.popular import ranking
-from domain.my_menu import caffeine_report, likes_of, recent_order, toggle_like, usual_order
+from domain.my_menu import (caffeine_limit, caffeine_report, caffeine_trend, likes_of, limit_warning,
+                            lines_caffeine, recent_order, set_caffeine_limit, toggle_like, usual_order,
+                            week_caffeine)
 from domain.options import available_options, option_price
 from domain.orders import complete_order
 from domain.payment import insert_cash, payment_status
@@ -156,6 +158,31 @@ class OrderSession:
 
     def caffeine(self, today=None):
         return caffeine_report(self.orders(), self.customer["id"], self.menu(), today or date.today())
+
+    def caffeine_trend(self, view):
+        """카페인 그래프 (이번 주 / 주별 / 월별)."""
+        return caffeine_trend(self.orders(), self.customer["id"], self.menu(), view)
+
+    # 카페인 알리미 (10/31)
+    def caffeine_limit(self):
+        return caffeine_limit(self.customer) if self.is_member() else None
+
+    def set_caffeine_limit(self, unit, amount=0):
+        set_caffeine_limit(self.vault, self.customer["id"], unit, amount)
+        self.reload_customer()
+
+    def caffeine_used(self):
+        """이번 주 마신 양 + 지금 장바구니에 담긴 양 {'mg', '잔'}."""
+        used = week_caffeine(self.orders(), self.customer["id"], self.menu())
+        cart = lines_caffeine(self.lines(), self.menu())
+        return {unit: used[unit] + cart[unit] for unit in used}
+
+    def caffeine_warning(self, lines):
+        """lines를 담으면 알리미 제한을 넘는지. 넘으면 손님에게 물을 문구, 아니면 None."""
+        limit = self.caffeine_limit()
+        if not limit:
+            return None
+        return limit_warning(limit, self.caffeine_used(), lines_caffeine(lines, self.menu()))
 
     def title_progress(self):
         stats = count_stats(customer_lines(self.orders(), self.customer["id"]), self.menu())

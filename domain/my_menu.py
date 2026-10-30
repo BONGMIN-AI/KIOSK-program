@@ -90,24 +90,28 @@ def caffeine_of(item: dict, options: dict | None, quantity: int = 1) -> int:
     return round(amount) * quantity
 
 
-def daily_caffeine(orders: dict, customer_id: str, menu: dict, monday: date) -> list[int]:
-    """monday부터 7일 동안 날마다 마신 카페인(mg)."""
-    days = [0] * 7
+def caffeine_by_day(orders: dict, customer_id: str, menu: dict) -> dict:
+    """{날짜: 그날 마신 카페인(mg)} — 이 회원의 모든 주문."""
+    days = {}
     for order in orders.values():
         if (order.get("customer") or {}).get("id") != customer_id:
             continue
         day = datetime.fromisoformat(order["created_at"]).date()
-        index = (day - monday).days
-        if 0 <= index < 7:
-            for line in order["lines"]:
-                item = menu.get(line["menu_id"])
-                if item:
-                    days[index] += caffeine_of(item, line.get("options"), line["quantity"])
+        for line in order["lines"]:
+            item = menu.get(line["menu_id"])
+            if item:
+                days[day] = days.get(day, 0) + caffeine_of(item, line.get("options"), line["quantity"])
     return days
 
 
+def daily_caffeine(orders: dict, customer_id: str, menu: dict, monday: date) -> list[int]:
+    """monday부터 7일 동안 날마다 마신 카페인(mg)."""
+    days = caffeine_by_day(orders, customer_id, menu)
+    return [days.get(monday + timedelta(days=index), 0) for index in range(7)]
+
+
 def caffeine_report(orders: dict, customer_id: str, menu: dict, today: date | None = None) -> dict:
-    """이번 주(월~일) 요일별 카페인과 지난주 대비 변화, 화면에 쓸 한 줄 문구."""
+    """이번 주(월~일) 요일별 카페인과 가장 많이 마신 요일 한 줄 (10/31: 같은 말이 반복돼 줄였다)."""
     today = today or date.today()
     monday = today - timedelta(days=today.weekday())
     this_week = daily_caffeine(orders, customer_id, menu, monday)
@@ -117,15 +121,101 @@ def caffeine_report(orders: dict, customer_id: str, menu: dict, today: date | No
     days_so_far = this_week[: today.weekday() + 1]
     if total == 0:
         message = "이번 주 카페인 기록이 아직 없어요"
-    elif all(days_so_far):
-        message = "이번 주는 매일 카페인을 드셨네요"
-    elif change is not None and change > 0:
-        message = f"지난주보다 {change}% 더 드셨어요"
-    elif change is not None and change < 0:
-        message = f"지난주보다 {-change}% 덜 드셨어요"
     else:
-        message = f"이번 주 {total:,}mg 드셨어요"
-    # 오늘 이미 카페인을 마셨거나, 이번 주 매일 마셨으면 디카페인을 권한다
+        top = this_week.index(max(this_week))
+        message = f"{WEEKDAYS[top]}요일에 가장 많은 카페인을 섭취했어요!"
     suggest_decaf = bool(this_week[today.weekday()]) or (total > 0 and all(days_so_far))
     return {"days": WEEKDAYS, "this_week": this_week, "total": total, "last_week_total": last_total,
             "change_percent": change, "message": message, "suggest_decaf": suggest_decaf}
+
+
+TREND_VIEWS = ("이번 주", "주별", "월별")
+
+
+def caffeine_trend(orders: dict, customer_id: str, menu: dict, view: str, today: date | None = None) -> dict:
+    """그래프 한 장: {labels, values, current(강조할 칸)}. 주별은 최근 8주, 월별은 최근 6개월."""
+    today = today or date.today()
+    monday = today - timedelta(days=today.weekday())
+    days = caffeine_by_day(orders, customer_id, menu)
+    if view == "이번 주":
+        return {"labels": WEEKDAYS, "values": daily_caffeine(orders, customer_id, menu, monday),
+                "current": today.weekday()}
+    if view == "주별":
+        mondays = [monday - timedelta(weeks=back) for back in range(7, -1, -1)]
+        values = [sum(days.get(start + timedelta(days=i), 0) for i in range(7)) for start in mondays]
+        # 달이 바뀌는 칸에만 월을 붙인다 (9/7 14 21 28 10/5 …) — 좁은 화면에서 글자가 겹치지 않게
+        labels = [f"{start.month}/{start.day}" if index == 0 or start.month != mondays[index - 1].month
+                  else str(start.day) for index, start in enumerate(mondays)]
+        return {"labels": labels, "values": values, "current": 7}
+    if view == "월별":
+        months = []
+        year, month = today.year, today.month
+        for _ in range(6):
+            months.insert(0, (year, month))
+            year, month = (year, month - 1) if month > 1 else (year - 1, 12)
+        values = [sum(mg for day, mg in days.items() if (day.year, day.month) == key) for key in months]
+        return {"labels": [f"{month}월" for _, month in months], "values": values, "current": 5}
+    raise ValueError(f"없는 보기입니다: {view}")
+
+
+# ---------------------------------------------------------------- 카페인 알리미 (10/31)
+LIMIT_UNITS = ("잔", "mg")
+
+
+def caffeine_limit(customer: dict) -> dict | None:
+    """회원이 정한 이번 주 제한 {unit: '잔'|'mg', amount}. 없으면 None."""
+    return customer["extra"].get("caffeine_limit")
+
+
+def set_caffeine_limit(vault, customer_id: str, unit: str | None, amount: int = 0) -> None:
+    """제한을 저장한다. unit이 None이거나 amount가 0이면 알리미를 끈다."""
+    customers = vault.read("customers", default={})
+    if customer_id not in customers:
+        raise ValueError("회원을 찾을 수 없습니다")
+    record = customers[customer_id]
+    if unit is None or amount <= 0:
+        record["extra"].pop("caffeine_limit", None)
+    elif unit not in LIMIT_UNITS:
+        raise ValueError(f"없는 단위입니다: {unit}")
+    else:
+        record["extra"]["caffeine_limit"] = {"unit": unit, "amount": int(amount)}
+    schema.touch(record)
+    vault.write("customers", customers)
+
+
+def lines_caffeine(lines: list[dict], menu: dict) -> dict:
+    """주문 줄들의 카페인 {'mg': 합, '잔': 카페인이 든 잔 수}."""
+    used = {"mg": 0, "잔": 0}
+    for line in lines:
+        item = menu.get(line["menu_id"])
+        if not item:
+            continue
+        mg = caffeine_of(item, line.get("options"), line["quantity"])
+        used["mg"] += mg
+        used["잔"] += line["quantity"] if mg else 0
+    return used
+
+
+def week_caffeine(orders: dict, customer_id: str, menu: dict, today: date | None = None) -> dict:
+    """이번 주(월요일부터) 이미 마신 카페인 {'mg', '잔'}."""
+    today = today or date.today()
+    monday = today - timedelta(days=today.weekday())
+    lines = []
+    for order in orders.values():
+        if (order.get("customer") or {}).get("id") != customer_id:
+            continue
+        if monday <= datetime.fromisoformat(order["created_at"]).date() <= today:
+            lines.extend(order["lines"])
+    return lines_caffeine(lines, menu)
+
+
+def limit_warning(limit: dict | None, used: dict, adding: dict) -> str | None:
+    """담으면 제한을 넘을 때 손님에게 보여 줄 문구. 안 넘거나 카페인이 없으면 None."""
+    if not limit or adding["mg"] == 0:
+        return None
+    unit, amount = limit["unit"], limit["amount"]
+    after = used[unit] + adding[unit]
+    if after <= amount:
+        return None
+    return (f"이번 주 카페인 제한 {amount:,}{unit}을 넘어요.\n"
+            f"지금까지 {used[unit]:,}{unit} → 담으면 {after:,}{unit}")

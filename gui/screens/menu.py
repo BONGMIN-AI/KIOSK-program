@@ -1,22 +1,22 @@
 """03 메뉴: 왼쪽 카테고리 줄 + 메뉴 카드 + 오른쪽 장바구니. 04 옵션 팝업도 여기서 띄운다.
 
 회원이면 위에 회원 카드 줄([칭호] 닉네임 · 포인트 · 쿠폰 · 방문)이 나오고, 첫 탭이 My Menu다.
-My Menu = 최근 주문 보기(지난 주문을 통째로 다시 담아 장바구니로) · ♥ 좋아요 · 카페인 리포트.
+My Menu = 최근 주문 보기(지난 주문을 통째로 다시 담아 장바구니로) · ♥ 좋아요 · 카페인 리포트(그래프 · 알리미).
 승차권 탭(T1)은 My Menu 다음에 있고, 가운데 칸만 승차권 화면(gui/screens/ticket.py)으로 바뀐다.
 """
 
-from datetime import date
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QSizePolicy,
                                QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
+from domain.my_menu import LIMIT_UNITS, TREND_VIEWS
 from domain.popular import SORTS as POPULAR_SORTS
 from gui import theme
 from gui.order import CATEGORY_ORDER, MY_MENU, POPULAR, TICKET
 from gui.screens.option import OptionPopup
 from gui.screens.ticket import BusIcon, TicketCartLine, TicketPanel, saved_routes_card
-from gui.widgets import (Card, CategoryIcon, CupIcon, ElidedLabel, WeekBars, button, label, menu_icon,
+from gui.widgets import (Card, CategoryIcon, ConfirmBox, CupIcon, ElidedLabel, TrendBars, button, label, menu_icon,
                          menu_photo_path, trimmed_pixmap)
 CARD_MIN_WIDTH = 200     # 화면이 넓으면 한 줄에 카드를 더 놓는다 (최소 3칸)
 GRID_GAP = 14
@@ -138,6 +138,7 @@ class MenuScreen(QWidget):
         layout.addWidget(self.make_cart_panel())
         self.popup = OptionPopup(self, self.session, on_added=self.after_popup)
         self.popup.hide()
+        self.confirm_box = ConfirmBox(self)       # 카페인 알리미 '그래도 담을까요?' (최근 주문 다시 담기)
         self.ticket_lines = []
         self.ticket_clock = QTimer(self)          # 장바구니 승차권 줄의 좌석 유지 시간
         self.ticket_clock.setInterval(1000)
@@ -260,6 +261,7 @@ class MenuScreen(QWidget):
     # 화면 갱신
     def on_show(self):
         self.popup.hide()
+        self.confirm_box.hide()
         self.update_banner()
         self.update_top_bar()
         self.ticket_panel.reset()
@@ -436,8 +438,13 @@ class MenuScreen(QWidget):
         column.addLayout(row)
         return card
 
-    def reorder(self, lines, go_cart=True):
+    def reorder(self, lines, go_cart=True, caffeine_ok=False):
         """최근 주문(여러 줄)을 장바구니에 담고 장바구니 화면에서 확인한다."""
+        note = None if caffeine_ok else self.session.caffeine_warning(lines)
+        if note:                                 # 알리미 제한을 넘으면 먼저 묻는다 (아니요 = 그대로)
+            self.confirm_box.ask("카페인 알리미", note + "\n그래도 담을까요?", "예, 담기",
+                                 lambda: self.reorder(lines, go_cart, caffeine_ok=True))
+            return
         try:
             self.session.add_lines(lines)
         except ValueError as error:
@@ -449,23 +456,145 @@ class MenuScreen(QWidget):
             self.refresh()
             self.router.notify(f"{lines[0]['name']} 1잔을 담았어요", 3)
 
+    caffeine_view = "이번 주"
+    LIMIT_STEP = {"잔": 1, "mg": 50}
+    LIMIT_START = {"잔": 3, "mg": 400}            # 단위를 처음 고르면 이 값부터
+
     def make_caffeine_card(self):
+        """카페인 리포트 (10/31): 그래프(이번 주·주별·월별) + 이번 주 섭취량 + 카페인 알리미."""
         report = self.session.caffeine()
         card = Card()
-        row = QHBoxLayout(card)
-        row.setContentsMargins(18, 14, 18, 14)
-        row.setSpacing(18)
-        row.addWidget(WeekBars(report["this_week"], date.today().weekday()))
+        column = QVBoxLayout(card)
+        column.setContentsMargins(18, 14, 18, 16)
+        column.setSpacing(10)
+        head = QHBoxLayout()
+        head.addWidget(label("카페인 리포트", 14, bold=True))
+        head.addStretch()
+        self.view_buttons = {}
+        for view in TREND_VIEWS:
+            chip = button(view, "pill", lambda checked=False, view=view: self.set_caffeine_view(view))
+            chip.setCheckable(True)
+            chip.setChecked(view == self.caffeine_view)
+            chip.setMinimumHeight(44)           # 22px 둥근 칩은 높이 44 이상이어야 둥글게 그려진다
+            self.view_buttons[view] = chip
+            head.addWidget(chip)
+        column.addLayout(head)
+        body = QHBoxLayout()
+        body.setSpacing(18)
+        trend = self.session.caffeine_trend(self.caffeine_view)
+        self.trend_bars = TrendBars(trend["labels"], trend["values"], trend["current"],
+                                    on_click=self.next_caffeine_view)
+        body.addWidget(self.trend_bars, 3)
         text = QVBoxLayout()
-        text.addWidget(label("카페인 리포트", 14, bold=True))
-        text.addWidget(label(f"이번 주 {report['total']:,}mg", 24, title=True))
-        change = report["change_percent"]
-        compare = "" if change is None else f" · 지난주 대비 {'▲' if change >= 0 else '▼'}{abs(change)}%"
-        text.addWidget(label(report["message"] + compare, 15, muted=True))
-        if report["suggest_decaf"]:
-            text.addWidget(label("오늘은 디카페인 어때요? → 디카페인 탭", 15, bold=True))
-        row.addLayout(text, 1)
+        text.setSpacing(4)
+        text.addWidget(label("이번 주 카페인 섭취량", 15, muted=True))
+        text.addWidget(label(f"{report['total']:,}mg", 28, title=True))
+        message = label(report["message"], 15, bold=True)
+        message.setWordWrap(True)
+        text.addWidget(message)
+        text.addStretch()
+        body.addLayout(text, 2)
+        alert = self.make_caffeine_alert()
+        if theme.SCALE == 1:
+            body.addWidget(alert)
+            column.addLayout(body)
+        else:                                    # 큰 글자: 알리미는 아래 줄로
+            column.addLayout(body)
+            column.addWidget(alert)
+        self.update_trend_limit()
         return card
+
+    def make_caffeine_alert(self):
+        """카페인 알리미: 이번 주 제한(잔 또는 mg). 넘게 담으려 하면 '그래도 담을까요?'를 묻는다."""
+        box = QFrame()
+        box.setObjectName("caffeine_alert")
+        box.setStyleSheet(f"QFrame#caffeine_alert {{ background: {theme.CREAM}; border-radius: 16px; }}")
+        if theme.SCALE == 1:
+            box.setFixedWidth(236)
+        column = QVBoxLayout(box)
+        column.setContentsMargins(14, 12, 14, 12)
+        column.setSpacing(8)
+        column.addWidget(label("카페인 알리미", 15, bold=True))
+        units = QHBoxLayout()
+        units.setSpacing(6)
+        self.unit_buttons = {}
+        for unit in LIMIT_UNITS:
+            chip = button(unit, "pill", lambda checked=False, unit=unit: self.change_limit(unit=unit))
+            chip.setCheckable(True)
+            chip.setMinimumHeight(44)
+            self.unit_buttons[unit] = chip
+            units.addWidget(chip, 1)
+        column.addLayout(units)
+        steps = QHBoxLayout()
+        minus = button("−", "outline", lambda: self.change_limit(step=-1))
+        plus = button("+", "outline", lambda: self.change_limit(step=1))
+        for widget in (minus, plus):
+            widget.setFixedSize(56, 44)
+            widget.setFont(theme.font(20, bold=True))
+            widget.setStyleSheet("padding: 0;")
+        self.limit_amount = label("", 17, bold=True)
+        self.limit_amount.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        steps.addWidget(minus)
+        steps.addWidget(self.limit_amount, 1)
+        steps.addWidget(plus)
+        column.addLayout(steps)
+        self.limit_status = label("", 13, muted=True)
+        self.limit_status.setWordWrap(True)
+        column.addWidget(self.limit_status)
+        self.show_limit()
+        return box
+
+    def show_limit(self):
+        limit = self.session.caffeine_limit()
+        for unit, chip in self.unit_buttons.items():
+            chip.setChecked(bool(limit) and limit["unit"] == unit)
+        if not limit:
+            self.limit_amount.setText("꺼짐")
+            self.limit_status.setText("주 제한을 정하면 넘게 담을 때 물어봐요")
+            return
+        used = self.session.caffeine_used()[limit["unit"]]
+        self.limit_amount.setText(f"주 {limit['amount']:,}{limit['unit']}")
+        self.limit_status.setText(f"이번 주 {used:,}{limit['unit']} 마심 (장바구니 포함)")
+
+    def change_limit(self, unit=None, step=0):
+        """단위를 고르거나 −/+로 제한을 바꾸고 바로 저장한다. 0이 되면 알리미를 끈다."""
+        limit = self.session.caffeine_limit()
+        if unit is not None:
+            if limit and limit["unit"] == unit:  # 켜진 단위를 다시 누르면 그대로
+                self.show_limit()
+                return
+            amount = self.LIMIT_START[unit]
+        elif limit:
+            unit = limit["unit"]
+            amount = limit["amount"] + step * self.LIMIT_STEP[unit]
+        elif step > 0:                           # 꺼진 상태에서 + → 잔 단위로 켠다
+            unit, amount = "잔", self.LIMIT_START["잔"]
+        else:
+            return
+        self.session.set_caffeine_limit(unit, max(0, amount))
+        self.show_limit()
+        self.update_trend_limit()
+
+    def set_caffeine_view(self, view):
+        self.caffeine_view = view
+        for name, chip in self.view_buttons.items():
+            chip.setChecked(name == view)
+        trend = self.session.caffeine_trend(view)
+        bars = self.trend_bars
+        bars.labels, bars.values, bars.current = trend["labels"], trend["values"], trend["current"]
+        self.update_trend_limit()
+
+    def next_caffeine_view(self):
+        """그래프를 누르면 이번 주 → 주별 → 월별 → 이번 주."""
+        index = TREND_VIEWS.index(self.caffeine_view)
+        self.set_caffeine_view(TREND_VIEWS[(index + 1) % len(TREND_VIEWS)])
+
+    def update_trend_limit(self):
+        """주별 그래프에는 mg 제한을 점선으로 긋는다."""
+        limit = self.session.caffeine_limit()
+        mg_limit = limit and limit["unit"] == "mg" and self.caffeine_view == "주별"
+        self.trend_bars.limit = limit["amount"] if mg_limit else None
+        self.trend_bars.update()
 
     def refresh(self):
         while self.cart_list.count():
@@ -536,6 +665,7 @@ class MenuScreen(QWidget):
 
     def resizeEvent(self, event):
         self.popup.setGeometry(self.rect())
+        self.confirm_box.setGeometry(self.rect())
         super().resizeEvent(event)
         # 창 크기가 바뀌어 한 줄 칸 수가 달라지면 카드를 다시 놓는다
         if getattr(self, "shown_columns", None) not in (None, self.columns()):
