@@ -15,7 +15,7 @@ from domain.customers import (
 from face import FaceError
 from gui import theme
 from gui.screens.login import info_box, nav_bar
-from gui.widgets import Card, TouchKeyboard, button, label, message_label, text_field
+from gui.widgets import Card, TouchKeyboard, button, label, message_label, phone_field, text_field
 
 
 class FindAccountScreen(QWidget):
@@ -46,7 +46,7 @@ class FindAccountScreen(QWidget):
         tabs.addWidget(self.pw_tab)
         left.addLayout(tabs)
         self.login_id = text_field("회원 ID")
-        self.phone = text_field("가입한 전화번호 (숫자만)")
+        self.phone = phone_field("가입한 전화번호 (숫자만 치면 010-0000-0000 모양으로)")
         self.new_password = text_field("새 비밀번호 (4자 이상)", password=True)
         self.confirm = text_field("새 비밀번호 다시", password=True)
         for field in (self.login_id, self.phone, self.new_password, self.confirm):

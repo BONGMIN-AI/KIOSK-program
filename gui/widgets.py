@@ -8,6 +8,7 @@ from PySide6.QtGui import (QBitmap, QColor, QImage, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
+from core.validators import format_phone_typing
 from gui import theme
 
 
@@ -477,6 +478,21 @@ def text_field(placeholder="", password=False, text=""):
     field.setMinimumHeight(52)
     field.setStyleSheet(f"background: {theme.CARD}; border: 1px solid {theme.LINE};"
                         " border-radius: 12px; padding: 0 12px;")
+    return field
+
+
+def phone_field(placeholder=""):
+    """전화번호 칸: 숫자를 치는 대로 '010-1234-5678' 모양으로 바뀐다 (화면 키보드·실제 키보드 모두)."""
+    field = text_field(placeholder)
+    field.setMaxLength(13)
+
+    def reshape(text):
+        shaped = format_phone_typing(text)
+        if shaped != text:
+            field.blockSignals(True)
+            field.setText(shaped)              # 커서는 끝으로 (번호는 앞에서부터 차례로 친다)
+            field.blockSignals(False)
+    field.textChanged.connect(reshape)
     return field
 
 

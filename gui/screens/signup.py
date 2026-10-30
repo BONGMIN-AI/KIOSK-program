@@ -14,7 +14,7 @@ from domain.customers import register_customer, set_face_enrolled, validate_pass
 from face import FaceError
 from gui import theme
 from gui.screens.login import nav_bar
-from gui.widgets import Card, button, label, message_label, text_field
+from gui.widgets import Card, button, label, message_label, phone_field, text_field
 
 
 def check_box(text, bold=False):
@@ -48,7 +48,7 @@ class SignupScreen(QWidget):
         self.login_id = text_field("아이디 * (영문·숫자)")
         self.password = text_field("비밀번호 * (4자 이상)", password=True)
         self.password_again = text_field("비밀번호 재입력 *", password=True)
-        self.phone = text_field("전화번호 * (010-0000-0000)")
+        self.phone = phone_field("전화번호 * (숫자만 치면 010-0000-0000 모양으로)")
         for field in (self.name, self.login_id, self.password, self.password_again, self.phone):
             left.addWidget(field)
         left.addWidget(label("이름은 대기 화면에 닉네임으로 보여요. 비밀번호는 ●로 가려져요.", 13, muted=True))

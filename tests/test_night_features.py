@@ -240,3 +240,24 @@ def test_card_wait_is_cancelled_by_leaving_or_rebuilding(window, app):
     router.show_screen("menu")                        # 로그인 화면을 떠나면 기다리기도 끝
     assert router.card_wait is None
     app.processEvents()
+
+
+def test_phone_number_takes_shape_while_typing(window):
+    """10/31: 전화번호는 숫자만 쳐도 010-0000-0000 모양으로 바뀐다 (가입 · 아이디 찾기)."""
+    from core.validators import format_phone_typing
+    assert format_phone_typing("010") == "010"
+    assert format_phone_typing("0101234") == "010-1234"
+    assert format_phone_typing("01012345678") == "010-1234-5678"
+    assert format_phone_typing("010-1234-56789") == "010-1234-5678"     # 11자리까지만
+    router = window.router
+    router.open_action("signup")
+    phone = router.screens["signup"].phone
+    for digit in "01098765432":
+        phone.insert(digit)                           # 한 글자씩 (키보드처럼)
+    assert phone.text() == "010-9876-5432"
+    phone.backspace()
+    assert phone.text() == "010-9876-543"
+    router.show_screen("find", mode="id")
+    find_phone = router.screens["find"].phone
+    find_phone.insert("01011112222")
+    assert find_phone.text() == "010-1111-2222"
