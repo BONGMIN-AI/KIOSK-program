@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 rem 첫 준비: 이미 있는 것은 건너뛰고, 없는 것만 안내한 뒤 키를 누르면 설치한다. 여러 번 실행해도 괜찮다.
-rem run_kiosk.bat 가 준비가 안 되어 있을 때 "setup.bat auto" 로 부른다. auto 이면 끝난 뒤 멈추지 않고 모델도 묻지 않는다.
+rem 2_시연모드_실행.bat 가 준비가 안 되어 있을 때 "1_처음설치.bat auto" 로 부른다. auto 이면 끝난 뒤 멈추지 않고 모델도 묻지 않는다.
 rem 가상환경은 저장소 폴더가 아니라 사용자 프로그램 폴더 %LOCALAPPDATA%\CoffeeSpoonKiosk\venv 에 만든다.
 rem 저장소가 깊은 폴더에 있어도 Windows 경로 길이 한도(260자)에 걸리지 않게 하려는 것이다. 관리자 권한도 필요 없다.
 setlocal
@@ -80,11 +80,11 @@ if /i "%MODE%"=="auto" goto done
 choice /c YN /m "지금 인터넷에서 받을까요? 약 300MB"
 if errorlevel 2 goto done
 "%PY%" tools\get_face_models.py
-if errorlevel 1 echo 모델 받기에 실패했습니다. 나중에 setup.bat 를 다시 실행하세요.
+if errorlevel 1 echo 모델 받기에 실패했습니다. 나중에 1_처음설치.bat 를 다시 실행하세요.
 
 :done
 echo.
-echo 준비 끝! 이제 run_kiosk.bat 를 더블클릭하면 시연 모드가 켜집니다.
+echo 준비 끝! 이제 2_시연모드_실행.bat 를 더블클릭하면 시연 모드가 켜집니다.
 if /i not "%MODE%"=="auto" pause
 exit /b 0
 
@@ -107,7 +107,7 @@ exit /b 1
 
 :fail
 echo.
-echo 설치 중 오류가 났습니다. 인터넷 연결을 확인하고 setup.bat 를 다시 실행하세요.
+echo 설치 중 오류가 났습니다. 인터넷 연결을 확인하고 1_처음설치.bat 를 다시 실행하세요.
 echo 계속 안 되면 이 창을 캡처해 보내 주세요.
 pause
 exit /b 1

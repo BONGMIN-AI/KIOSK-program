@@ -9,12 +9,13 @@ title COFFEE ^& SPOON 키오스크 - 실제 모드
 rem USB 카메라를 쓰면 아래 0 을 카메라 번호로 바꾼다. 팀장 노트북 USB 카메라는 2.
 if not defined KIOSK_CAMERA set "KIOSK_CAMERA=0"
 
-rem 가상환경 위치는 setup.bat 와 같다.
+rem 가상환경 위치는 1_처음설치.bat 와 같다.
 set "PY=%LOCALAPPDATA%\CoffeeSpoonKiosk\venv\Scripts\python.exe"
-rem 가상환경이 없거나 설치가 덜 되었으면 setup.bat 로 준비부터 한다.
+rem 가상환경이 없거나 설치가 덜 되었으면 1_처음설치.bat 로 준비부터 한다.
 if exist "%PY%" "%PY%" -c "import PySide6, cryptography, cv2, onnxruntime" >nul 2>&1 && goto check_data
 echo 아직 준비가 안 되어 있어 준비부터 합니다.
-call setup.bat auto
+rem 한글 파일 이름을 직접 쓰면 cmd 가 못 읽는 경우가 있어 1_*.bat 로 찾아 부른다.
+for %%F in ("%~dp01_*.bat") do call "%%~fF" auto
 if errorlevel 1 exit /b 1
 
 :check_data
@@ -26,7 +27,7 @@ if errorlevel 1 goto fail
 :check_model
 if exist "models\face_recognition_arcface_w600k_r50.onnx" goto run
 echo 주의: 얼굴 인증 모델이 없어 얼굴 로그인이 안 됩니다. 비밀번호 로그인은 됩니다.
-echo       setup.bat 를 실행해 모델을 받을 수 있습니다.
+echo       1_처음설치.bat 를 실행해 모델을 받을 수 있습니다.
 
 :run
 echo 실제 모드로 켭니다. 카메라 번호: %KIOSK_CAMERA%   끄기: Ctrl+Shift+Q 또는 창 닫기

@@ -1,6 +1,6 @@
 @echo off
 rem COFFEE & SPOON KIOSK launcher with auto-restart.
-rem - Runs the GUI full screen from the venv made by setup.bat (%LOCALAPPDATA%\CoffeeSpoonKiosk\venv),
+rem - Runs the GUI full screen from the venv made by 1_처음설치.bat (%LOCALAPPDATA%\CoffeeSpoonKiosk\venv),
 rem   or from this project's .venv if that one does not exist.
 rem - If the program stops unexpectedly (exit code not 0), it starts again after 3 seconds.
 rem - If staff ends it normally (KIOSK exit button or Ctrl+Shift+Q, exit code 0), it stays closed.
