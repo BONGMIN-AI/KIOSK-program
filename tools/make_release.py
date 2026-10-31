@@ -3,13 +3,13 @@ r"""배포용 실행 폴더를 만든다. 사용: python tools/make_release.py [
 기본 위치는 팀장 PC의 작업 폴더 AI프로젝트\최신본_2026-10-19\07_배포_실행폴더\COFFEE_SPOON_KIOSK_v1.0 이고,
 그 폴더가 없는 PC에서는 바탕화면의 COFFEE_SPOON_KIOSK_v1.0 이다. --zip 이면 같은 이름의 .zip도 만든다.
 
-받은 사람이 보는 맨 위에는 더블클릭할 파일 세 개와 설명서만 둔다 (10/31 정리):
+받은 사람이 보는 맨 위에는 실행 방법 한 장과 더블클릭할 파일 세 개만 둔다 (11/01: 처음 쓰는 사람용으로 줄임):
 
     COFFEE_SPOON_KIOSK_v1.0\
+      0_실행방법.html                                              ← 먼저 여는 한 장 (압축 풀기 → Python → 1 → 2)
       1_처음설치.bat · 2_시연모드_실행.bat · 3_실제모드_실행.bat   ← program\ 안의 같은 이름 파일을 부르는 짧은 실행 파일
-      빠른_시작_안내.html · 사용설명서.html · 먼저_읽어주세요.txt
-      문서\   최종보고서 · 추가 구현 아이디어 · 시나리오 점검 결과(그림 포함)
-      program\   실제 프로그램 (코드 · 그림 · 작은 얼굴 모델 · 원래 실행 파일 · 도구)
+      문서\   사용설명서 · 최종보고서 · 추가 구현 아이디어 · 시나리오 점검 결과(그림 포함)
+      program\   실제 프로그램 (코드 · 그림 · 작은 얼굴 모델 · 원래 실행 파일 · 도구 · RFID 아두이노 코드)
 
 program\ 에는 GUI 키오스크 실행에 필요한 것만 넣는다. 테스트·개발 문서·예전 터미널(TUI) 화면·
 개인정보(data\)·오류 기록(logs\)은 넣지 않는다. ArcFace 모델(약 170MB, 비상업 연구용)도 넣지 않고,
@@ -31,7 +31,7 @@ DEFAULT_TARGET = (RELEASE_DIR if RELEASE_DIR.is_dir() else Path.home() / "Deskto
 SCENARIO_RESULT = WORK / "08_최종점검" / "시나리오_점검"      # tools/run_scenarios.py 결과
 DOCS = ROOT / "docs" / "release"
 
-FOLDERS = ["core", "domain", "face", "gui"]
+FOLDERS = ["core", "domain", "face", "gui", "tools/arduino"]
 FILES = [
     "1_처음설치.bat",
     "2_시연모드_실행.bat",
@@ -47,7 +47,9 @@ FILES = [
     "tools/get_face_models.py",
     "tools/check_camera.py",
     "tools/register_face.py",
+    "tools/check_card_reader.py",
 ]
+OLD_TOP_FILES = ["빠른_시작_안내.html", "사용설명서.html", "먼저_읽어주세요.txt"]   # 예전 배포판 맨 위 파일 (지운다)
 SKIP = shutil.ignore_patterns("__pycache__", "*.pyc")
 
 # 맨 위 실행 파일: program\ 안의 원래 실행 파일을 부른다. 한글 파일 이름을 직접 쓰면 cmd가 못 읽는 경우가 있어
@@ -57,25 +59,6 @@ chcp 65001 >nul
 rem 실제 프로그램은 program 폴더에 있다. 이 파일은 program 안의 같은 번호 실행 파일을 부른다.
 for %%F in ("%~dp0program\\{number}_*.bat") do call "%%~fF" %*
 """
-
-README = """COFFEE & SPOON 키오스크 v1.0 (팀 공학 한 스푼)
-
-처음 쓰는 순서
-  1. 1_처음설치.bat 더블클릭 (한 번만. 인터넷 필요, 몇 분 걸림)
-  2. 2_시연모드_실행.bat 더블클릭 → 연습용 데이터로 키오스크가 켜집니다 (저장 안 됨)
-     연습 계정: 회원 bomin / 1234   운영자 admin / demo
-     끄기: Ctrl + Shift + Q
-  3. 실제 카메라·저장을 쓰려면 3_실제모드_실행.bat (처음에 관리자 비밀번호를 직접 정합니다)
-
-한 장 요약: 빠른_시작_안내.html · 자세한 설명: 사용설명서.html (더블클릭하면 인터넷 창으로 열립니다)
-최종 보고서·추가 아이디어·점검 결과: 문서 폴더
-
-Python 3 이 필요합니다. 없으면 https://www.python.org 에서 설치하고,
-설치 첫 화면의 "Add python.exe to PATH" 를 꼭 체크하세요.
-
-주의: program\\data 폴더에는 회원·얼굴 정보가 암호화되어 저장됩니다. 다른 곳에 올리거나 보내지 마세요.
-"""
-
 
 def clear_readonly_and_retry(func, path, _error):
     """바탕화면 아래 폴더는 Windows가 읽기 전용 표시를 붙여 지우기가 실패한다. 표시를 떼고 다시 지운다."""
@@ -117,8 +100,10 @@ def build_docs(target: Path) -> None:
     docs.mkdir(exist_ok=True)
     remove(docs / "images")
     shutil.copytree(DOCS / "images", docs / "images")
-    copy_page(DOCS / "사용설명서.html", target / "사용설명서.html", [('src="images/', 'src="문서/images/')])
-    copy_page(DOCS / "빠른_시작_안내.html", target / "빠른_시작_안내.html")
+    copy_page(DOCS / "0_실행방법.html", target / "0_실행방법.html")
+    copy_page(DOCS / "사용설명서.html", docs / "사용설명서.html")
+    for name in OLD_TOP_FILES:
+        remove(target / name)
     copy_page(DOCS / "최종보고서.html", docs / "최종보고서.html",
               [("<code>문서\\시나리오_점검결과.html</code>", '<a href="시나리오_점검결과.html">시나리오_점검결과.html</a>')])
     copy_page(DOCS / "추가_구현_아이디어.html", docs / "추가_구현_아이디어.html")
@@ -139,7 +124,6 @@ def build(target: Path, make_zip: bool = False) -> None:
     build_program(target / "program")
     for number, name in ((1, "1_처음설치.bat"), (2, "2_시연모드_실행.bat"), (3, "3_실제모드_실행.bat")):
         write_text(target / name, LAUNCHER.format(number=number))
-    write_text(target / "먼저_읽어주세요.txt", README, encoding="utf-8-sig")   # 메모장에서 한글이 깨지지 않게
     build_docs(target)
     print(f"배포 폴더를 만들었습니다: {target}")
     if make_zip:

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>키오스크 실행 방법</title>
+<style>
+  :root { --bg: #F7EEE3; --card: #FFFFFF; --brown: #3C1B03; --text2: #7A6252; --caramel: #B66B2E; --cream: #FBF6EF; --accent: #D4573C; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--brown); font: 19px/1.6 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 28px 16px 56px; }
+  h1 { font-size: 32px; margin: 0 0 22px; text-align: center; }
+  .step { background: var(--card); border-radius: 20px; padding: 22px 24px; margin-bottom: 16px; box-shadow: 0 4px 18px rgba(60,27,3,.07); }
+  .head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+  .num { flex: none; width: 52px; height: 52px; border-radius: 50%; background: var(--caramel); color: #fff; font-size: 26px; font-weight: 700; display: grid; place-items: center; }
+  .head h2 { margin: 0; font-size: 24px; }
+  ol { margin: 0; padding-left: 26px; }
+  li { margin: 4px 0; }
+  .file { background: var(--cream); border: 2px solid var(--caramel); border-radius: 8px; padding: 0 8px; font-weight: 700; white-space: nowrap; }
+  .key { background: #fff; border: 2px solid #CBB79F; border-bottom-width: 4px; border-radius: 7px; padding: 0 8px; font-weight: 700; white-space: nowrap; }
+  .must { color: var(--accent); font-weight: 700; }
+  .box { background: #FBE3D0; border-radius: 12px; padding: 10px 14px; margin-top: 10px; font-size: 17px; }
+  .check { display: inline-flex; align-items: center; gap: 8px; background: #F3F3F3; border: 1px solid #ccc; border-radius: 6px; padding: 4px 10px; font-family: "Segoe UI", sans-serif; font-size: 16px; }
+  .check b { display: inline-grid; place-items: center; width: 18px; height: 18px; background: #0067C0; color: #fff; border-radius: 3px; font-size: 13px; }
+  img { width: 100%; border-radius: 12px; border: 1px solid #E8D9C6; margin-top: 10px; display: block; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  td, th { padding: 8px 10px; border-bottom: 1px solid #E8D9C6; text-align: left; }
+  th { background: var(--cream); }
+  .done { text-align: center; color: var(--text2); font-size: 17px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>☕ 키오스크 실행 방법</h1>
+
+  <div class="step">
+    <div class="head"><div class="num">0</div><h2>압축 풀기</h2></div>
+    <ol>
+      <li>받은 ZIP 파일에 <b>마우스 오른쪽</b> → <b>모두 압축 풀기</b></li>
+      <li>압축을 푼 폴더를 엽니다. <span class="must">압축을 안 풀고 실행하면 안 돼요.</span></li>
+    </ol>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">1</div><h2>Python 설치 <small style="font-weight:400;color:var(--text2)">(처음 한 번만)</small></h2></div>
+    <ol>
+      <li><a href="https://www.python.org/downloads/">python.org/downloads</a> 에서 노란 <b>Download Python</b> 버튼</li>
+      <li>받은 파일 실행 → 첫 화면 아래의 <span class="check"><b>✓</b> Add python.exe to PATH</span> <span class="must">꼭 체크</span></li>
+      <li><b>Install Now</b> → 끝나면 <b>Close</b></li>
+    </ol>
+    <div class="box">이미 Python이 있으면 건너뛰어도 돼요.</div>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">2</div><h2><span class="file">1_처음설치</span> 더블클릭 <small style="font-weight:400;color:var(--text2)">(처음 한 번만)</small></h2></div>
+    <ol>
+      <li>검은 창이 뜨면 아무 키나 누르기 <span class="key">Enter</span></li>
+      <li>5~10분 기다리기 (인터넷 필요)</li>
+      <li>“지금 인터넷에서 받을까요? 약 300MB” → <span class="key">N</span></li>
+      <li>“준비 끝!” 이 나오면 아무 키나 눌러 창 닫기</li>
+    </ol>
+    <div class="box">파란 창 “Windows의 PC 보호”가 뜨면 → <b>추가 정보</b> → <b>실행</b></div>
+  </div>
+
+  <div class="step">
+    <div class="head"><div class="num">3</div><h2><span class="file">2_시연모드_실행</span> 더블클릭</h2></div>
+    <p style="margin:0">아래 화면이 뜨면 성공이에요. 화면을 눌러서 써 보세요.</p>
+    <img src="문서/images/01_시작화면.jpg" alt="키오스크 시작 화면">
+    <table>
+      <tr><th>로그인할 때</th><th>아이디</th><th>비밀번호</th></tr>
+      <tr><td>회원</td><td>bomin</td><td>1234</td></tr>
+      <tr><td>운영자 (오른쪽 위 ‘운영자 메뉴’)</td><td>admin</td><td>demo</td></tr>
+    </table>
+    <div class="box">끄기: <span class="key">Ctrl</span> + <span class="key">Shift</span> + <span class="key">Q</span> &nbsp;·&nbsp; 다음부터는 <b>3번만</b> 하면 돼요.</div>
+  </div>
+
+  <p class="done">안 되면 검은 창을 사진 찍어서 팀장에게 보내 주세요.<br>
+  (자세한 기능 설명: <b>문서</b> 폴더 → 사용설명서)</p>
+</main>
+</body>
+</html>

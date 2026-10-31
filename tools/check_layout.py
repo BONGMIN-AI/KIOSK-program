@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("KIOSK_CARD_PORT", "off")      # 꽂혀 있는 아두이노 카드 리더는 열지 않는다
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import QEvent
