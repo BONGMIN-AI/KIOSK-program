@@ -14,7 +14,7 @@ from domain.customers import register_customer, set_face_enrolled, validate_pass
 from face import FaceError
 from gui import theme
 from gui.screens.login import nav_bar
-from gui.widgets import Card, FacePanel, button, label, message_label, phone_field, text_field
+from gui.widgets import FixedWidthCard, Card, FacePanel, button, label, message_label, phone_field, text_field
 
 
 def check_box(text, bold=False):
@@ -174,8 +174,7 @@ class EnrollScreen(QWidget):
         self.face_panel.hide()
         left.addWidget(self.face_panel, 1)
         body.addWidget(camera, 1)
-        steps_card = Card()
-        steps_card.setFixedWidth(460)
+        steps_card = FixedWidthCard(460)
         right = QVBoxLayout(steps_card)
         right.setContentsMargins(22, 20, 22, 20)
         right.setSpacing(10)

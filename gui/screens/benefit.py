@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QRadioButton, QVBoxLayo
 from gui import theme
 from gui.screens.checkout import clear, money_row, screen_header
 from gui.screens.login import nav_bar
-from gui.widgets import Card, button, label, message_label, text_field
+from gui.widgets import FixedWidthCard, Card, button, label, message_label, text_field
 
 
 class BenefitScreen(QWidget):
@@ -52,8 +52,7 @@ class BenefitScreen(QWidget):
         left.addStretch()
         body.addWidget(choose_card, 1)
 
-        summary = Card()
-        summary.setFixedWidth(340)
+        summary = FixedWidthCard(340)
         right = QVBoxLayout(summary)
         right.setContentsMargins(22, 20, 22, 20)
         right.setSpacing(10)

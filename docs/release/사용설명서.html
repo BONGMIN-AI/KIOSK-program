@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>COFFEE &amp; SPOON 키오스크 사용 설명서</title>
+<style>
+  :root { --bg: #F7EEE3; --card: #FFFFFF; --brown: #3C1B03; --text2: #7A6252; --caramel: #B66B2E;
+          --cream: #FBF6EF; --accent: #D4573C; --line: #E8D9C6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--brown); font: 17px/1.7 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+  header { background: var(--brown); color: #fff; padding: 36px 16px; text-align: center; }
+  header h1 { margin: 0 0 6px; font-size: 30px; }
+  header p { margin: 0; opacity: .85; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; }
+  nav { background: var(--card); border-radius: 16px; padding: 16px 22px; margin-bottom: 22px; }
+  nav ol { margin: 6px 0 0; padding-left: 22px; columns: 2; }
+  nav a { color: var(--caramel); text-decoration: none; }
+  section { background: var(--card); border-radius: 18px; padding: 22px 26px; margin-bottom: 22px; box-shadow: 0 4px 18px rgba(60,27,3,.06); }
+  h2 { margin: 0 0 12px; font-size: 24px; }
+  h3 { margin: 22px 0 8px; font-size: 19px; }
+  .steps { counter-reset: s; list-style: none; padding: 0; }
+  .steps > li { counter-increment: s; position: relative; padding: 4px 0 10px 48px; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: 2px; width: 34px; height: 34px; border-radius: 50%;
+                        background: var(--caramel); color: #fff; font-weight: 700; text-align: center; line-height: 34px; }
+  figure { margin: 12px 0 18px; }
+  figure img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  figcaption { color: var(--text2); font-size: 14px; margin-top: 6px; }
+  .tip { background: var(--cream); border-left: 5px solid var(--caramel); padding: 10px 16px; border-radius: 10px; margin: 12px 0; }
+  .warn { background: #FBE3D0; border-left: 5px solid var(--accent); padding: 10px 16px; border-radius: 10px; margin: 12px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--cream); }
+  code, kbd { background: var(--cream); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-family: Consolas, monospace; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 700px) { nav ol { columns: 1; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>COFFEE &amp; SPOON 키오스크 사용 설명서</h1>
+  <p>처음 쓰는 분을 위한 안내 · 팀 공학 한 스푼 · 2026년 10월 31일</p>
+</header>
+<main>
+
+<nav>
+  <b>차례</b>
+  <ol>
+    <li><a href="#prepare">준비물</a></li>
+    <li><a href="#install">처음 설치 (1번)</a></li>
+    <li><a href="#demo">시연 모드 켜기 (2번)</a></li>
+    <li><a href="#guest">비회원으로 주문해 보기</a></li>
+    <li><a href="#member">회원으로 주문해 보기</a></li>
+    <li><a href="#mymenu">My Menu · 인기 · 카페인 알리미</a></li>
+    <li><a href="#ticket">승차권 사기</a></li>
+    <li><a href="#signup">회원가입</a></li>
+    <li><a href="#admin">운영자 화면</a></li>
+    <li><a href="#real">실제 모드 (카메라)</a></li>
+    <li><a href="#trouble">문제가 생기면</a></li>
+  </ol>
+</nav>
+
+<section id="prepare">
+  <h2>1. 준비물</h2>
+  <ul>
+    <li><b>Windows 10 또는 11</b> 컴퓨터 (화면 1200×800 이상 권장)</li>
+    <li><b>Python 3</b> — 없으면 <a href="https://www.python.org/downloads/">python.org</a>에서 설치합니다.
+      설치 첫 화면에서 <b>“Add python.exe to PATH”</b>를 꼭 체크하세요.</li>
+    <li>처음 설치할 때만 <b>인터넷</b> (프로그램 묶음 수백 MB를 받습니다)</li>
+    <li>실제 모드에서 얼굴 로그인을 쓰려면 <b>카메라</b> (시연 모드는 카메라가 없어도 됩니다)</li>
+  </ul>
+  <div class="tip">폴더 안에서 쓰는 파일은 세 개뿐입니다: <b>1_처음설치</b> → <b>2_시연모드_실행</b> → (필요하면) <b>3_실제모드_실행</b>. 모두 더블클릭으로 실행합니다.</div>
+</section>
+
+<section id="install">
+  <h2>2. 처음 설치 — <code>1_처음설치.bat</code></h2>
+  <ol class="steps">
+    <li>폴더에서 <b>1_처음설치</b>를 더블클릭합니다. 검은 창이 열리고 설치 상태를 확인합니다.</li>
+    <li>“아무 키나 누르면 설치를 시작합니다”가 나오면 아무 키나 누릅니다. 몇 분 걸립니다.</li>
+    <li>“얼굴 인증 모델을 받을까요?”는 <b>시연만 할 거면 N</b>, 실제 카메라 로그인까지 쓸 거면 Y를 누릅니다(약 300MB).</li>
+    <li>“준비 끝!”이 보이면 창을 닫습니다. 한 번만 하면 됩니다.</li>
+  </ol>
+  <div class="tip">설치를 깜빡하고 2번을 먼저 눌러도 괜찮습니다. 2번이 알아서 설치부터 합니다.</div>
+</section>
+
+<section id="demo">
+  <h2>3. 시연 모드 켜기 — <code>2_시연모드_실행.bat</code></h2>
+  <p>시연 모드는 <b>연습용 샘플 데이터</b>로 켜집니다. 무엇을 눌러도 컴퓨터에 저장되지 않고, 끄면 처음 상태로 돌아갑니다.</p>
+  <div class="grid">
+    <figure><img src="images/00_대기화면.jpg" alt="대기 화면"><figcaption>① 대기 화면 — 화면 아무 곳이나 누르면 시작</figcaption></figure>
+    <figure><img src="images/01_시작화면.jpg" alt="시작 화면"><figcaption>② 시작 화면 — 회원 / 비회원 / 회원가입 고르기</figcaption></figure>
+  </div>
+  <table>
+    <tr><th>연습용 계정</th><th>아이디</th><th>비밀번호</th></tr>
+    <tr><td>회원 (MVP보민 · 우유 알레르기 · 쿠폰 2장)</td><td><code>bomin</code></td><td><code>1234</code></td></tr>
+    <tr><td>다른 회원</td><td><code>member1</code>, <code>member2</code>, <code>member3</code></td><td><code>1234</code></td></tr>
+    <tr><td>운영자</td><td><code>admin</code></td><td><code>demo</code></td></tr>
+  </table>
+  <ul>
+    <li><b>끄기</b>: 키보드 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Q</kbd> 또는 창 닫기</li>
+    <li><b>시작 화면 아래 줄</b>: 언어(한국어·English·日本語·中文), <b>고대비</b>, <b>큰 글자</b>. 지금 손님에게만 적용되고 대기 화면으로 돌아가면 원래대로 돌아옵니다.</li>
+    <li><b>60초 동안 아무것도 안 누르면</b> 45초에 경고가 뜨고, 60초에 대기 화면으로 돌아갑니다. 넣은 현금이 있으면 자동으로 돌려줍니다.</li>
+  </ul>
+</section>
+
+<section id="guest">
+  <h2>4. 비회원으로 주문해 보기</h2>
+  <ol class="steps">
+    <li>시작 화면에서 <b>비회원 주문</b>을 누릅니다.</li>
+    <li>왼쪽 줄에서 <b>커피</b>·<b>논커피</b>·<b>디저트</b> 같은 분류를 고르고, 메뉴 카드를 누릅니다.</li>
+    <li>옵션 창에서 온도(HOT/ICE), 사이즈, 추가, 수량을 고르고 <b>장바구니 담기</b>를 누릅니다.
+      딸기라떼처럼 ICE만 되는 음료는 ICE만 보입니다.</li>
+    <li>오른쪽 <b>장바구니 확인</b> → <b>결제하기</b>를 누릅니다.</li>
+    <li>현금 화면에서 지폐·동전 버튼을 눌러 돈을 넣습니다(시연용). 충분하면 <b>결제 완료</b>가 켜집니다.</li>
+    <li>완료 화면에 <b>대기 번호</b>와 <b>거스름돈</b>이 나옵니다. “더 주문하시겠어요?”에서 아니요를 누르거나 15초가 지나면 끝납니다.</li>
+  </ol>
+  <div class="grid">
+    <figure><img src="images/03_비회원메뉴.jpg" alt="메뉴"><figcaption>메뉴 화면 (비회원은 My Menu가 없습니다)</figcaption></figure>
+    <figure><img src="images/04_옵션선택.jpg" alt="옵션"><figcaption>옵션 창</figcaption></figure>
+    <figure><img src="images/07_현금결제.jpg" alt="현금"><figcaption>현금 결제 — 위 줄은 ‘방금 일’, 아래 줄은 ‘지금 상태’</figcaption></figure>
+    <figure><img src="images/08_주문완료.jpg" alt="완료"><figcaption>주문 완료 — 대기 번호 · 거스름돈 챙기기 안내</figcaption></figure>
+  </div>
+  <div class="tip">돈을 잘못 넣었으면 <b>투입 취소 · 반환</b>을 누르면 넣은 돈을 모두 돌려줍니다.</div>
+</section>
+
+<section id="member">
+  <h2>5. 회원으로 주문해 보기</h2>
+  <ol class="steps">
+    <li>시작 화면에서 <b>회원 주문</b> → 화면 키보드로 아이디 <code>bomin</code>을 입력합니다.</li>
+    <li>시연 모드에서는 카메라가 없으니 <b>비밀번호로 로그인</b>을 누르고 <code>1234</code>를 입력합니다.
+      (실제 모드에서는 <b>얼굴 인증</b>을 누르고 카메라를 정면으로 보면 됩니다.)</li>
+    <li>회원은 <b>My Menu</b>가 첫 화면입니다. 메뉴를 담은 뒤 결제로 가면 <b>쿠폰·포인트</b> 화면이 한 번 더 나옵니다.</li>
+    <li>현금 결제 때 거스름돈을 <b>포인트로 적립</b>할 수도 있습니다(회원만).</li>
+  </ol>
+  <div class="grid">
+    <figure><img src="images/02_회원로그인.jpg" alt="로그인"><figcaption>회원 로그인 — 아이디 입력 후 얼굴 인증</figcaption></figure>
+    <figure><img src="images/02_비밀번호로그인.jpg" alt="비밀번호"><figcaption>비밀번호로 로그인</figcaption></figure>
+  </div>
+  <div class="warn"><b>알레르기 경고</b>: bomin은 우유 알레르기로 등록되어 있어서 카페라떼를 담으면 “알레르기 주의”가 뜹니다. <b>그래도 담기</b>를 누르면 담깁니다.</div>
+  <ul>
+    <li>아이디·비밀번호를 잊었으면 로그인 화면의 <b>아이디·비밀번호를 잊었어요</b>에서 전화번호로 찾을 수 있습니다.</li>
+    <li>얼굴 인증이 <b>3번 연속 실패</b>하면 얼굴 로그인이 잠깁니다. 비밀번호로 로그인하면 다시 풀립니다.</li>
+    <li>회원 카드(RFID): 로그인 화면 <b>비밀번호로 로그인</b> → <b>비밀번호 확인 후 회원 카드 연결</b>로 카드를 연결해 두면, 다음부터 카드를 찍는 것만으로 로그인을 시작합니다(리더기가 있을 때).</li>
+  </ul>
+</section>
+
+<section id="mymenu">
+  <h2>6. My Menu · 인기 · 카페인 알리미</h2>
+  <figure><img src="images/03_MyMenu.jpg" alt="My Menu"><figcaption>My Menu — 최근 주문 다시 담기 · 좋아요한 음료 · 카페인 리포트</figcaption></figure>
+  <h3>최근 주문 다시 담기</h3>
+  <p>지난번 주문을 <b>통째로</b> 장바구니에 다시 담습니다. <b>다시 담기 ▶</b> 한 번이면 됩니다.</p>
+  <h3>좋아요(♥)</h3>
+  <p>메뉴 옵션 창 오른쪽 위 <b>♡ 좋아요</b>를 누르면 My Menu에 모입니다.</p>
+  <h3>인기 탭</h3>
+  <p>왼쪽 줄의 <b>인기</b>에서 <b>좋아요순 · 판매순 · 계절 인기순</b>으로 순위를 볼 수 있습니다(비회원도 볼 수 있음).</p>
+  <figure><img src="images/03_인기탭.jpg" alt="인기 탭"><figcaption>인기 탭 — 사진 왼쪽 위에 순위</figcaption></figure>
+  <h3>카페인 리포트와 알리미</h3>
+  <ul>
+    <li>그래프 위 <b>이번 주 · 주별 · 월별</b>을 누르거나 그래프를 직접 누르면 보기가 바뀝니다.</li>
+    <li>오른쪽 위 <b>톱니바퀴</b>를 누르면 <b>카페인 알리미 설정</b> 창이 열립니다. ‘잔’ 또는 ‘mg’를 고르고 −/+로 이번 주 제한을 정합니다.</li>
+    <li>제한을 넘게 담으려 하면 “그래도 담을까요?”를 묻습니다. <b>예</b>는 담기, <b>아니요</b>는 담지 않고 닫기입니다.</li>
+  </ul>
+  <div class="grid">
+    <figure><img src="images/03_MyMenu_카페인리포트.jpg" alt="카페인 리포트"><figcaption>카페인 리포트 — 그래프 · 이번 주 섭취량 · 알리미 상태</figcaption></figure>
+    <figure><img src="images/03_카페인알리미_설정.jpg" alt="알리미 설정"><figcaption>톱니바퀴 → 알리미 설정</figcaption></figure>
+  </div>
+</section>
+
+<section id="ticket">
+  <h2>7. 승차권 사기 (시뮬레이션)</h2>
+  <p>왼쪽 줄 <b>승차권</b> 탭에서 <b>예매표 출력</b> 또는 <b>승차권 구매</b>를 할 수 있습니다. 실제 버스 회사와 연결되지 않은 연습용입니다.</p>
+  <ol class="steps">
+    <li><b>승차권 구매</b> → 도착지(예: 대전복합)와 날짜를 고르고 <b>조회</b>.</li>
+    <li>시간표에서 버스를 고르고 인원·좌석을 고릅니다. 고른 좌석은 <b>5분</b> 동안 잡아 둡니다.</li>
+    <li>할인 종류(어른·경로 등)를 확인하고 <b>장바구니 담고 음료 고르기</b> 또는 <b>바로 결제 →</b>.</li>
+    <li>음료와 같은 장바구니로 한 번에 결제합니다. 쿠폰·포인트 할인은 음료에만 적용됩니다.</li>
+  </ol>
+  <div class="grid">
+    <figure><img src="images/T1_승차권탭.jpg" alt="승차권 탭"><figcaption>승차권 탭 첫 화면</figcaption></figure>
+    <figure><img src="images/T1_좌석고르기.jpg" alt="좌석"><figcaption>좌석 고르기</figcaption></figure>
+  </div>
+</section>
+
+<section id="signup">
+  <h2>8. 회원가입</h2>
+  <ol class="steps">
+    <li>시작 화면 <b>처음이신가요? 회원가입 →</b> → 이름, 아이디, 비밀번호(두 번), 전화번호를 입력합니다. 전화번호는 숫자만 치면 <code>010-0000-0000</code> 모양이 됩니다.</li>
+    <li>알레르기가 있으면 검색해서 고릅니다.</li>
+    <li><b>[필수] 개인정보 동의</b>를 체크합니다. 얼굴 로그인을 쓰려면 <b>[선택] 얼굴 정보 등록 동의</b>도 체크합니다.</li>
+    <li><b>다음</b>을 누르면 바로 My Menu로 가거나(얼굴 동의 안 함), 얼굴 등록 화면으로 갑니다.</li>
+  </ol>
+  <figure><img src="images/10_회원가입.jpg" alt="회원가입"><figcaption>회원가입 화면</figcaption></figure>
+  <div class="tip">얼굴은 <b>사진이 아니라 숫자(특징값)만 암호화</b>해 저장합니다. 시연 모드에서는 아무것도 저장되지 않습니다.</div>
+</section>
+
+<section id="admin">
+  <h2>9. 운영자 화면</h2>
+  <p>시작 화면 오른쪽 위 <b>운영자 메뉴</b> → 시연 모드는 <code>admin</code> / <code>demo</code>로 들어갑니다.</p>
+  <table>
+    <tr><th>탭</th><th>할 수 있는 일</th></tr>
+    <tr><td>메뉴 관리</td><td>가격·재고 바꾸기, 품절 전환 (손님 화면에 바로 반영)</td></tr>
+    <tr><td>회원·주문 조회</td><td>회원 목록(전화번호는 가려서), 주문 기록</td></tr>
+    <tr><td>이벤트·포인트</td><td>기간 이벤트(추가 적립·보너스 포인트)와 화면 테마</td></tr>
+    <tr><td>포인트 조정·로그</td><td>포인트 조정(사유 필수), 운영 기록 보기</td></tr>
+  </table>
+  <div class="grid">
+    <figure><img src="images/09_운영자로그인.jpg" alt="운영자 로그인"><figcaption>운영자 로그인</figcaption></figure>
+    <figure><img src="images/09_운영자화면.jpg" alt="운영자 화면"><figcaption>운영자 화면 — 메뉴 관리</figcaption></figure>
+  </div>
+</section>
+
+<section id="real">
+  <h2>10. 실제 모드 — <code>3_실제모드_실행.bat</code></h2>
+  <p>실제 모드는 주문·회원·얼굴 정보를 이 컴퓨터의 <b>암호화 금고</b>(<code>program\data</code> 폴더)에 저장하고, 카메라로 얼굴 인증을 합니다.</p>
+  <ol class="steps">
+    <li>처음 켜면 금고가 없어서 검은 창에 <b>“새 관리자 비밀번호”</b>를 묻습니다. 직접 정해서 입력하고 Enter를 누르세요(입력해도 글자가 보이지 않는 게 정상입니다). 연습용 샘플 데이터가 함께 만들어집니다.</li>
+    <li>다음부터는 첫 화면에서 관리자 아이디 <code>admin</code>과 그 비밀번호로 금고를 엽니다.</li>
+    <li>USB 카메라를 쓰면 <code>program\3_실제모드_실행.bat</code>을 메모장으로 열어 <code>KIOSK_CAMERA=0</code>의 숫자를 카메라 번호로 바꿉니다.</li>
+  </ol>
+  <div class="warn">
+    <b>꼭 지켜 주세요</b>
+    <ul>
+      <li>관리자 비밀번호는 다른 사람·메신저·인터넷에 올리지 마세요. 잊으면 금고를 열 수 없습니다.</li>
+      <li>얼굴 등록은 <b>본인 동의</b>를 받은 사람만 합니다.</li>
+      <li><code>program\data</code> 폴더(회원·얼굴 정보)를 다른 곳에 올리거나 보내지 마세요.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="trouble">
+  <h2>11. 문제가 생기면</h2>
+  <table>
+    <tr><th>이럴 때</th><th>이렇게</th></tr>
+    <tr><td>“Python 을 찾지 못했습니다”</td><td>Python을 설치할 때 “Add python.exe to PATH”를 체크했는지 확인하고 다시 설치한 뒤 1번을 다시 실행합니다.</td></tr>
+    <tr><td>설치 중 오류</td><td>인터넷 연결을 확인하고 1번을 다시 실행합니다. 여러 번 실행해도 괜찮습니다.</td></tr>
+    <tr><td>키오스크가 오류로 멈춤</td><td>검은 창을 캡처하고, <code>program\logs\kiosk_error.log</code> 파일을 팀장에게 보냅니다.</td></tr>
+    <tr><td>얼굴 인증이 안 됨</td><td>밝은 곳에서 카메라를 정면으로, 50cm 안에서 봅니다. 마스크·선글라스는 벗습니다. 안 되면 <b>비밀번호로 로그인</b>.</td></tr>
+    <tr><td>얼굴 로그인이 잠김</td><td>비밀번호로 한 번 로그인하면 풀립니다.</td></tr>
+    <tr><td>카메라가 안 잡힘</td><td>카메라 번호(<code>KIOSK_CAMERA</code>)를 0, 1, 2로 바꿔 봅니다. <code>program\tools\check_camera.py</code>로 확인할 수 있습니다.</td></tr>
+    <tr><td>화면이 너무 작음/큼</td><td>시작 화면 <b>큰 글자</b>를 쓰거나, 전체 화면으로 켜려면 명령 창에서 <code>2_시연모드_실행.bat --fullscreen</code>.</td></tr>
+  </table>
+</section>
+
+</main>
+</body>
+</html>

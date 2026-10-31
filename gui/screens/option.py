@@ -65,6 +65,8 @@ class OptionPopup(QWidget):
         self.build()
         self.setGeometry(self.parentWidget().rect())
         self.show()
+        self.card.layout().activate()           # 첫 그림부터 다 배치된 팝업이 보이게 (한 장면 납작해지지 않게)
+        self.layout().activate()
         self.raise_()
         self.update_total()
 

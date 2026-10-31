@@ -15,7 +15,7 @@ from domain.customers import (
 from face import FaceError
 from gui import theme
 from gui.screens.login import info_box, nav_bar
-from gui.widgets import Card, TouchKeyboard, button, label, message_label, phone_field, text_field
+from gui.widgets import FixedWidthCard, Card, TouchKeyboard, button, label, message_label, phone_field, text_field
 
 
 class FindAccountScreen(QWidget):
@@ -57,8 +57,7 @@ class FindAccountScreen(QWidget):
         left.addStretch(1)
         body.addWidget(left_card, 1)
 
-        right_card = Card()
-        right_card.setFixedWidth(470)
+        right_card = FixedWidthCard(470)
         right = QVBoxLayout(right_card)
         right.setContentsMargins(22, 20, 22, 20)
         right.setSpacing(12)

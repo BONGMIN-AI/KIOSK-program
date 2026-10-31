@@ -15,7 +15,7 @@ from domain.payment import breakdown_text
 from domain.tickets import depart_text, ticket_summary, until_text
 from gui import theme
 from gui.screens.ticket import TicketCartLine, notice_label
-from gui.widgets import Card, button, label, menu_icon
+from gui.widgets import FixedWidthCard, Card, button, label, menu_icon
 
 CASH_UNITS = (50000, 10000, 5000, 1000, 500, 100)
 
@@ -84,8 +84,7 @@ class CartScreen(QWidget):
         lines_card, self.lines = scroll_card(20)
         self.lines.setSpacing(10)
         body.addWidget(lines_card, 1)
-        summary = Card()
-        summary.setFixedWidth(320)
+        summary = FixedWidthCard(320)
         column = QVBoxLayout(summary)
         column.setContentsMargins(22, 22, 22, 22)
         column.setSpacing(12)
@@ -204,8 +203,7 @@ class CashScreen(QWidget):
         left.addWidget(button("투입 취소 · 반환", "outline", self.refund))
         body.addWidget(insert_card, 1)
 
-        summary = Card()
-        summary.setFixedWidth(340)
+        summary = FixedWidthCard(340)
         right = QVBoxLayout(summary)
         right.setContentsMargins(22, 22, 22, 22)
         right.setSpacing(12)

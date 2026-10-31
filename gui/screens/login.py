@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QPushB
 from domain.customers import find_by_login_id, link_card, login_with_password, login_with_face
 from face import FaceError, guide_view
 from gui import theme
-from gui.widgets import Card, TouchKeyboard, button, label, message_label, promo_row, text_field
+from gui.widgets import Card, FixedWidthCard, TouchKeyboard, button, label, message_label, promo_row, text_field
 
 
 def nav_bar(router, back):
@@ -82,8 +82,7 @@ class LoginScreen(QWidget):
         self.face_cancelled = False
         body.addWidget(left_card, 1)
 
-        right_card = Card()
-        right_card.setFixedWidth(470)
+        right_card = self.right_card = FixedWidthCard(470)
         right = QVBoxLayout(right_card)
         right.setContentsMargins(22, 20, 22, 20)
         right.setSpacing(12)
@@ -145,6 +144,7 @@ class LoginScreen(QWidget):
         self.face_button.setText("얼굴 인증")     # 다음 손님에게는 '재시도'가 아니라 처음 상태로
         self.message.setText(message)
         self.keyboard.target = self.login_id if face or not self.login_id.text() else self.password
+        self.right_card.updateGeometry()        # 버튼이 바뀐 오른쪽 칸 높이를 다시 재게 (큰 글자에서 창이 커지던 문제)
 
     def find_account(self):
         """02-C 아이디 찾기 · 비밀번호 재설정. 아이디를 넣어 두었으면 비밀번호 재설정부터."""

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KIOSK 최종 보고서</title>
+<style>
+  :root { --bg: #F7EEE3; --card: #FFFFFF; --brown: #3C1B03; --text2: #7A6252; --caramel: #B66B2E;
+          --cream: #FBF6EF; --accent: #D4573C; --line: #E8D9C6; --ok: #2E7D4F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--brown); font: 16px/1.7 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+  header { background: var(--brown); color: #fff; padding: 36px 16px; text-align: center; }
+  header h1 { margin: 0 0 6px; font-size: 30px; }
+  header p { margin: 0; opacity: .85; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 60px; }
+  section { background: var(--card); border-radius: 18px; padding: 22px 26px; margin-bottom: 22px; box-shadow: 0 4px 18px rgba(60,27,3,.06); }
+  h2 { margin: 0 0 12px; font-size: 23px; }
+  h3 { margin: 20px 0 8px; font-size: 18px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat { background: var(--cream); border-radius: 14px; padding: 14px 16px; }
+  .stat b { display: block; font-size: 30px; color: var(--caramel); line-height: 1.2; }
+  .stat span { color: var(--text2); font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 15px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--cream); white-space: nowrap; }
+  .ok { color: var(--ok); font-weight: 700; }
+  .fix { color: var(--accent); font-weight: 700; }
+  figure { margin: 12px 0; }
+  figure img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  figcaption { color: var(--text2); font-size: 14px; margin-top: 6px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .note { background: var(--cream); border-left: 5px solid var(--caramel); padding: 10px 16px; border-radius: 10px; margin: 12px 0; }
+  code { background: var(--cream); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; font-family: Consolas, monospace; font-size: 14px; }
+  pre { background: var(--cream); border-radius: 12px; padding: 12px 16px; overflow-x: auto; font-size: 14px; }
+  @media (max-width: 760px) { .stats { grid-template-columns: 1fr 1fr; } .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>COFFEE &amp; SPOON 키오스크 — 최종 보고서</h1>
+  <p>2026 AI모빌리티기초 팀 프로젝트 · 팀 공학 한 스푼 · 2026년 10월 31일</p>
+</header>
+<main>
+
+<section>
+  <h2>1. 한눈에 보기</h2>
+  <div class="stats">
+    <div class="stat"><b>25</b><span>플로차트 갈래별 시나리오 (2가지 화면 크기로 50번 실행)</span></div>
+    <div class="stat"><b>240</b><span>시나리오 단계 점검 · 최종 문제 0</span></div>
+    <div class="stat"><b>540</b><span>화면 배치 점검 (54가지 상태 × 5가지 크기 × 2가지 글자 크기)</span></div>
+    <div class="stat"><b>210</b><span>자동 테스트 · 모두 통과</span></div>
+  </div>
+  <p>주제는 <b>“사용자를 기억하는 KIOSK”</b>입니다. 현금 결제 카페 키오스크(브랜드 <b>COFFEE &amp; SPOON</b>)를 Python(PySide6) 화면 프로그램으로 만들었습니다.
+     회원은 얼굴·비밀번호·회원 카드로 로그인하고, 키오스크는 지난 주문·좋아요·알레르기·카페인 섭취를 기억해 다음 주문을 돕습니다.
+     버스 터미널 안 카페를 가정해 <b>승차권 탭</b>도 같은 장바구니에서 결제합니다.</p>
+  <table>
+    <tr><th>팀</th><td>공학 한 스푼 — 김보민(팀장), 조민기, 김지성, 김휘원, 임예찬</td></tr>
+    <tr><th>저장소</th><td>GitHub <code>BONGMIN-AI/KIOSK-program</code> (main)</td></tr>
+    <tr><th>실행</th><td>Windows · Python 3 · 인터넷 없이 동작(처음 설치 때만 필요)</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>2. 전체 흐름 (플로차트 v4)</h2>
+  <pre>대기 화면 → 시작(HOME) ─┬ 회원 → ID 또는 RFID 카드 → 얼굴 인증(실패·3번 잠금 → 비밀번호 · 찾기 02-C) → My Menu
+                         ├ 비회원 → 메뉴(커피 탭부터)
+                         ├ 회원가입 → (얼굴 등록 선택) → My Menu
+                         └ 운영자 → 메뉴·회원·이벤트·포인트 → 로그아웃
+메뉴(My Menu · 인기 · 승차권 · 커피 …) → 옵션(알레르기 경고 · 카페인 알리미) → 장바구니
+  → (회원) 쿠폰·포인트 → 현금(부족 안내 · 45초 경고 · 60초 반환 · 0원 결제 · 잔돈 포인트)
+  → 완료(대기 번호 · 승차권 · 거스름돈 안내) → 더 주문하시겠어요?(15초) → 예: 메뉴 / 아니요: 대기 화면</pre>
+  <div class="grid">
+    <figure><img src="images/01_시작화면.jpg" alt=""><figcaption>시작 화면 — 왼쪽 5초 슬라이드 · 오른쪽 회원/비회원</figcaption></figure>
+    <figure><img src="images/03_MyMenu.jpg" alt=""><figcaption>My Menu — 최근 주문 · 좋아요 · 카페인</figcaption></figure>
+    <figure><img src="images/08_주문완료.jpg" alt=""><figcaption>주문 완료 — 대기 번호 · 거스름돈</figcaption></figure>
+  </div>
+</section>
+
+<section>
+  <h2>3. 구현한 기능</h2>
+  <table>
+    <tr><th>구간</th><th>기능</th></tr>
+    <tr><td>00 대기 · 01 시작</td><td>로고·이벤트 전광판, 광고 슬라이드(5초), 페이드인, 4개 언어(대기·시작 화면), 고대비·큰 글자</td></tr>
+    <tr><td>02 로그인</td><td>얼굴 인증(YuNet 검출 → 가림·품질 검사 → MiniFASNet 진짜 얼굴 → ArcFace 5장 중 4장 비교, 50cm 안 한 명만), 3번 실패 잠금, 비밀번호 대체, RFID 회원 카드, 화면 안 얼굴 기호</td></tr>
+    <tr><td>02-C 찾기</td><td>아이디 찾기(가려서 보여 줌), 전화번호 확인 후 비밀번호 재설정(5번 틀리면 잠금)</td></tr>
+    <tr><td>03 메뉴</td><td>메뉴 사진 50장 이상, 분류 탭, 품절·재고, 회원 전용 My Menu, <b>인기 탭(좋아요순·판매순·계절 인기순)</b></td></tr>
+    <tr><td>My Menu</td><td><b>최근 주문 통째로 다시 담기</b>, ♥ 좋아요, <b>카페인 리포트(이번 주·주별·월별 그래프)</b>, <b>카페인 알리미(톱니바퀴 → 주 제한 잔/mg, 넘으면 확인 질문)</b>, 칭호, 저장한 노선</td></tr>
+    <tr><td>04 옵션</td><td>온도·사이즈·추가·수량, 메뉴별 온도 규칙(딸기라떼 등 ICE만 · 에스프레소 HOT만), 알레르기 경고</td></tr>
+    <tr><td>T1 승차권</td><td>예매표 조회·출력, 노선 → 시간표 → 인원·좌석(5분 유지) → 할인 → 음료와 한 장바구니 결제 (시뮬레이션)</td></tr>
+    <tr><td>05~08 결제</td><td>장바구니, 쿠폰·포인트(음료만), 현금 투입(‘방금 일’·‘지금 상태’ 두 줄), 부족 안내, 반환, 0원 결제, 잔돈 포인트 적립, 거스름돈 구성, 대기 번호, 더 주문(15초)</td></tr>
+    <tr><td>10 회원가입</td><td>입력 검사, 전화번호 자동 모양(010-0000-0000), 알레르기 검색, 필수/선택 동의, 화면 안 얼굴 등록</td></tr>
+    <tr><td>09 운영자</td><td>메뉴·재고·품절, 회원·주문 조회(전화번호 가림), 기간 이벤트·테마, 포인트 조정(사유 필수)·운영 기록</td></tr>
+    <tr><td>안전</td><td>암호화 금고(관리자 비밀번호로 열기), 얼굴은 사진 없이 특징값만 저장, 60초 무입력 복귀·현금 자동 반환, 예상 못 한 오류 시 반환하고 처음으로</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>4. 최종 점검 — 어떻게 확인했나</h2>
+  <p>세 가지 자동 점검을 모두 돌렸습니다. 모두 카메라 없이 <b>가짜 얼굴</b>과 <b>연습용 데이터</b>로 실행되어 누구나 다시 해 볼 수 있습니다.</p>
+  <table>
+    <tr><th>점검</th><th>무엇을 보나</th><th>결과</th></tr>
+    <tr><td>자동 테스트 <code>pytest</code></td><td>기능 하나하나의 계산·규칙(결제·포인트·얼굴 판정·승차권 등) 210가지</td><td class="ok">210 통과</td></tr>
+    <tr><td>화면 배치 점검 <code>tools/check_layout.py</code></td><td>화면 54가지 상태를 창 크기 5가지(1200×800 ~ 2560×1440) × 기본/큰 글자로 열어 글자 잘림·눌림·칸 밖·겹침</td><td class="ok">540가지 문제 없음</td></tr>
+    <tr><td>시나리오 점검 <code>tools/run_scenarios.py</code> (이번에 새로 만듦)</td><td>플로차트 갈래 25가지를 손님처럼 처음부터 끝까지 지나가며 단계마다 ① 맞는 화면으로 갔나 ② 처리 안 된 오류·경고 ③ 주문·재고·포인트·좌석 결과 ④ 화면 배치</td><td class="ok">240단계 문제 없음</td></tr>
+  </table>
+  <h3>시나리오 25가지</h3>
+  <table>
+    <tr><th>#</th><th>시나리오</th><th>지나간 길</th></tr>
+    <tr><td>1</td><td>비회원 기본 주문</td><td>대기 → HOME → 비회원 → 메뉴 → 옵션 → 장바구니 → 현금 → 완료 → 대기</td></tr>
+    <tr><td>2</td><td>돈이 모자람 · 반환</td><td>현금 → 부족 안내 → 반환</td></tr>
+    <tr><td>3</td><td>현금 45초 경고 · 60초 반환</td><td>현금 → 경고 → 자동 반환 → 대기</td></tr>
+    <tr><td>4</td><td>회원 얼굴 로그인</td><td>회원 → ID → 얼굴 성공 → My Menu</td></tr>
+    <tr><td>5</td><td>얼굴 3번 실패 → 잠금</td><td>불일치 ×3 → 잠금 안내 → 비밀번호 → 잠금 풀림</td></tr>
+    <tr><td>6</td><td>비밀번호 틀림 · 없는 ID</td><td>실패 → 회원 ID부터 다시</td></tr>
+    <tr><td>7</td><td>카메라 고장</td><td>인증 중 카메라 오류 → 멈추지 않고 비밀번호 안내</td></tr>
+    <tr><td>8</td><td>아이디 찾기 · 비밀번호 재설정</td><td>02-C → 새 비밀번호 → 로그인</td></tr>
+    <tr><td>9</td><td>RFID 카드</td><td>카드 연결 → 카드 태그 → 모르는 카드 안내</td></tr>
+    <tr><td>10</td><td>회원가입 오류 → 얼굴 등록</td><td>빈칸·중복 아이디·비밀번호 다름 → 10-B → My Menu</td></tr>
+    <tr><td>11</td><td>회원가입 (얼굴 없이)</td><td>10 → My Menu</td></tr>
+    <tr><td>12</td><td>얼굴 등록 중 카메라 고장</td><td>10-B 오류 안내 · 등록 안 됨</td></tr>
+    <tr><td>13</td><td>회원 전체 주문</td><td>알레르기 경고 → 쿠폰·포인트 → 현금 → 잔돈 포인트 → 완료 → 더 주문</td></tr>
+    <tr><td>14</td><td>완료 15초 → 로그아웃</td><td>08 시간 지남 → 대기</td></tr>
+    <tr><td>15</td><td>0원 결제</td><td>포인트 전액 → 0원 결제 → 완료</td></tr>
+    <tr><td>16</td><td>최근 주문 · 카페인 알리미</td><td>톱니바퀴 설정 → 다시 담기 질문(예/아니요) → 옵션 질문 → 그래프 주별·월별</td></tr>
+    <tr><td>17</td><td>인기 탭 · 좋아요</td><td>3가지 정렬 → ♥ → My Menu</td></tr>
+    <tr><td>18</td><td>품절 · 재고 부족</td><td>품절 카드 꺼짐 · 재고 넘게 담기 안내</td></tr>
+    <tr><td>19</td><td>승차권 예매표 출력</td><td>조회 오류 → 출력</td></tr>
+    <tr><td>20</td><td>승차권 + 음료 결제</td><td>노선 → 시간표 → 좌석 → 할인 → 음료 → 결제 → 완료</td></tr>
+    <tr><td>21</td><td>승차권만 결제</td><td>노선 → 좌석 → 결제 → 완료</td></tr>
+    <tr><td>22</td><td>좌석 5분 지남</td><td>장바구니 승차권 시간 초과 → 빼고 안내</td></tr>
+    <tr><td>23</td><td>운영자 전체</td><td>로그인 오류 → 메뉴·회원·이벤트·포인트 → 로그아웃 → 손님 화면에 품절 반영</td></tr>
+    <tr><td>24</td><td>주문 중 화면 설정 바꾸기</td><td>큰 글자·고대비로 바꿔도 장바구니 유지</td></tr>
+    <tr><td>25</td><td>어느 화면이든 60초 무입력</td><td>로그인·가입·메뉴 → 대기</td></tr>
+  </table>
+  <p>단계별 기록과 화면 그림은 <code>문서\시나리오_점검결과.html</code>에 있습니다.</p>
+</section>
+
+<section>
+  <h2>5. 점검에서 찾아 고친 문제</h2>
+  <table>
+    <tr><th>문제</th><th>어디서</th><th>원인</th><th>고친 방법</th></tr>
+    <tr><td class="fix">창이 커진 채 남음</td><td>큰 글자 · 비밀번호 틀린 뒤 로그인 화면 (800 → 909px), 승차권 완료</td><td>화면을 바꾸는 한 순간 Qt가 최소 높이를 크게 계산해 창을 늘리고 줄이지 않음</td><td>키오스크 창은 크기를 고정(내용 넘침은 배치 점검이 따로 잡음), 고정 너비 칸은 높이 재계산 방식 정리</td></tr>
+    <tr><td class="fix">옵션 창이 한 장면 납작하게 보임</td><td>처음 여는 옵션 창</td><td>그림을 먼저 그리고 배치를 나중에 함</td><td>보이자마자 배치를 끝내고 그림</td></tr>
+    <tr><td class="fix">지우기 키가 네모(□)로 보임</td><td>화면 키보드 ⌫</td><td>글꼴에 없는 기호</td><td>‘지움’ 글자로 바꿈 · 기호·중국어 간체용 Windows 보조 글꼴 지정</td></tr>
+    <tr><td class="fix">큰 글자 회원가입이 창보다 김</td><td>10 회원가입</td><td>묶음 사이 간격</td><td>큰 글자에서는 간격을 좁게</td></tr>
+    <tr><td class="fix">탭 9칸이 눌림</td><td>왼쪽 분류 줄(인기 탭 추가 뒤)</td><td>칸 안 여백</td><td>여백을 줄여 9칸이 한 화면에</td></tr>
+    <tr><td class="fix">카페인 문구 반복</td><td>My Menu 카페인 리포트</td><td>같은 말을 세 줄로 보여 줌</td><td>섭취량 · mg · 가장 많이 마신 요일 세 줄로 정리, 설정은 톱니바퀴 창으로</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>6. 남은 한계와 주의할 점</h2>
+  <ul>
+    <li><b>현금 투입</b>은 화면 버튼으로 흉내 냅니다. 실제 지폐·동전 기기, 영수증·승차권 프린터와는 연결하지 않았습니다.</li>
+    <li><b>승차권</b>은 시뮬레이션입니다. 실제 버스 회사 예매 시스템과 연결되지 않습니다.</li>
+    <li><b>RFID 카드</b>는 키보드처럼 입력하는 USB 리더 방식으로 만들었고, 실물 리더기 시험이 남았습니다.</li>
+    <li><b>얼굴 인증</b>은 교실 조명·카메라에서 한 번 더 시험해 기준값(<code>KIOSK_FACE_THRESHOLD</code>)을 맞추는 것이 좋습니다. ArcFace 모델은 비상업 연구용이라 배포 폴더에 넣지 않고 설치 때 내려받습니다.</li>
+    <li><b>언어</b>는 대기·시작 화면만 바뀌고, 그다음 화면은 한국어입니다.</li>
+    <li><b>인기 탭 순위</b>는 시연용 가상 기록에 실제 주문·좋아요를 더한 값입니다.</li>
+    <li>ICE·HOT 사진이 같습니다(추가 아이디어 P2).</li>
+  </ul>
+</section>
+
+<section>
+  <h2>7. 다시 점검하는 방법 (개발용)</h2>
+  <pre>python -m pytest -q                 자동 테스트
+python tools/check_layout.py        화면 배치 점검 (약 10분)
+python tools/run_scenarios.py       시나리오 점검 (약 4분, 결과: 08_최종점검\시나리오_점검)
+python tools/capture_manual.py      설명서용 화면 그림 다시 만들기
+python tools/make_release.py        배포 폴더 만들기</pre>
+</section>
+
+</main>
+</body>
+</html>

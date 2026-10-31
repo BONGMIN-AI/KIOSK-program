@@ -71,6 +71,9 @@ def won(amount):
     return f"{amount:,}원"
 
 
+GLYPH_FALLBACKS = ["Malgun Gothic", "Microsoft YaHei", "Segoe UI Symbol"]
+
+
 def load_fonts():
     """동봉된 글꼴만 등록하고 없으면 맑은 고딕을 쓴다. 글꼴 파일이 커서 한 번만 등록한다."""
     if _loaded_families:
@@ -86,6 +89,8 @@ def font(size=BODY_SIZE, title=False, bold=False):
     if name not in _loaded_families:
         name = FALLBACK_FONT
     result = QFont(name)
+    # 동봉 글꼴에 없는 글자(중국어 간체·기호)는 Windows 글꼴로 이어 그린다 (없으면 네모로 보였다, 10/31 점검)
+    result.setFamilies([name, *GLYPH_FALLBACKS])
     result.setPixelSize(round(size * SCALE))
     result.setBold(bold or title)
     return result

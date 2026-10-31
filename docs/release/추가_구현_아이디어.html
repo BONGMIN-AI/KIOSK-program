@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>추가 구현 아이디어</title>
+<style>
+  :root { --bg: #F7EEE3; --card: #FFFFFF; --brown: #3C1B03; --text2: #7A6252; --caramel: #B66B2E;
+          --cream: #FBF6EF; --accent: #D4573C; --line: #E8D9C6; --ok: #2E7D4F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--brown); font: 16px/1.7 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+  header { background: var(--brown); color: #fff; padding: 32px 16px; text-align: center; }
+  header h1 { margin: 0 0 6px; font-size: 28px; }
+  header p { margin: 0; opacity: .85; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 60px; }
+  section { background: var(--card); border-radius: 18px; padding: 22px 26px; margin-bottom: 22px; box-shadow: 0 4px 18px rgba(60,27,3,.06); }
+  h2 { margin: 0 0 10px; font-size: 22px; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--cream); white-space: nowrap; }
+  .size { white-space: nowrap; font-weight: 700; }
+  .s { color: var(--ok); } .m { color: var(--caramel); } .l { color: var(--accent); }
+  .done { color: var(--text2); }
+  .legend { color: var(--text2); font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>추가 구현 아이디어 목록</h1>
+  <p>1차 완성(10/31) 다음에 고를 수 있는 후보 · 팀 공학 한 스푼</p>
+</header>
+<main>
+
+<section>
+  <p class="legend">크기: <span class="s">소</span> = 하루 안 · <span class="m">중</span> = 2~3일 · <span class="l">대</span> = 일주일 이상이거나 장비·서버가 필요.
+     번호(①~⑰, M1~M10)는 회의 자료(<code>05_1차_프로그램_계획.md</code>)의 후보 번호와 같습니다.</p>
+</section>
+
+<section>
+  <h2>A. ‘사용자를 기억하는’ 주제를 더 살리는 것</h2>
+  <table>
+    <tr><th>#</th><th>아이디어</th><th>화면에서 이렇게</th><th>크기</th></tr>
+    <tr><td>M1</td><td>방문 간격 인사</td><td>로그인하면 “3일 만이에요!” / “오늘 두 번째 방문이에요”</td><td class="size s">소</td></tr>
+    <tr><td>M4</td><td>같이 사는 조합 권하기</td><td>아메리카노를 담을 때 늘 크루아상도 샀다면 “같이 담을까요?”</td><td class="size s">소</td></tr>
+    <tr><td>M3</td><td>옵션 습관 기억</td><td>메뉴마다 자주 고른 옵션(ICE·L·샷 추가)을 옵션 창에 미리 선택</td><td class="size s">소</td></tr>
+    <tr><td>M9</td><td>다시 들어온 메뉴 알림</td><td>품절이라 못 산 메뉴가 다시 들어오면 로그인 때 알려 주기</td><td class="size s">소</td></tr>
+    <tr><td>M10</td><td>결제 습관</td><td>늘 잔돈을 포인트로 적립했다면 체크를 미리 켜 두기</td><td class="size s">소</td></tr>
+    <tr><td>M5+</td><td>카페인 알리미 넓히기</td><td>하루 제한도 고를 수 있게 · 제한 가까우면 디카페인 탭을 먼저 보여 주기</td><td class="size s">소</td></tr>
+    <tr><td>M6 · ⑧</td><td>기념일 · 생일 쿠폰</td><td>가입 1주년·10번째 방문·생일 주간에 축하 화면과 쿠폰 (가입 정보에 생일 칸은 이미 있음)</td><td class="size m">중</td></tr>
+    <tr><td>M2</td><td>날씨·시간대 추천</td><td>비 오는 날·아침에 자주 고른 메뉴를 추천 1순위로 (날씨는 인터넷 필요 → 시간대부터)</td><td class="size m">중</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>B. 시연에서 눈에 띄는 것</h2>
+  <table>
+    <tr><th>#</th><th>아이디어</th><th>화면에서 이렇게</th><th>크기</th></tr>
+    <tr><td>①</td><td>스마일 할인</td><td>결제 직전 “웃어 주세요!” → 카메라로 미소를 찾으면 추가 할인 (로그인 화면 배너는 ‘준비 중’으로 이미 있음)</td><td class="size m">중</td></tr>
+    <tr><td>④</td><td>이스터 에그 · 영수증 쪽지</td><td>특정 조합·횟수에 숨은 메시지, 영수증에 한 줄 쪽지</td><td class="size s">소</td></tr>
+    <tr><td>⑤</td><td>주문 대결</td><td>두 사람이 같은 메뉴를 고르면 “오늘의 승자” 같은 작은 놀이</td><td class="size m">중</td></tr>
+    <tr><td>⑰</td><td>ICE/HOT 사진 구분</td><td>옵션 창에서 온도를 고르면 사진이 유리컵·얼음 사진으로 바뀜 (사진 제작이 대부분)</td><td class="size m">중</td></tr>
+    <tr><td>⑫</td><td>사진 찍기 메뉴</td><td>500원 메뉴로 결제하면 촬영 화면 · 프레임 · 배경 흐림 · 영수증 출력</td><td class="size l">대</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>C. 결제·운영을 더 실제처럼</h2>
+  <table>
+    <tr><th>#</th><th>아이디어</th><th>화면에서 이렇게</th><th>크기</th></tr>
+    <tr><td>⑥</td><td>동전 최소화 안내</td><td>“500원을 더 넣으면 거스름돈이 지폐 한 장으로 끝나요”</td><td class="size s">소</td></tr>
+    <tr><td>⑦</td><td>예산 먼저 입력</td><td>“1만원 안에서” 고르면 넘는 메뉴는 흐리게, 남은 금액 표시</td><td class="size s">소</td></tr>
+    <tr><td>⑩</td><td>에코 포인트</td><td>개인 컵 선택 시 포인트 추가</td><td class="size s">소</td></tr>
+    <tr><td>—</td><td>운영자 매출 요약</td><td>오늘·이번 주 매출, 많이 팔린 메뉴, 시간대별 막대그래프</td><td class="size m">중</td></tr>
+    <tr><td>—</td><td>모든 화면 번역</td><td>지금은 대기·시작 화면만 4개 언어 → 메뉴·결제 화면까지</td><td class="size m">중</td></tr>
+    <tr><td>—</td><td>실물 장비 연결</td><td>지폐·동전 기기, 영수증·승차권 프린터, RFID 리더 실물 시험</td><td class="size l">대</td></tr>
+    <tr><td>⑪ · ⑯</td><td>QR 마이페이지 · QR 일 처리</td><td>화면 QR → 손님 휴대폰에서 가입·정보 수정·비밀번호 재설정 (휴대폰용 웹 서버 필요)</td><td class="size l">대</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>D. 얼굴 인증·센서</h2>
+  <table>
+    <tr><th>#</th><th>아이디어</th><th>화면에서 이렇게</th><th>크기</th></tr>
+    <tr><td>②</td><td>접근 감지</td><td>사람이 다가오면 대기 화면이 저절로 시작 (화면 안내 문구 자리는 이미 있음 · 깊이 카메라 연결)</td><td class="size m">중</td></tr>
+    <tr><td>⑮</td><td>깊이 얼굴 모양 보조 비교</td><td>D435 깊이로 코 높이 등 몇 가지 수치를 같이 비교 (보조용)</td><td class="size l">대</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>이미 만든 후보 (참고)</h2>
+  <table>
+    <tr><th>#</th><th>후보</th><th>지금 상태</th></tr>
+    <tr class="done"><td>③</td><td>칭호 · 대기 전광판</td><td>칭호 달성, 완료 화면 ‘대기자: [칭호] 닉네임’</td></tr>
+    <tr class="done"><td>⑨</td><td>인기 순위</td><td>인기 탭(좋아요순·판매순·계절 인기순)</td></tr>
+    <tr class="done"><td>⑬</td><td>RFID 회원 카드 로그인</td><td>구현 (실물 리더기 시험 남음)</td></tr>
+    <tr class="done"><td>⑭</td><td>승차권 탭</td><td>구현 (시뮬레이션)</td></tr>
+    <tr class="done"><td>M5</td><td>카페인 알림</td><td>카페인 리포트 · 알리미(주 제한 잔/mg)</td></tr>
+    <tr class="done"><td>M7</td><td>접근성 설정</td><td>고대비 · 큰 글자 · 언어(대기·시작 화면)</td></tr>
+  </table>
+</section>
+
+</main>
+</body>
+</html>

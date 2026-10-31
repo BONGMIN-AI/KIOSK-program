@@ -272,6 +272,8 @@ def states(window):
                 menu.show_category("커피")
                 menu.popup.open_for("M001")
                 menu.popup.add_to_cart()
+            elif ask == "settings":
+                menu.gear_button.click()
             elif ask == "reorder":
                 menu.reorder(session.recent()["lines"])
         return run
@@ -409,6 +411,7 @@ def states(window):
         ("03 My Menu 채운 회원", filled_member),
         ("03 카페인 알리미 주별", caffeine_limit()),
         ("03 카페인 월별", caffeine_limit("월별")),
+        ("03 카페인 알리미 설정 창", caffeine_limit(ask="settings")),
         ("04 카페인 알리미 질문", caffeine_limit(ask="popup")),
         ("03 카페인 알리미 다시 담기 질문", caffeine_limit(ask="reorder")),
         ("03 인기 좋아요순 비회원", popular("좋아요순")),

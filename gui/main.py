@@ -15,7 +15,7 @@ from datetime import datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication, QLayout, QMainWindow
 
 import config
 from core import auth, schema
@@ -80,6 +80,10 @@ class KioskWindow(QMainWindow):
         self.router = Router(self, vault, face_factory, admin_check)
         self.router.rebuild = self.build_screens
         self.setCentralWidget(self.router)
+        # 키오스크 창은 화면 크기 그대로다. 화면을 바꾸는 한 순간의 큰 최소 높이 때문에 창이 커진 채
+        # 남지 않게 한다 (10/31 시나리오 점검: 큰 글자 02 비밀번호 실패 → 800px 창이 909px로).
+        # 내용이 정말 넘치는지는 tools/check_layout.py가 '칸 눌림'으로 잡는다.
+        self.layout().setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         self.router.camera_view = CameraView(self)      # 얼굴 인증 카메라를 창 안에 덮어 보여 준다
         self.router.notice = Notice(self)               # 위쪽 안내 띠 (현금 반환·오류 안내)
         self.card_reader = CardReader(self.router.card_active, self)   # USB RFID 리더 (키보드처럼 입력)

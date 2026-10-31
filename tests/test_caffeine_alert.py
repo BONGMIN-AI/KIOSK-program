@@ -70,9 +70,14 @@ def test_alert_asks_before_going_over(window):
     member = next(iter(router.session.vault.read("customers").values()))
     router.start_member_order(member)
     menu = router.screens["menu"]
-    assert menu.limit_amount.text() == "꺼짐"
+    assert menu.alert_title.text() == "카페인 알리미 꺼짐"
+    menu.gear_button.click()                     # 톱니바퀴 → 설정 창
+    assert menu.caffeine_settings.isVisible() and menu.limit_amount.text() == "꺼짐"
     menu.change_limit(step=1)                    # 꺼진 상태에서 + → 주 3잔
     assert menu.limit_amount.text() == "주 3잔"
+    assert menu.alert_title.text() == "카페인 알리미 · 주 3잔" and menu.alert_text.text() == "3잔 남았어요"
+    menu.settings_done.click()
+    assert not menu.caffeine_settings.isVisible()
     menu.change_limit(step=-1)
     assert router.session.caffeine_limit() == {"unit": "잔", "amount": 2}
     menu.change_limit(unit="mg")

@@ -84,6 +84,18 @@ class Card(QFrame):
         self.setGraphicsEffect(shadow)
 
 
+class FixedWidthCard(Card):
+    """너비가 고정된 카드. 안의 줄바꿈 글자 때문에 Qt가 '좁아지면 길어진다'고 계산해
+    화면 전체 최소 높이를 부풀리는 일(큰 글자 02 로그인 실패 → 창이 909px)을 막는다."""
+
+    def __init__(self, width, parent=None):
+        super().__init__(parent)
+        self.setFixedWidth(width)
+
+    def hasHeightForWidth(self):
+        return False
+
+
 class EventBanner(QWidget):
     """대기 화면 아래 띠.
 
@@ -530,7 +542,7 @@ class TouchKeyboard(QWidget):
             for key in keys:
                 row.addWidget(self.key_button(key, lambda checked=False, k=key: self.type(k)), 2)
             if index == len(self.ROWS) - 1:
-                row.addWidget(self.key_button("⌫", self.backspace), 3)
+                row.addWidget(self.key_button("지움", self.backspace), 3)   # ⌫는 글꼴에 없어 네모로 보인다 · 큰 글자에서도 들어가게 두 글자
             row.addStretch(margin if index < 3 else 0)
             layout.addLayout(row)
 
@@ -609,6 +621,83 @@ class TrendBars(QWidget):
             y = floor - self.limit / top * room
             painter.setPen(QPen(QColor(theme.ACCENT), 1.5, Qt.PenStyle.DashLine))
             painter.drawLine(QPointF(0, y), QPointF(self.width(), y))
+
+
+class GearButton(QPushButton):
+    """톱니바퀴 버튼 (글꼴에 ⚙가 없어서 직접 그린다)."""
+
+    def __init__(self, on_click, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(44, 44)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet("background: transparent; border: none;")
+        self.clicked.connect(on_click)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.translate(self.width() / 2, self.height() / 2)
+        color = QColor(theme.BROWN if self.isDown() else theme.TEXT2)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        for _ in range(8):                       # 톱니 8개
+            painter.drawRoundedRect(QRectF(-3.5, -15, 7, 8), 2, 2)
+            painter.rotate(45)
+        painter.drawEllipse(QPointF(0, 0), 10.5, 10.5)
+        painter.setBrush(QColor(theme.CARD))
+        painter.drawEllipse(QPointF(0, 0), 4.5, 4.5)
+
+
+class LimitBar(QWidget):
+    """카페인 알리미 막대: 제한 대비 이번 주 섭취량. 넘으면 빨간색."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.ratio = 0.0
+        self.setFixedHeight(14)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def set_ratio(self, ratio):
+        self.ratio = max(0.0, ratio)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#EADBC8"))
+        painter.drawRoundedRect(QRectF(self.rect()), 7, 7)
+        if self.ratio > 0:
+            width = max(14.0, self.width() * min(self.ratio, 1.0))
+            painter.setBrush(QColor(theme.ACCENT if self.ratio > 1 else theme.CARAMEL))
+            painter.drawRoundedRect(QRectF(0, 0, width, self.height()), 7, 7)
+
+
+class Overlay(QWidget):
+    """화면 위에 덮어 띄우는 카드 한 장 (뒤는 어둡게). 내용은 self.body에 넣는다."""
+
+    def __init__(self, parent, width=560):
+        super().__init__(parent)
+        outer = QVBoxLayout(self)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card = Card()
+        card.setFixedWidth(width)
+        outer.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.body = QVBoxLayout(card)
+        self.body.setContentsMargins(28, 24, 28, 24)
+        self.body.setSpacing(12)
+        self.hide()
+
+    def open(self):
+        self.setGeometry(self.parentWidget().rect())
+        self.show()
+        self.raise_()
+
+    def paintEvent(self, event):
+        QPainter(self).fillRect(self.rect(), QColor(40, 20, 5, 110))   # 뒤 화면을 어둡게
+
+    def mousePressEvent(self, event):
+        event.accept()
 
 
 class ConfirmBox(QWidget):
