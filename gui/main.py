@@ -21,6 +21,7 @@ import config
 from core import auth, schema
 from core.storage import MemoryVault
 from domain import seed
+from domain.random_members import make_random_members
 from face import create_face_provider
 from gui import theme
 from gui.card_reader import CardReader
@@ -42,12 +43,18 @@ DEMO_ADMIN = ("admin", "demo")
 ERROR_LOG = config.ROOT / "logs" / "kiosk_error.log"   # 오류 기록 (얼굴·비밀번호 같은 개인 정보는 쓰지 않는다)
 
 
-def demo_vault():
-    """시연·테스트용: 메모리에만 있는 금고에 샘플 데이터를 채운다."""
+def demo_vault(random_members=False):
+    """시연·테스트용: 메모리에만 있는 금고에 샘플 데이터를 채운다.
+
+    random_members=True(시연 모드 실행)이면 주문 습관이 다른 무작위 회원 16명(user01~user16 / 1234)도 더한다.
+    자동 테스트는 정해진 4명만 쓴다.
+    """
     vault = MemoryVault()
     vault.write("settings", dict(schema.DEFAULT_SETTINGS))
     seed.run(vault)
     seed.add_demo_events(vault)
+    if random_members:
+        make_random_members(vault)
     return vault
 
 
@@ -160,7 +167,7 @@ def main():
     parser.add_argument("--demo", action="store_true", help="메모리 샘플 데이터로 실행(저장 안 됨)")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
-    window = KioskWindow(vault=demo_vault() if args.demo else None)
+    window = KioskWindow(vault=demo_vault(random_members=True) if args.demo else None)
     install_error_handler(window)
     if args.fullscreen:
         window.showFullScreen()

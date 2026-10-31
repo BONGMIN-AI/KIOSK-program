@@ -314,13 +314,22 @@ def find_account(r):
     r.router.show_screen("find", mode="password", login_id="bomin")
     find.phone.setText("010-1000-0001")
     find.verify_phone()
-    r.step("02-C 전화번호 확인", "find")
+    temp = find.temp_label.text()
+    r.step("02-C 본인 확인 → 임시 비밀번호 발급", "find", lambda: len(temp) == 6 and find.temp_box.isVisible())
+    find.to_login_button.click()
+    r.step("로그인하러 가기 (아이디 채워짐)", "login", lambda: r.screen("login").login_id.text() == "bomin")
+    login = r.screen("login")
+    login.set_mode("password")
+    login.password.setText(temp)
+    login.password_login()
+    r.step("임시 비밀번호로 로그인 → 새 비밀번호 정하기", "find", lambda: find.mode == "change")
     find.new_password.setText("new1234")
     find.confirm.setText("new1234")
     find.save_password()
-    r.step("02-C 새 비밀번호 저장 → 로그인 화면", "login")
+    r.step("새 비밀번호 저장 → 바로 My Menu", "menu", lambda: r.session.customer is not None)
+    r.router.show_screen("idle")
     login_password(r, "bomin", "new1234")
-    r.step("02-B 새 비밀번호로 로그인", "menu")
+    r.step("02-B 새 비밀번호로 다시 로그인", "menu")
 
 
 def card_login(r):
@@ -476,6 +485,32 @@ def recent_reorder_and_caffeine(r):
     for view in ("주별", "월별"):
         menu.view_buttons[view].click()
         r.step(f"카페인 그래프 {view}", "menu", lambda: menu.caffeine_view == view)
+
+
+def batch1_habit_eco_coin(r):
+    login_password(r)
+    r.session.add("M001", {"temperature": "ICE", "size": "L", "extras": ["shot"]}, 1)
+    r.session.insert(10000)
+    r.session.pay()
+    r.router.start_member_order(r.session.customer)
+    menu = r.screen("menu")
+    menu.show_category("커피")
+    menu.open_option("M001")
+    r.step("옵션 습관: 지난번 ICE·L·샷이 미리 골라짐", "menu",
+           lambda: menu.popup.chosen_options()["size"] == "L" and menu.popup.habit_note.isVisible())
+    menu.popup.add_to_cart()
+    add_from_popup(r, "M047", 1, "디저트", confirm=True)     # 소금빵: bomin 우유 알레르기 → 그래도 담기
+    menu.check_button.click()
+    cart = r.screen("cart")
+    r.step("장바구니: 개인 컵(에코 포인트) 체크", "cart", lambda: cart.eco_box.isVisible())
+    cart.eco_check.setChecked(True)
+    cart.pay_button.click()
+    r.screen("benefit").go_cash()
+    cash = r.screen("cash")
+    r.step("현금: 동전 줄이기 팁 (700원)", "cash", lambda: "700원" in cash.coin_tip.text())
+    pay_cash(r, [5000, 1000, 1000, 500, 100, 100])
+    r.step("완료: 에코 포인트 +100P · 거스름돈 동전 없음", "done",
+           lambda: r.session.last_order["eco_points"] == 100 and r.session.last_order["change"] == 0)
 
 
 def popular_and_like(r):
@@ -647,7 +682,7 @@ SCENARIOS = [
     ("얼굴 3번 실패 → 잠금 → 비밀번호", "얼굴 불일치 ×3 → 잠금 → 비밀번호 → My Menu", member_face_lock_then_password),
     ("비밀번호 틀림 · 없는 ID", "비밀번호 실패 → 회원 ID 다시", member_password_fail),
     ("카메라 고장", "얼굴 인증 중 카메라 오류 → 비밀번호 안내", camera_broken),
-    ("아이디 찾기 · 비밀번호 재설정", "02-C → 새 비밀번호 → 로그인", find_account),
+    ("아이디 찾기 · 임시 비밀번호", "02-C → 임시 비밀번호 → 로그인 → 새 비밀번호 → My Menu", find_account),
     ("RFID 카드", "카드 연결 → 카드 태그 · 모르는 카드", card_login),
     ("회원가입 오류 → 얼굴 등록", "10 빈칸·중복·비밀번호 다름 → 10-B → My Menu", signup_errors_then_face),
     ("회원가입 (얼굴 없이)", "10 → My Menu", signup_no_face),
@@ -657,6 +692,7 @@ SCENARIOS = [
     ("0원 결제", "포인트 전액 → 0원 결제 → 완료", zero_won),
     ("최근 주문 · 카페인 알리미", "다시 담기 · 톱니바퀴 설정 · 제한 질문 예/아니요 · 그래프", recent_reorder_and_caffeine),
     ("인기 탭 · 좋아요", "인기 3가지 정렬 · ♥ → My Menu", popular_and_like),
+    ("옵션 습관 · 에코 포인트 · 동전 팁", "옵션 미리 선택 → 개인 컵 → 동전 팁 → 완료", batch1_habit_eco_coin),
     ("품절 · 재고 부족", "품절 카드 · 재고 넘게 담기", sold_out_and_stock),
     ("승차권 예매표 출력", "T1 → 조회 오류 → 출력", ticket_lookup),
     ("승차권 + 음료 결제", "T1 노선 → 시간표 → 좌석 → 혜택 → 음료 → 결제 → 완료", ticket_purchase(None, True)),

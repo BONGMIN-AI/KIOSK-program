@@ -11,7 +11,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
                                QVBoxLayout, QWidget)
 
-from domain.customers import find_by_login_id, link_card, login_with_password, login_with_face
+from domain.customers import find_by_login_id, link_card, login_with_face, login_with_password, must_change_password
 from face import FaceError, guide_view
 from gui import theme
 from gui.widgets import Card, FixedWidthCard, TouchKeyboard, button, label, message_label, promo_row, text_field
@@ -255,7 +255,9 @@ class LoginScreen(QWidget):
 
     def password_login(self):
         customer = self.check_password()
-        if customer:
+        if customer and must_change_password(customer):     # 임시 비밀번호 → 새 비밀번호부터 정한다
+            self.router.show_screen("find", mode="change", customer=customer)
+        elif customer:
             self.router.start_member_order(customer)
 
     def password_then_enroll(self):

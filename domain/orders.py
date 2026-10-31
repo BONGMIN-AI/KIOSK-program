@@ -5,6 +5,7 @@ from core import schema
 from core.storage import write_together
 from .benefits import apply_benefits, coupons_of, make_visit_coupon
 from .cart import cart_lines
+from .options import DRINK_CATEGORIES
 from .customers import add_point_history
 from .payment import change_breakdown, payment_status
 from .policy import calculate_points, load_policy
@@ -12,10 +13,16 @@ from .tickets import is_saved, remember_route
 from .titles import customer_lines, update_titles
 
 
+def eco_cup_points(lines: list[dict], menu: dict, policy: dict) -> int:
+    """개인 컵 에코 포인트: 음료(디저트 제외) 잔 수 × 운영자가 정한 포인트."""
+    cups = sum(line["quantity"] for line in lines if menu[line["menu_id"]].get("category") in DRINK_CATEGORIES)
+    return cups * policy.get("eco_points", 0)
+
+
 def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
                    coupon_id: str | None = None, use_points: int = 0,
                    now: datetime | None = None, change_to_points: bool = False,
-                   also_write: dict | None = None, tickets: list | None = None) -> dict:
+                   also_write: dict | None = None, tickets: list | None = None, eco_cup: bool = False) -> dict:
     """현금이 충분할 때만 주문·재고·회원 카드를 한 번에 저장한다.
 
     현금이 부족하면 ValueError를 내고 아무것도 바꾸지 않는다.
@@ -23,6 +30,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     change_to_points=True이면(회원만) 거스름돈을 현금 대신 포인트로 적립한다(서브 기능 C1).
     주문이 끝나면 칭호 달성도 검사한다(서브 기능 A1).
     also_write({이름: 데이터})는 주문과 같은 묶음으로 함께 저장한다 (예: 키오스크의 투입 현금 기록을 0으로).
+    eco_cup=True이면(회원만) 개인 컵으로 받은 음료 1잔마다 에코 포인트(policy["eco_points"])를 더 준다 (C-10).
     tickets(승차권 탭에서 담은 승차권 묶음 목록)는 결제 금액에만 더하고 쿠폰·포인트·적립에서는 뺀다.
     이동 정보에 동의한 회원(extra["travel_consent"])이면 회원 카드 trips에 기록만 남긴다.
     회원이 '저장'을 고른 노선(ticket["save_route"])이나 이미 저장한 노선은 My Menu용 saved_routes를 고친다.
@@ -64,6 +72,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     points = calculate_points(policy, lines, menu, benefit["final_total"], now) if customer else None
     earned_points = points["earned"] if points else 0
     change_points = payment["change"] if change_to_points else 0
+    eco_points = eco_cup_points(lines, menu, policy) if customer and eco_cup else 0
     cash_change = payment["change"] - change_points
     customer_snapshot = None
     issued_coupon = None
@@ -85,6 +94,9 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         if change_points:
             extra["points"] += change_points
             add_point_history(customer, change_points, f"주문 {order_id} 잔돈 적립", "system")
+        if eco_points:
+            extra["points"] += eco_points
+            add_point_history(customer, eco_points, f"주문 {order_id} 개인 컵 에코 적립", "system")
         extra["visits"] += 1
         every = policy["visit_coupon_every"]
         if every and extra["visits"] % every == 0:
@@ -126,6 +138,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         "change": cash_change,
         "change_breakdown": change_breakdown(cash_change),
         "change_points": change_points,
+        "eco_points": eco_points,
         "earned_points": earned_points,
         "point_events": points["events"] if points else [],
         "issued_coupon": issued_coupon,

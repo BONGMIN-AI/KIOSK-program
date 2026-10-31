@@ -8,6 +8,7 @@ settings["point_policy"] = {
     "visit_coupon_every": 5,     # N번째 방문마다 쿠폰 (0이면 발행 안 함)
     "visit_coupon_amount": 1000, # 방문 쿠폰 금액
     "visit_coupon_days": 0,      # 쿠폰 유효 일수 (0이면 그해 12월 31일까지)
+    "eco_points": 100,           # 개인 컵(텀블러) 음료 1잔마다 주는 에코 포인트 (0이면 끔)
     "events": [ {이벤트}, ... ],
 }
 
@@ -39,6 +40,7 @@ DEFAULT_POLICY = {
     "visit_coupon_every": 5,
     "visit_coupon_amount": 1000,
     "visit_coupon_days": 0,
+    "eco_points": 100,
     "events": [],
 }
 
@@ -72,10 +74,13 @@ def validate_policy(raw: dict) -> dict:
         raise ValueError("방문 쿠폰 값은 0 이상으로 입력하세요")
     if every and amount == 0:
         raise ValueError("방문 쿠폰을 발행하려면 쿠폰 금액을 1원 이상으로 입력하세요")
+    eco = int(policy["eco_points"])
+    if not 0 <= eco <= 1000:
+        raise ValueError("에코 포인트는 0~1000P 사이로 입력하세요")
     return {
         "base_rate": rate, "point_unit": unit, "min_use": min_use, "max_use_percent": max_percent,
         "visit_coupon_every": every, "visit_coupon_amount": amount, "visit_coupon_days": days,
-        "events": [validate_event(e) for e in policy.get("events", [])],
+        "eco_points": eco, "events": [validate_event(e) for e in policy.get("events", [])],
     }
 
 

@@ -244,6 +244,33 @@ def states(window):
         find.phone.setText(bomin["phone"])
         find.verify_phone()
 
+    def find_change():
+        router.show_screen("find", mode="change", customer=bomin)
+        router.screens["find"].new_password.setText("ab")
+        router.screens["find"].save_password()
+
+    def eco_cart():
+        session.login(bomin)
+        session.add("M001", {"temperature": "ICE", "size": "L", "extras": ["shot"]}, 2)
+        session.add("M047", None, 1)
+        router.show_screen("cart")
+        router.screens["cart"].eco_check.setChecked(True)
+
+    def coin_tip_cash():
+        router.open_action("guest")
+        session.add("M047", None, 1)
+        router.show_screen("cash")
+        router.screens["cash"].insert(1000)
+
+    def habit_option():
+        session.login(bomin)
+        session.add("M001", {"temperature": "ICE", "size": "L", "extras": ["shot"]}, 1)
+        session.insert(10000)
+        session.pay()
+        router.start_member_order(session.customer)
+        router.screens["menu"].show_category("커피")
+        router.screens["menu"].popup.open_for("M001")
+
     def card_wait():
         password_mode()
         login = router.screens["login"]
@@ -404,7 +431,8 @@ def states(window):
         ("02-B 비밀번호", password_mode),
         ("02-B 카드 연결 대기", card_wait),
         ("02-C 아이디 찾기", find_id),
-        ("02-C 비밀번호 재설정", find_reset),
+        ("02-C 임시 비밀번호 발급", find_reset),
+        ("02-C 새 비밀번호 정하기 (오류)", find_change),
         ("03 비회원 메뉴", lambda: router.open_action("guest")),
         ("03 비회원 장바구니 많음", big_cart),
         ("03 My Menu 빈 회원", member_menu(member2)),
@@ -433,6 +461,9 @@ def states(window):
         ("T1-8 완료 승차권+음료", ticket_done()),
         ("T1-8 완료 승차권만", ticket_done(drinks=False)),
         ("04 옵션", option("M001")),
+        ("04 옵션 습관 미리 선택", habit_option),
+        ("05 장바구니 개인 컵", eco_cart),
+        ("07 현금 동전 팁", coin_tip_cash),
         ("04-A 알레르기", option("M002", allergy=True)),
         ("04 옵션 오류문구", option("M006", error=True)),
         ("05 장바구니 많음", cart_screen),

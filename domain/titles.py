@@ -8,13 +8,20 @@
 # (칭호, 설명, 세는 방법, 목표 수) — 세는 방법은 count_stats()가 만드는 이름
 TITLES = [
     ("새내기", "첫 주문 완료", "orders", 1),
-    ("아아수호자", "ICE 아메리카노 10잔", "ice_americano", 10),
-    ("라떼 장인", "라떼 메뉴 10잔", "latte", 10),
+    ("얼죽아", "ICE 아메리카노 10잔", "ice_americano", 10),
+    ("라떼조아", "라떼 메뉴 10잔", "latte", 10),
     ("디카페인 지킴이", "디카페인 메뉴 5잔", "decaf", 5),
     ("딸기 완주자", "딸기 메뉴 5잔", "strawberry", 5),
     ("신메뉴 헌터", "서로 다른 메뉴 10가지", "kinds", 10),
     ("단골손님", "주문 10번", "orders", 10),
 ]
+
+# 11/01 이름 변경. 예전에 받은 칭호도 새 이름으로 보이게 한다.
+RENAMED_TITLES = {"아아수호자": "얼죽아", "라떼 장인": "라떼조아"}
+
+
+def title_name(name: str) -> str:
+    return RENAMED_TITLES.get(name, name)
 
 
 def customer_lines(orders: dict, customer_id: str) -> list[list[dict]]:
@@ -60,9 +67,12 @@ def progress(stats: dict) -> list[dict]:
 def update_titles(customer: dict, order_lines: list[list[dict]], menu: dict) -> list[str]:
     """새로 받은 칭호를 회원 카드에 더하고, 새 칭호 목록을 돌려준다."""
     extra = customer["extra"]
-    have = list(extra.get("titles", []))
+    have = [title_name(name) for name in extra.get("titles", [])]
     new = [name for name in earned_titles(count_stats(order_lines, menu)) if name not in have]
     if new:
         extra["titles"] = have + new
         extra["title"] = new[-1]
+    elif extra.get("title"):
+        extra["titles"] = have
+        extra["title"] = title_name(extra["title"])
     return new

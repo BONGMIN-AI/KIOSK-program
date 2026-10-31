@@ -72,9 +72,9 @@ class TitleTest(unittest.TestCase):
         self.assertEqual(first["customer"]["title"], "새내기")
         nine = {"M001|ICE|M": {**ICE_AMERICANO["M001|ICE|M"], "quantity": 9}}
         tenth = complete_order(vault, nine, 27000, "C0003")
-        self.assertIn("아아수호자", tenth["new_titles"])
+        self.assertIn("얼죽아", tenth["new_titles"])
         record = vault.read("customers")["C0003"]["extra"]
-        self.assertEqual(record["titles"][:2], ["새내기", "아아수호자"])
+        self.assertEqual(record["titles"][:2], ["새내기", "얼죽아"])
         again = complete_order(vault, ICE_AMERICANO, 3000, "C0003")
         self.assertEqual(again["new_titles"], [])          # 같은 칭호를 두 번 주지 않는다
 

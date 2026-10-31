@@ -119,23 +119,39 @@ def test_reset_needs_matching_phone_and_locks_after_five(vault):
         verify_identity(vault, "kbm000608", "010-1234-5678")
 
 
-def test_find_screen_resets_password_and_returns_to_login(window):
+def test_find_screen_issues_temp_password_then_asks_new_one(window):
+    """11/01: 본인 확인 → 임시 비밀번호(한 번만 보임) → 그걸로 로그인 → 새 비밀번호 → 주문 화면."""
     router = window.router
     member = first_member(router)
+    login_id = member["extra"]["login_id"]
     router.open_action("member")
-    router.screens["login"].login_id.setText(member["extra"]["login_id"])
+    router.screens["login"].login_id.setText(login_id)
     router.screens["login"].find_account()
     find = router.screens["find"]
     assert router.current_name == "find" and find.mode == "password"
     find.phone.setText(member["phone"])
     find.verify_phone()
+    temp = find.temp_label.text()
+    assert len(temp) == 6 and find.temp_box.isVisible() and not find.save_button.isVisible()
+    find.save_password()                              # 발급 단계에서는 저장이 안 된다 → 로그인으로
+    login = router.screens["login"]
+    assert router.current_name == "login" and login.mode == "password"
+    assert login.login_id.text() == login_id and find.temp_label.text() == ""
+    login.password.setText("1234")                    # 예전 비밀번호는 이제 안 된다
+    login.password_login()
+    assert router.current_name == "login"
+    login.login_id.setText(login_id)
+    login.set_mode("password")
+    login.password.setText(temp)
+    login.password_login()
+    assert router.current_name == "find" and find.mode == "change" and find.new_password.isVisible()
     find.new_password.setText("night123")
     find.confirm.setText("night123")
     find.save_password()
-    login = router.screens["login"]
-    assert router.current_name == "login" and login.mode == "password"
-    assert login.login_id.text() == member["extra"]["login_id"]
-    assert router.audit_memory[-1]["action"] == "member_password_reset"
+    assert router.current_name == "menu" and router.session.customer["id"] == member["id"]
+    assert not router.session.customer["extra"].get("must_change_password")
+    assert [e["action"] for e in router.audit_memory][-3:] == [
+        "member_identity_checked", "member_temp_password", "member_password_reset"]
 
 
 # ---------------------------------------------------------------- RFID

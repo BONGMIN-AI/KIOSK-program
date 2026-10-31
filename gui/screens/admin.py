@@ -17,6 +17,7 @@ import config
 from core import audit, auth, schema
 from core.validators import mask_phone
 from domain import policy as policy_logic
+from domain.titles import title_name
 from domain.customers import adjust_points
 from face import FaceError
 from gui import theme
@@ -384,7 +385,7 @@ class AdminScreen(QWidget):
             extra = record["extra"]
             if keyword and keyword not in extra.get("login_id", "").lower() and keyword not in extra["nickname"].lower():
                 continue
-            rows.append([extra.get("login_id", ""), extra["nickname"], extra.get("title", ""),
+            rows.append([extra.get("login_id", ""), extra["nickname"], title_name(extra.get("title", "")),
                          mask_phone(record["phone"]), f"{extra['points']:,}P",
                          f"{len(extra.get('coupons', []))}장", f"{extra['visits']}회"])
             keys.append(customer_id)
@@ -497,7 +498,8 @@ class AdminScreen(QWidget):
         coupon = (f"방문 {policy['visit_coupon_every']}회마다 {policy['visit_coupon_amount']:,}원 쿠폰"
                   if policy["visit_coupon_every"] else "방문 쿠폰 끔")
         self.policy_text.setText(f"기본 정책: 적립 {policy['base_rate']:g}% · {policy['point_unit']}P 단위 · "
-                                 f"최소 {policy['min_use']}P · 결제액의 {policy['max_use_percent']}%까지 · {coupon}\n"
+                                 f"최소 {policy['min_use']}P · 결제액의 {policy['max_use_percent']}%까지 · {coupon} · "
+                                 f"개인 컵 {policy['eco_points']}P/잔\n"
                                  "* 회원 주문만 적립 · 한 메뉴에 이벤트가 겹치면 가장 높은 적립률 1개 · "
                                  "진행 중 이벤트 테마가 손님 화면(대기 띠·메뉴 배너)에 적용")
         if self.editing_event is None:

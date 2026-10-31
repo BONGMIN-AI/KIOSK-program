@@ -11,8 +11,9 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
-from domain.payment import breakdown_text
+from domain.payment import breakdown_text, coin_tip
 from domain.tickets import depart_text, ticket_summary, until_text
+from domain.titles import title_name
 from gui import theme
 from gui.screens.ticket import TicketCartLine, notice_label
 from gui.widgets import FixedWidthCard, Card, button, label, menu_icon
@@ -94,6 +95,21 @@ class CartScreen(QWidget):
         row, self.total_value = money_row("합계", theme.won(0), big=True)
         column.addLayout(row)
         column.addStretch()
+        # C-10 에코 포인트 (회원 · 음료가 있을 때): 잔돈 포인트 카드와 같은 테두리 상자
+        self.eco_box = QFrame()
+        self.eco_box.setObjectName("eco_box")
+        self.eco_box.setStyleSheet(f"QFrame#eco_box {{ background: {theme.CARD}; border: 3px solid {theme.CARAMEL};"
+                                   " border-radius: 16px; }")
+        eco = QVBoxLayout(self.eco_box)
+        eco.setContentsMargins(14, 10, 14, 10)
+        self.eco_check = QCheckBox("개인 컵(텀블러)으로 받기")
+        self.eco_check.setFont(theme.font(18, bold=True))
+        self.eco_check.toggled.connect(self.toggle_eco)
+        eco.addWidget(self.eco_check)
+        self.eco_note = label("", 14, muted=True)
+        self.eco_note.setWordWrap(True)
+        eco.addWidget(self.eco_note)
+        column.addWidget(self.eco_box)
         self.pay_button = button("결제하기 →", "primary", self.go_pay)
         column.addWidget(self.pay_button)
         column.addWidget(button("← 메뉴 더 담기", "outline", lambda: self.router.show_screen("menu")))
@@ -115,6 +131,22 @@ class CartScreen(QWidget):
         self.count_value.setText(f"{self.session.count()}개")
         self.total_value.setText(theme.won(self.session.total()))
         self.pay_button.setEnabled(not self.session.is_empty())
+        self.update_eco()
+
+    def update_eco(self):
+        """개인 컵 체크는 회원이고 음료가 있을 때만 보인다."""
+        points = self.session.eco_cup_points() if self.session.is_member() else 0
+        self.eco_box.setVisible(points > 0)
+        if points == 0:
+            self.session.eco_cup = False
+            return
+        self.eco_check.blockSignals(True)
+        self.eco_check.setChecked(self.session.eco_cup)
+        self.eco_check.blockSignals(False)
+        self.eco_note.setText(f"음료를 개인 컵에 담아 드려요 · 에코 포인트 +{points:,}P")
+
+    def toggle_eco(self, checked):
+        self.session.eco_cup = checked
 
     def remove_ticket(self, hold_id):
         self.session.remove_ticket(hold_id)
@@ -199,6 +231,10 @@ class CashScreen(QWidget):
         left.addWidget(self.status)
         self.change_text = label("", 16, muted=True)
         left.addWidget(self.change_text)
+        self.coin_tip = label("", 16, bold=True)             # C-6 동전 최소화 안내
+        self.coin_tip.setStyleSheet(f"color: {theme.CARAMEL};")
+        self.coin_tip.setWordWrap(True)
+        left.addWidget(self.coin_tip)
         left.addStretch()
         left.addWidget(button("투입 취소 · 반환", "outline", self.refund))
         body.addWidget(insert_card, 1)
@@ -312,6 +348,9 @@ class CashScreen(QWidget):
         self.event.setText(event)
         self.status.setText(state)
         self.change_text.setText(detail)
+        tip = None if status["paid"] else coin_tip(status["shortage"])
+        self.coin_tip.setText(f"동전 줄이기 팁 · {tip}" if tip else "")
+        self.coin_tip.setVisible(bool(tip))
         # 충분해지면(또는 0원 결제) 지폐·동전 투입구를 막는다. 0원 결제도 '결제 완료'로 끝낼 수 있다.
         for item in self.cash_buttons:
             item.setEnabled(not status["paid"])
@@ -524,7 +563,7 @@ class DoneScreen(QWidget):
                 widget.setVisible(show_status)
         member = order.get("customer")
         if member:
-            title = f"[{member['title']}] " if member.get("title") else ""
+            title = f"[{title_name(member['title'])}] " if member.get("title") else ""
             self.waiting.setText(f"대기자: {title}{member['nickname']}")
         else:
             self.waiting.setText(f"비회원 {number:03d}번")
@@ -574,6 +613,8 @@ class DoneScreen(QWidget):
         lines = [f"적립 포인트 +{order['earned_points']:,}P{events}"]
         if order.get("change_points"):
             lines.append(f"잔돈 포인트 +{order['change_points']:,}P")
+        if order.get("eco_points"):
+            lines.append(f"개인 컵 에코 포인트 +{order['eco_points']:,}P")
         lines.append(f"포인트 잔액 {member['points']:,}P · 방문 {member['visits']}회")
         if order.get("issued_coupon"):
             lines.append(f"새 쿠폰: {order['issued_coupon']}")

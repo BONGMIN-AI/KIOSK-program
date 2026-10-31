@@ -51,6 +51,26 @@ def recent_order(orders: dict, customer_id: str, menu: dict) -> dict | None:
     return None
 
 
+def option_habit(orders: dict, customer_id: str, menu_id: str) -> dict | None:
+    """옵션 습관 (M3, 11/01): 이 회원이 이 메뉴에서 가장 많이 고른 옵션 묶음. 같으면 더 최근 것.
+
+    옵션 창을 열 때 미리 골라 둔다. 이 메뉴를 산 적이 없거나 옵션이 없는 메뉴면 None.
+    """
+    counts, last_seen = {}, {}
+    for index, lines in enumerate(customer_lines(orders, customer_id)):
+        for line in lines:
+            options = line.get("options") or {}
+            if line.get("menu_id") != menu_id or not options:
+                continue
+            key = line_key(menu_id, options)
+            counts[key] = counts.get(key, 0) + line["quantity"]
+            last_seen[key] = (index, options)
+    if not counts:
+        return None
+    best = max(counts, key=lambda key: (counts[key], last_seen[key][0]))
+    return dict(last_seen[best][1])
+
+
 # ---------------------------------------------------------------- 좋아요
 def likes_of(customer: dict) -> list[str]:
     return list(customer["extra"].get("likes", []))

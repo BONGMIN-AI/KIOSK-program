@@ -193,14 +193,43 @@ def verify_identity(vault, login_id: str, phone: str):
     return customer
 
 
+TEMP_PASSWORD_LETTERS = "abcdefghjkmnpqrstuvwxyz23456789"   # 헷갈리는 i·l·o·0·1은 뺐다
+TEMP_PASSWORD_LENGTH = 6
+
+
+def issue_temp_password(vault, customer_id: str) -> str:
+    """본인 확인을 마친 회원에게 임시 비밀번호를 발급한다 (11/01).
+
+    임시 비밀번호는 해시만 저장하고 화면에 한 번만 보여 준다. 그 비밀번호로 로그인하면
+    바로 새 비밀번호를 정하게 한다(extra["must_change_password"]). 얼굴 로그인 잠금도 푼다.
+    """
+    import secrets
+    customers = vault.read("customers", default={})
+    if customer_id not in customers:
+        raise ValueError("회원을 찾을 수 없어요")
+    temp = "".join(secrets.choice(TEMP_PASSWORD_LETTERS) for _ in range(TEMP_PASSWORD_LENGTH))
+    record = customers[customer_id]
+    record["extra"]["password_hash"] = hash_member_password(temp)
+    record["extra"]["must_change_password"] = True
+    schema.touch(record)
+    vault.write("customers", customers)
+    reset_face_failures(vault, customer_id)
+    return temp
+
+
+def must_change_password(customer: dict) -> bool:
+    return bool(customer["extra"].get("must_change_password"))
+
+
 def reset_member_password(vault, customer_id: str, password: str, confirm: str) -> dict:
-    """본인 확인을 마친 회원의 비밀번호를 새로 정한다. 얼굴 로그인 잠금도 함께 푼다."""
+    """본인 확인을 마친 회원(또는 임시 비밀번호로 들어온 회원)의 비밀번호를 새로 정한다. 얼굴 로그인 잠금도 푼다."""
     validate_password_pair(password, confirm)
     customers = vault.read("customers", default={})
     if customer_id not in customers:
         raise ValueError("회원을 찾을 수 없어요")
     record = customers[customer_id]
     record["extra"]["password_hash"] = hash_member_password(password)
+    record["extra"].pop("must_change_password", None)
     schema.touch(record)
     vault.write("customers", customers)
     reset_face_failures(vault, customer_id)

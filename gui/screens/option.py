@@ -112,6 +112,11 @@ class OptionPopup(QWidget):
             "추가", [(e, f"{EXTRA_LABELS[e]} +{EXTRA_PRICES[e]:,}원") for e in self.rules["extras"]],
             exclusive=False)
 
+        self.habit_note = label("", 14, bold=True)           # 옵션 습관을 미리 골랐을 때 한 줄
+        self.habit_note.setStyleSheet(f"color: {theme.CARAMEL};")
+        self.body.addWidget(self.habit_note)
+        self.apply_habit()
+
         count_row = QHBoxLayout()
         count_row.addWidget(label("수량", 18, bold=True))
         count_row.addStretch()
@@ -193,6 +198,22 @@ class OptionPopup(QWidget):
             row.addWidget(item, 1)
         self.body.addLayout(row)
         return group
+
+    def apply_habit(self):
+        """회원이 이 메뉴에서 늘 고르던 옵션을 미리 골라 둔다 (M3). 지금 고를 수 없는 값은 건너뛴다."""
+        habit = self.session.option_habit(self.menu_id) if self.rules["temperatures"] else None
+        self.habit_note.setVisible(bool(habit))
+        if not habit:
+            return
+        for group, value in ((self.temperature_group, habit.get("temperature")),
+                             (self.size_group, habit.get("size"))):
+            for item in group.buttons():
+                if item.property("value") == value:
+                    item.setChecked(True)
+        extras = habit.get("extras") or []
+        for item in self.extra_group.buttons():
+            item.setChecked(item.property("value") in extras)
+        self.habit_note.setText("평소 고르시던 옵션으로 골라 두었어요 · 바꿔도 돼요")
 
     # 선택값
     def chosen_options(self):

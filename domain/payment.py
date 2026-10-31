@@ -43,6 +43,17 @@ def change_breakdown(amount: int) -> dict[int, int]:
     return result
 
 
+def coin_tip(shortage: int) -> str | None:
+    """동전 최소화 안내 (C-6). 남은 금액의 천 원 아래 부분을 동전으로 먼저 넣으면 거스름돈이 지폐로만 나온다.
+
+    예) 4,500원 남음 → "500원을 동전으로 같이 넣으면 거스름돈에 동전이 없어요". 딱 천 원 단위면 None.
+    """
+    coins = shortage % 1000
+    if shortage <= 0 or coins == 0:
+        return None
+    return f"{coins:,}원을 동전으로 같이 넣으면 거스름돈에 동전이 없어요"
+
+
 def breakdown_text(breakdown: dict) -> str:
     """{1000: 4, 500: 1} -> '천원권 4장 · 500원 1개'"""
     if not breakdown:

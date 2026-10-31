@@ -7,10 +7,10 @@ from domain.cart import add_item, cart_lines, change_quantity
 from domain.customers import allergy_warnings
 from domain.popular import ranking
 from domain.my_menu import (caffeine_limit, caffeine_report, caffeine_trend, likes_of, limit_warning,
-                            lines_caffeine, recent_order, set_caffeine_limit, toggle_like, usual_order,
-                            week_caffeine)
+                            lines_caffeine, option_habit, recent_order, set_caffeine_limit, toggle_like,
+                            usual_order, week_caffeine)
 from domain.options import available_options, option_price
-from domain.orders import complete_order
+from domain.orders import complete_order, eco_cup_points
 from domain.payment import insert_cash, payment_status
 from domain.policy import display_event, load_policy
 from domain.tickets import TicketOffice, forget_route, is_saved, saved_routes
@@ -65,6 +65,7 @@ class OrderSession:
         self.coupon_id = None
         self.use_points = 0
         self.change_to_points = False
+        self.eco_cup = False          # 회원: 개인 컵(텀블러)으로 받기 → 에코 포인트
         self.benefit_note = ""        # 쿠폰·포인트 선택을 자동으로 풀었을 때 화면에 한 번 보여 줄 말
         self.inserted = 0
         self.last_order = None
@@ -129,6 +130,12 @@ class OrderSession:
     def popular(self, sort):
         """인기 탭 순위 [{item, value, text}] (domain/popular.py)."""
         return ranking(sort, self.menu(), self.vault.read("customers", default={}), self.orders())
+
+    def option_habit(self, menu_id):
+        """회원이 이 메뉴에서 늘 고르던 옵션 (옵션 창에 미리 선택). 비회원은 None."""
+        if not self.is_member():
+            return None
+        return option_habit(self.orders(), self.customer["id"], menu_id)
 
     def recent(self):
         """최근 주문 한 건 (My Menu '최근 주문 보기')."""
@@ -297,6 +304,10 @@ class OrderSession:
         return self.benefit()["final_total"]
 
     # 현금
+    def eco_cup_points(self):
+        """개인 컵으로 받으면 받을 에코 포인트 (음료 잔 수 × 운영자 설정값)."""
+        return eco_cup_points(self.lines(), self.menu(), self.policy()) if self.cart else 0
+
     def insert(self, amount):
         self.inserted = insert_cash(self.inserted, amount)
 
@@ -318,6 +329,7 @@ class OrderSession:
                                customer_id=self.customer["id"] if self.customer else None,
                                coupon_id=self.coupon_id, use_points=self.use_points,
                                change_to_points=change_to_points,
+                               eco_cup=self.eco_cup and self.is_member(),
                                also_write={CASH_RECORD: self.cash_record(0)},   # 주문과 함께 현금 기록도 0으로
                                tickets=tickets)
         for ticket in self.tickets:                # 잡아 둔 좌석을 판 좌석으로
@@ -327,5 +339,6 @@ class OrderSession:
         self.tickets = []
         self._inserted = 0
         self.coupon_id, self.use_points, self.change_to_points = None, 0, False
+        self.eco_cup = False
         self.reload_customer()
         return order

@@ -2,7 +2,8 @@
 
 비밀번호는 원래 글자를 저장하지 않으므로 '찾기'가 아니라 새로 정한다.
   아이디 찾기:      전화번호 → 가린 아이디 (kbm****08)
-  비밀번호 재설정:  ① 아이디 + 전화번호 (또는 얼굴)로 본인 확인 → ② 새 비밀번호 두 번 → 02-B 로그인으로
+  비밀번호 재설정:  ① 아이디 + 전화번호 (또는 얼굴)로 본인 확인 → ② 임시 비밀번호 발급(화면에 한 번만)
+                    → 02-B 로그인 → ③ 임시 비밀번호로 들어오면 새 비밀번호 두 번 ('change' 모드) → My Menu (11/01)
 본인 확인을 5번 틀리면 잠기고 직원을 부르게 한다. 재설정은 감사 로그에 남는다(개인정보 없이 회원 번호만).
 """
 
@@ -10,7 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from domain.customers import (
-    find_login_id, login_with_face, reset_member_password, verify_identity,
+    find_login_id, issue_temp_password, login_with_face, reset_member_password, verify_identity,
 )
 from face import FaceError
 from gui import theme
@@ -54,6 +55,20 @@ class FindAccountScreen(QWidget):
         self.keyboard = TouchKeyboard()
         self.keyboard.attach(self.login_id, self.phone, self.new_password, self.confirm)
         left.addWidget(self.keyboard)
+        # 임시 비밀번호는 키보드 자리에 크게 (발급 단계에서만 보임)
+        self.temp_box = QWidget()
+        temp = QVBoxLayout(self.temp_box)
+        temp.setContentsMargins(0, 30, 0, 0)
+        temp.setSpacing(10)
+        temp.addWidget(label("임시 비밀번호", 22, bold=True), alignment=Qt.AlignmentFlag.AlignCenter)
+        self.temp_label = label("", 56, title=True)
+        self.temp_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.temp_label.setStyleSheet(f"background: {theme.CREAM}; border-radius: 18px; padding: 18px 10px;"
+                                      " letter-spacing: 6px;")
+        temp.addWidget(self.temp_label)
+        temp.addWidget(label("영어 소문자와 숫자 6글자예요. 로그인한 뒤 바로 새 비밀번호로 바꿔요.", 16, muted=True),
+                       alignment=Qt.AlignmentFlag.AlignCenter)
+        left.addWidget(self.temp_box)
         left.addStretch(1)
         body.addWidget(left_card, 1)
 
@@ -85,46 +100,61 @@ class FindAccountScreen(QWidget):
     def vault(self):
         return self.router.session.vault
 
-    def on_show(self, mode="id", login_id=""):
+    def on_show(self, mode="id", login_id="", customer=None):
         for field in (self.login_id, self.phone, self.new_password, self.confirm):
             field.clear()
         self.login_id.setText(login_id)
         self.set_mode(mode)
+        if mode == "change":                    # 임시 비밀번호로 로그인한 회원 → 새 비밀번호 정하기
+            self.customer = customer
 
     def set_mode(self, mode, step=1):
-        """mode: 'id' 아이디 찾기 / 'password' 비밀번호 재설정. step 2 = 본인 확인 끝, 새 비밀번호 입력."""
+        """mode: 'id' 아이디 찾기 / 'password' 비밀번호 재설정(step 2 = 임시 비밀번호 발급) /
+        'change' 임시 비밀번호로 들어온 회원이 새 비밀번호를 정한다."""
         self.mode, self.step = mode, step
-        if step == 1:
+        if step == 1 and mode != "change":
             self.customer = None
         finding = mode == "id"
-        setting = mode == "password" and step == 2
-        self.title.setText("아이디 찾기" if finding else "비밀번호 재설정")
+        issued = mode == "password" and step == 2
+        setting = mode == "change"
+        self.title.setText("아이디 찾기" if finding else "새 비밀번호 정하기" if setting else "비밀번호 재설정")
         self.id_tab.setProperty("kind", "primary" if finding else "outline")
         self.pw_tab.setProperty("kind", "outline" if finding else "primary")
         for tab in (self.id_tab, self.pw_tab):
             tab.style().unpolish(tab)
             tab.style().polish(tab)
-        self.login_id.setVisible(mode == "password" and not setting)
-        self.phone.setVisible(not setting)
+        checking = mode == "password" and not issued
+        self.id_tab.setVisible(not setting)
+        self.pw_tab.setVisible(not setting)
+        self.login_id.setVisible(checking)
+        self.phone.setVisible(finding or checking)
         self.new_password.setVisible(setting)
         self.confirm.setVisible(setting)
+        self.keyboard.setVisible(not issued)
         self.find_button.setVisible(finding)
-        self.verify_button.setVisible(mode == "password" and not setting)
-        self.face_button.setVisible(mode == "password" and not setting)
+        self.verify_button.setVisible(checking)
+        self.face_button.setVisible(checking)
         self.save_button.setVisible(setting)
-        self.to_login_button.setVisible(True)
+        self.to_login_button.setVisible(not setting)
+        self.to_login_button.setProperty("kind", "primary" if issued else "outline")
+        self.to_login_button.style().unpolish(self.to_login_button)
+        self.to_login_button.style().polish(self.to_login_button)
+        self.temp_box.setVisible(issued)
         self.result_box.setVisible(False)
         self.message.setText("")
         if finding:
             self.help_text.setText("가입할 때 쓴 전화번호를 넣으면 아이디 일부를 보여 드려요.\n"
                                    "예) kbm****08")
             self.keyboard.target = self.phone
+        elif issued:
+            self.help_text.setText("본인 확인이 끝나 임시 비밀번호를 만들었어요. 아래 글자를 기억해 주세요.\n"
+                                   "이 화면을 떠나면 다시 볼 수 없어요. 얼굴 로그인 잠금도 함께 풀렸어요.")
         elif setting:
-            self.help_text.setText("본인 확인이 끝났어요. 새 비밀번호를 두 번 넣어 주세요.\n"
-                                   "얼굴 로그인 잠금도 함께 풀려요.")
+            self.help_text.setText("임시 비밀번호로 들어오셨어요. 앞으로 쓸 새 비밀번호를 두 번 넣어 주세요.\n"
+                                   "저장하면 바로 주문 화면으로 가요.")
             self.keyboard.target = self.new_password
         else:
-            self.help_text.setText("비밀번호는 저장하지 않아서 알려 드릴 수 없어요. 대신 새로 정해요.\n"
+            self.help_text.setText("비밀번호는 저장하지 않아서 알려 드릴 수 없어요. 대신 임시 비밀번호를 드려요.\n"
                                    "아이디 + 가입 전화번호, 또는 얼굴로 본인 확인을 해 주세요.\n"
                                    "5번 틀리면 잠겨요.")
             self.keyboard.target = self.login_id if not self.login_id.text() else self.phone
@@ -166,32 +196,50 @@ class FindAccountScreen(QWidget):
         self.passed(customer, "얼굴")
 
     def passed(self, customer, how):
+        """본인 확인 통과 → 임시 비밀번호를 발급해 한 번만 크게 보여 준다."""
+        self.router.audit("member_identity_checked", f"{customer['id']} {how}")
+        temp = issue_temp_password(self.vault(), customer["id"])
+        self.router.audit("member_temp_password", customer["id"])
         self.set_mode("password", step=2)
         self.customer = customer
-        self.router.audit("member_identity_checked", f"{customer['id']} {how}")
+        self.temp_label.setText(temp)
 
     def save_password(self):
-        if self.customer is None:
-            self.set_mode("password")
+        """임시 비밀번호로 들어온 회원이 새 비밀번호를 정한다 → 바로 주문 화면으로."""
+        if self.customer is None or self.mode != "change":
+            self.go_login()
             return
         try:
-            reset_member_password(self.vault(), self.customer["id"], self.new_password.text(), self.confirm.text())
+            record = reset_member_password(self.vault(), self.customer["id"], self.new_password.text(),
+                                           self.confirm.text())
         except ValueError as error:
             self.message.setText(str(error))
             self.new_password.clear()
             self.confirm.clear()
             return
         self.router.audit("member_password_reset", self.customer["id"])
-        login_id = self.customer["extra"]["login_id"]
         self.customer = None
-        self.router.show_screen("login", mode="password", message="새 비밀번호로 로그인해 주세요",
-                                keep_id=True, login_id=login_id)
+        self.router.start_member_order(record)
+        self.router.notify("새 비밀번호를 저장했어요", 4)
 
     def go_login(self):
-        self.router.show_screen("login", mode="password")
+        """로그인으로. 임시 비밀번호를 받았으면 아이디를 채워 비밀번호 칸으로."""
+        login_id = self.customer["extra"]["login_id"] if self.customer and self.mode == "password" else ""
+        self.temp_label.setText("")             # 화면을 떠나면 임시 비밀번호는 다시 볼 수 없다
+        self.customer = None
+        if login_id:
+            self.router.show_screen("login", mode="password", message="임시 비밀번호로 로그인해 주세요",
+                                    keep_id=True, login_id=login_id)
+        else:
+            self.router.show_screen("login", mode="password")
 
     def go_back(self):
-        if self.mode == "password" and self.step == 2:
-            self.set_mode("password")
+        if self.mode == "change":               # 새 비밀번호를 정하지 않고 나가면 로그인하지 않은 것으로
+            self.customer = None
+            self.router.show_screen("login", mode="password")
         else:
             self.go_login()
+
+    def hideEvent(self, event):
+        self.temp_label.setText("")
+        super().hideEvent(event)

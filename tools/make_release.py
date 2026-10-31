@@ -7,7 +7,7 @@ r"""배포용 실행 폴더를 만든다. 사용: python tools/make_release.py [
 
     COFFEE_SPOON_KIOSK_v1.0\
       1_처음설치.bat · 2_시연모드_실행.bat · 3_실제모드_실행.bat   ← program\ 안의 같은 이름 파일을 부르는 짧은 실행 파일
-      사용설명서.html · 먼저_읽어주세요.txt
+      빠른_시작_안내.html · 사용설명서.html · 먼저_읽어주세요.txt
       문서\   최종보고서 · 추가 구현 아이디어 · 시나리오 점검 결과(그림 포함)
       program\   실제 프로그램 (코드 · 그림 · 작은 얼굴 모델 · 원래 실행 파일 · 도구)
 
@@ -67,7 +67,7 @@ README = """COFFEE & SPOON 키오스크 v1.0 (팀 공학 한 스푼)
      끄기: Ctrl + Shift + Q
   3. 실제 카메라·저장을 쓰려면 3_실제모드_실행.bat (처음에 관리자 비밀번호를 직접 정합니다)
 
-자세한 설명: 사용설명서.html (더블클릭하면 인터넷 창으로 열립니다)
+한 장 요약: 빠른_시작_안내.html · 자세한 설명: 사용설명서.html (더블클릭하면 인터넷 창으로 열립니다)
 최종 보고서·추가 아이디어·점검 결과: 문서 폴더
 
 Python 3 이 필요합니다. 없으면 https://www.python.org 에서 설치하고,
@@ -118,6 +118,7 @@ def build_docs(target: Path) -> None:
     remove(docs / "images")
     shutil.copytree(DOCS / "images", docs / "images")
     copy_page(DOCS / "사용설명서.html", target / "사용설명서.html", [('src="images/', 'src="문서/images/')])
+    copy_page(DOCS / "빠른_시작_안내.html", target / "빠른_시작_안내.html")
     copy_page(DOCS / "최종보고서.html", docs / "최종보고서.html",
               [("<code>문서\\시나리오_점검결과.html</code>", '<a href="시나리오_점검결과.html">시나리오_점검결과.html</a>')])
     copy_page(DOCS / "추가_구현_아이디어.html", docs / "추가_구현_아이디어.html")

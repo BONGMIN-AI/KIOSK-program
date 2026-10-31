@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, Q
 
 from domain.my_menu import LIMIT_UNITS, TREND_VIEWS
 from domain.popular import SORTS as POPULAR_SORTS
+from domain.titles import title_name
 from gui import theme
 from gui.order import CATEGORY_ORDER, MY_MENU, POPULAR, TICKET
 from gui.screens.option import OptionPopup
@@ -204,7 +205,7 @@ class MenuScreen(QWidget):
             self.member_detail.setText("로그인 없이 주문 중 · 회원 혜택·적립은 없어요")
             return
         extra = customer["extra"]
-        title = f"[{extra['title']}] " if extra.get("title") else ""
+        title = f"[{title_name(extra['title'])}] " if extra.get("title") else ""
         self.member_name.setText(f"{title}{extra['nickname']} 님")
         self.member_detail.setText(f"포인트 {extra['points']:,}P   ·   쿠폰 {len(self.session.coupons())}장"
                                    f"   ·   방문 {extra['visits']}회")
