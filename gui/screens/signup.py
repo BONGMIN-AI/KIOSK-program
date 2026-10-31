@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScro
 
 from domain.allergens import ALLERGENS, search
 from domain.customers import register_customer, set_face_enrolled, validate_password_pair
+from domain.member_cards import request_card
 from face import FaceError
 from gui import theme
 from gui.screens.login import nav_bar
@@ -58,7 +59,7 @@ class SignupScreen(QWidget):
         right_card = Card()
         right = QVBoxLayout(right_card)
         right.setContentsMargins(22, 18, 22, 18)
-        right.setSpacing(18 if theme.SCALE == 1 else 8)   # 묶음과 묶음 사이 (큰 글자는 창 높이에 맞춰 좁게)
+        right.setSpacing(12 if theme.SCALE == 1 else 8)   # 묶음과 묶음 사이 (큰 글자는 창 높이에 맞춰 좁게)
 
         def section(title_widget, *widgets):
             """제목과 그 선택 칸을 한 묶음으로 붙여 둔다 (10/31: 창이 크면 제목과 칸이 벌어졌다)."""
@@ -74,13 +75,32 @@ class SignupScreen(QWidget):
         self.allergy_search.textChanged.connect(self.show_allergies)
         self.allergy_area = QScrollArea()
         self.allergy_area.setWidgetResizable(True)
-        self.allergy_area.setFixedHeight(170)
+        self.allergy_area.setFixedHeight(128 if theme.SCALE == 1 else 104)   # 11/01: 회원카드 상자 자리
         section(self.allergy_title, self.allergy_search, self.allergy_area)
         self.privacy = check_box("[필수] 개인정보 수집·이용 동의", bold=True)
         self.marketing = check_box("[선택] 마케팅 정보 수신 동의")
-        section(label("약관 동의", 18, bold=True), self.privacy, self.marketing)
         self.face_consent = check_box("[선택] 얼굴 정보(특징값) 등록 동의 → 다음 화면 10-B")
-        section(label("얼굴 정보 등록", 18, bold=True), self.face_consent)
+        section(label("약관 동의", 18, bold=True), self.privacy, self.marketing, self.face_consent)
+        # 11/01 회원카드 신청 (선택): 혜택을 보여 주고 고르게 한다 → 운영자 승인 → 카운터에서 받기
+        self.card_box = QFrame()
+        self.card_box.setObjectName("card_box")
+        self.card_box.setStyleSheet(f"QFrame#card_box {{ background: {theme.CREAM}; border: 2px solid {theme.CARAMEL};"
+                                    " border-radius: 14px; }")
+        card = QVBoxLayout(self.card_box)
+        card.setContentsMargins(12, 6, 12, 6)
+        card.setSpacing(2)
+        self.card_request = check_box("[선택] 회원카드 신청 (무료)", bold=True)
+        self.card_request.setStyleSheet("border: none;")
+        card.addWidget(self.card_request)
+        perks = label("카드 받은 뒤 첫 주문 10% 할인 · 매 주문 적립 +1%p · 카드만 대면 로그인", 14, bold=True)
+        perks.setStyleSheet(f"border: none; color: {theme.CARAMEL};")
+        perks.setWordWrap(True)
+        card.addWidget(perks)
+        how = label("직원 승인 뒤 카운터에서 받아요 · 분실 재발급 1,000원", 13, muted=True)
+        how.setStyleSheet(f"border: none; color: {theme.TEXT2};")
+        how.setWordWrap(True)
+        card.addWidget(how)
+        right.addWidget(self.card_box)
         right.addStretch(1)                      # 남는 높이는 여기로 (버튼은 맨 아래)
         self.message = message_label()
         right.addWidget(self.message)
@@ -93,7 +113,7 @@ class SignupScreen(QWidget):
         for field in (self.name, self.login_id, self.password, self.password_again, self.phone,
                       self.allergy_search):
             field.clear()
-        for box in (self.privacy, self.marketing, self.face_consent):
+        for box in (self.privacy, self.marketing, self.face_consent, self.card_request):
             box.setChecked(False)
         self.checked_allergies = set()
         self.message.setText("")
@@ -133,6 +153,10 @@ class SignupScreen(QWidget):
         except ValueError as error:
             self.message.setText(str(error))
             return
+        if self.card_request.isChecked():            # 운영자 화면 '회원카드 발급'으로 넘어간다
+            request_card(self.router.session.vault, customer["id"], "new", self.router.session.policy())
+            self.router.audit("card_requested", customer["id"])
+            self.router.notify("회원카드를 신청했어요.\n직원이 승인하면 카운터에서 받아 가세요.", 6)
         if self.face_consent.isChecked():
             self.router.session.login(customer)
             self.router.show_screen("enroll", customer=customer)

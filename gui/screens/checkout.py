@@ -246,7 +246,7 @@ class CashScreen(QWidget):
         right.addWidget(label("결제 금액", 22, title=True))
         row, self.total_value = money_row("주문 금액", theme.won(0))
         right.addLayout(row)
-        row, self.discount_value = money_row("쿠폰 + 포인트", theme.won(0))
+        row, self.discount_value = money_row("할인 합계", theme.won(0))
         right.addLayout(row)
         row, self.inserted_value = money_row("넣은 현금", theme.won(0))
         right.addLayout(row)
@@ -592,10 +592,10 @@ class DoneScreen(QWidget):
         if any(p["benefit"] != "없음" for t in order.get("tickets", []) for p in t["passengers"]):
             self.receipt.addWidget(label("  할인 승차권은 승차 때 증명서 확인", 13, muted=True))
         self.receipt.addStretch()
-        discount = order.get("coupon_discount", 0) + order.get("points_used", 0)
+        discount = order.get("card_discount", 0) + order.get("coupon_discount", 0) + order.get("points_used", 0)
         rows = [("주문 금액", theme.won(order["total"]))]
         if discount:
-            rows.append(("쿠폰 + 포인트", f"−{theme.won(discount)}"))
+            rows.append(("할인 (카드·쿠폰·포인트)", f"−{theme.won(discount)}"))
         rows += [("결제 금액", theme.won(order["final_total"])), ("받은 현금", theme.won(order["cash"])),
                  ("거스름돈", theme.won(order["change"]))]
         for name, value in rows:

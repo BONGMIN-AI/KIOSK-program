@@ -272,12 +272,24 @@ def states(window):
         router.screens["menu"].show_category("커피")
         router.screens["menu"].popup.open_for("M001")
 
-    def card_wait():
+    def card_request():
         password_mode()
         login = router.screens["login"]
         login.login_id.setText("bomin")
         login.password.setText("1234")
         login.password_then_card()
+
+    def admin_card_wait():
+        from domain.member_cards import request_card
+        request_card(session.vault, bomin["id"])
+        router.admin_id = "admin"
+        router.show_screen("admin", tab="cards")
+        router.screens["admin"].card_table.selectRow(0)
+        router.screens["admin"].allow_card()
+
+    def signup_card():
+        router.open_action("signup")
+        router.screens["signup"].card_request.setChecked(True)
 
     def cash_zero():
         customers = session.vault.read("customers")
@@ -430,7 +442,7 @@ def states(window):
         ("02 로그인 실패", login_fail),
         ("02 로그인 실패(긴 문구)", login_fail_long),
         ("02-B 비밀번호", password_mode),
-        ("02-B 카드 연결 대기", card_wait),
+        ("02-B 회원카드 신청", card_request),
         ("02-C 아이디 찾기", find_id),
         ("02-C 임시 비밀번호 발급", find_reset),
         ("02-C 새 비밀번호 정하기 (오류)", find_change),
@@ -474,11 +486,13 @@ def states(window):
         ("07 현금 0원 결제", cash_zero),
         ("08 완료 회원", done_member),
         ("10 회원가입 오류", signup_error),
+        ("10 회원가입 카드 신청", signup_card),
         ("10-B 얼굴 등록", lambda: router.show_screen("enroll", customer=bomin)),
         ("10-B 얼굴 등록 중", enroll_running),
         ("09-A 운영자 로그인 오류", admin_login_error),
         ("09-B 메뉴", admin("menu", "재고가 0개입니다. 재고를 먼저 채우고 저장하세요")),
         ("09-C 회원·주문", admin("members")),
+        ("09-C2 회원카드 발급 (카드 찍기)", admin_card_wait),
         ("09-D 이벤트", admin("events", "이벤트 적립률이나 보너스 포인트 중 하나는 입력하세요")),
         ("09-E 포인트·로그", admin("points")),
     ]

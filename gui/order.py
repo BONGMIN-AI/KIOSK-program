@@ -10,6 +10,7 @@ from domain.my_menu import (caffeine_limit, caffeine_report, caffeine_trend, lik
                             lines_caffeine, option_habit, recent_order, set_caffeine_limit, toggle_like,
                             usual_order, week_caffeine)
 from domain.options import available_options, option_price
+from domain.member_cards import card_status_text, request_card
 from domain.orders import complete_order, eco_cup_points
 from domain.payment import insert_cash, payment_status
 from domain.policy import display_event, load_policy
@@ -130,6 +131,15 @@ class OrderSession:
     def popular(self, sort):
         """인기 탭 순위 [{item, value, text}] (domain/popular.py)."""
         return ranking(sort, self.menu(), self.vault.read("customers", default={}), self.orders())
+
+    # 회원카드 (11/01)
+    def request_card(self, kind="new"):
+        request = request_card(self.vault, self.customer["id"], kind, self.policy())
+        self.reload_customer()
+        return request
+
+    def card_status(self):
+        return card_status_text(self.vault, self.customer) if self.is_member() else ""
 
     def option_habit(self, menu_id):
         """회원이 이 메뉴에서 늘 고르던 옵션 (옵션 창에 미리 선택). 비회원은 None."""
@@ -287,7 +297,8 @@ class OrderSession:
     def max_points(self):
         if not self.customer:
             return 0
-        after_coupon = self.drink_total() - self.benefit()["coupon_discount"]
+        benefit = self.benefit()
+        after_coupon = self.drink_total() - benefit["card_discount"] - benefit["coupon_discount"]
         return max_usable_points(after_coupon, self.customer["extra"]["points"], self.policy())
 
     def set_benefit(self, coupon_id, use_points):

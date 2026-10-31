@@ -7,6 +7,7 @@ from .benefits import apply_benefits, coupons_of, make_visit_coupon
 from .cart import cart_lines
 from .options import DRINK_CATEGORIES
 from .customers import add_point_history
+from .member_cards import has_card
 from .payment import change_breakdown, payment_status
 from .policy import calculate_points, load_policy
 from .tickets import is_saved, remember_route
@@ -69,7 +70,8 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         item["sold_count"] = item.get("sold_count", 0) + line["quantity"]
         item["sold_out"] = item["stock"] == 0
 
-    points = calculate_points(policy, lines, menu, benefit["final_total"], now) if customer else None
+    card_rate = policy["card_bonus_rate"] if has_card(customer) else 0.0       # 회원카드 추가 적립
+    points = calculate_points(policy, lines, menu, benefit["final_total"], now, card_rate) if customer else None
     earned_points = points["earned"] if points else 0
     change_points = payment["change"] if change_to_points else 0
     eco_points = eco_cup_points(lines, menu, policy) if customer and eco_cup else 0
@@ -97,6 +99,8 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         if eco_points:
             extra["points"] += eco_points
             add_point_history(customer, eco_points, f"주문 {order_id} 개인 컵 에코 적립", "system")
+        if benefit["card_discount"]:
+            extra.pop("card_first_discount", None)          # 카드 첫 주문 할인은 한 번만
         extra["visits"] += 1
         every = policy["visit_coupon_every"]
         if every and extra["visits"] % every == 0:
@@ -128,6 +132,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         "id": order_id,
         "lines": lines,
         "total": total + ticket_total,
+        "card_discount": benefit["card_discount"],
         "coupon_name": benefit["coupon"]["name"] if benefit["coupon"] else None,
         "coupon_discount": benefit["coupon_discount"],
         "points_used": benefit["points_used"],

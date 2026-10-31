@@ -111,7 +111,7 @@ class LoginScreen(QWidget):
         self.password_button = button("비밀번호로 로그인 →", "primary", self.password_login)
         self.back_to_face_button = button("얼굴 인증으로 돌아가기", "outline", lambda: self.set_mode("face"))
         self.enroll_button = button("비밀번호 확인 후 얼굴 등록 → 10-B", "outline", self.password_then_enroll)
-        self.card_button = button("비밀번호 확인 후 회원 카드 연결", "outline", self.password_then_card)
+        self.card_button = button("회원카드 신청 · 분실 신고", "outline", self.password_then_card)
         self.find_button = button("아이디·비밀번호를 잊었어요", "outline", self.find_account)
         for widget in (self.face_button, self.password_mode_button, self.password_button,
                        self.back_to_face_button, self.enroll_button, self.card_button, self.find_button):
@@ -142,7 +142,7 @@ class LoginScreen(QWidget):
             widget.setVisible(not face)
         self.fail_box.setVisible(False)
         self.face_button.setText("얼굴 인증")     # 다음 손님에게는 '재시도'가 아니라 처음 상태로
-        self.message.setText(message)
+        self.say(message, ok=False)
         self.keyboard.target = self.login_id if face or not self.login_id.text() else self.password
         self.right_card.updateGeometry()        # 버튼이 바뀐 오른쪽 칸 높이를 다시 재게 (큰 글자에서 창이 커지던 문제)
 
@@ -164,9 +164,9 @@ class LoginScreen(QWidget):
     def face_login(self):
         login_id = self.login_id.text().strip()
         if not login_id:
-            self.message.setText("회원 ID를 먼저 입력해 주세요")
+            self.say("회원 ID를 먼저 입력해 주세요", ok=False)
             return
-        self.message.setText("")
+        self.say("", ok=False)
         scores = []     # "얼굴 유사도 0.612 (기준 0.50)" — 기준값을 맞출 때 보려고 남긴다
         self.begin_face()
         try:
@@ -237,7 +237,7 @@ class LoginScreen(QWidget):
 
     def show_face_failure(self, reason):
         """실패·사진 거절: 이유를 보여 주고 '얼굴 인증 재시도'·'비밀번호로 로그인'을 남긴다."""
-        self.message.setText("")
+        self.say("", ok=False)
         self.fail_text.setText(f"{reason}\n밝은 곳에서 다시 시도하거나 비밀번호를 사용하세요.")
         self.fail_box.setVisible(True)
         self.camera_box.setVisible(False)       # 실패 안내가 대신 그 자리를 쓴다 (큰 글자에서도 들어가게)
@@ -266,26 +266,50 @@ class LoginScreen(QWidget):
             self.router.session.login(customer)
             self.router.show_screen("enroll", customer=customer)
 
+    def say(self, text, ok=True):
+        """오른쪽 안내 한 줄: ok면 갈색(안내), 아니면 빨강(오류)."""
+        self.message.setStyleSheet(f"color: {theme.BROWN if ok else theme.ERROR};")
+        self.message.setText(text)
+
     def password_then_card(self):
-        """회원 카드(RFID) 연결: 비밀번호로 본인 확인 → 15초 안에 카드를 리더기에 대면 연결하고 주문으로."""
+        """회원카드 (11/01): 비밀번호로 본인 확인 → 카드가 없으면 신청, 있으면 분실 재발급(한 번 더 눌러 확인).
+
+        카드는 손님이 스스로 연결하지 않는다. 신청은 운영자 화면 '회원카드 발급'으로 넘어가고,
+        운영자가 허용한 뒤 빈 카드를 찍어 할당해 카운터에서 건넨다.
+        """
         customer = self.check_password()
         if not customer:
             return
-        self.message.setText("회원 카드를 리더기에 대 주세요 (15초)")
-
-        def on_card(number):
-            try:
-                link_card(self.vault(), customer["id"], number)
-            except ValueError as error:
-                self.message.setText(str(error))
+        session = self.router.session
+        session.login(customer)
+        status = session.card_status()
+        try:
+            if status.startswith("회원카드 승인") or status.startswith("회원카드 발급"):
+                self.say(status)
                 return
-            self.router.audit("card_linked", customer["id"])
-            self.router.start_member_order(customer)
-            self.router.notify("회원 카드를 연결했어요.\n다음부터 카드를 대면 바로 얼굴 인증으로 넘어가요.", 6)
-
-        self.router.wait_card(on_card, 15,
-                              on_timeout=lambda: self.message.setText("카드가 확인되지 않았어요. 다시 눌러 주세요"),
-                              owner=self)
+            if status == "회원카드 사용 중":
+                if getattr(self, "reissue_armed", None) != customer["id"]:
+                    self.reissue_armed = customer["id"]
+                    fee = session.policy()["card_reissue_fee"]
+                    self.say(f"카드를 잃어버렸나요? 비밀번호를 넣고 한 번 더 누르면 예전 카드를 바로 막고 "
+                             f"재발급을 신청해요 (수수료 {fee:,}원, 카운터)")
+                    return
+                self.reissue_armed = None
+                session.request_card("reissue")
+                self.router.audit("card_reissue_requested", customer["id"])
+                self.say("분실 신고 · 재발급을 신청했어요. 예전 카드는 이제 쓸 수 없어요.\n"
+                         "직원 승인 뒤 카운터에서 새 카드를 받아 가세요")
+                return
+            session.request_card("new")
+            self.router.audit("card_requested", customer["id"])
+            self.say("회원카드를 신청했어요. 직원 승인 뒤 카운터에서 받아 가세요\n"
+                     "혜택: 첫 주문 10% 할인 · 매 주문 적립 +1%p")
+        except ValueError as error:
+            self.say(str(error), ok=False)
+        finally:
+            session.customer = None              # 신청만 하고 로그인 상태로 두지 않는다
+            self.login_id.setText(customer["extra"]["login_id"])
+            self.password.clear()
 
     def customer_exists(self, login_id):
         return find_by_login_id(self.vault(), login_id) is not None

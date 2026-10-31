@@ -178,7 +178,20 @@ def test_card_link_rules(vault):
         link_card(vault, other["id"], "0012345678")
 
 
-def test_link_card_then_tag_starts_face_login(window, app):
+def issue_card_through_admin(router, number):
+    """운영자 '회원카드 발급': 맨 위 신청을 허용하고 빈 카드를 찍는다."""
+    router.admin_id = "admin"
+    router.show_screen("admin", tab="cards")
+    admin = router.screens["admin"]
+    admin.card_table.selectRow(0)
+    admin.allow_card()
+    assert router.card_wait is not None, admin.message.text()
+    router.card_scanned(number)
+    return admin
+
+
+def test_card_request_admin_issue_then_tag_starts_face_login(window, app):
+    """11/01: 손님 신청 → 운영자 허용 → 빈 카드 찍어 할당 → 카드만 대면 로그인."""
     router = window.router
     member = first_member(router)
     set_face_enrolled(router.session.vault, member["id"])
@@ -188,9 +201,9 @@ def test_link_card_then_tag_starts_face_login(window, app):
     login.login_id.setText(member["extra"]["login_id"])
     login.password.setText("1234")                    # 시연 데이터 회원 비밀번호
     login.password_then_card()
-    assert router.card_wait is not None, login.message.text()
-    router.card_scanned("0099887766")                 # 카드 연결 → 주문으로
-    assert router.current_name == "menu"
+    assert "신청했어요" in login.message.text() and router.session.customer is None
+    admin = issue_card_through_admin(router, "0099887766")
+    assert "발급 완료" in admin.message.text() and "7766" in admin.message.text()
     router.show_screen("idle")
     handle = window.windowHandle()                    # 실제 키처럼 창으로 보낸다
     for digit in "0099887766":                        # 대기 화면에서 리더기가 번호 + Enter
@@ -254,18 +267,20 @@ def test_number_keys_still_type_on_login(window, app):
 
 
 def test_card_wait_is_cancelled_by_leaving_or_rebuilding(window, app):
-    """10/30: 카드 연결을 기다리는 중 큰 글자로 바꾸면 지워진 화면에 글을 써서 오류가 났다."""
+    """10/30: 카드를 기다리는 중 큰 글자로 바꾸면 지워진 화면에 글을 써서 오류가 났다 (11/01: 운영자 발급 화면)."""
+    from domain.member_cards import request_card
     router = window.router
     member = first_member(router)
-    router.open_action("member")
-    login = router.screens["login"]
-    login.set_mode("password")
-    login.login_id.setText(member["extra"]["login_id"])
-    login.password.setText("1234")
-    login.password_then_card()
-    router.set_display(large=True)                    # 화면을 새로 만든다 (옛 로그인 화면은 지워짐)
-    assert router.current_name == "login"
-    router.show_screen("menu")                        # 로그인 화면을 떠나면 기다리기도 끝
+    request_card(router.session.vault, member["id"])
+    router.admin_id = "admin"
+    router.show_screen("admin", tab="cards")
+    admin = router.screens["admin"]
+    admin.card_table.selectRow(0)
+    admin.allow_card()
+    assert router.card_wait is not None and router.notice.isVisible() and "20초" in router.notice.text()
+    router.set_display(large=True)                    # 화면을 새로 만든다 (옛 운영자 화면은 지워짐)
+    assert router.current_name == "admin"
+    router.show_screen("home")                        # 운영자 화면을 떠나면 기다리기도 끝
     assert router.card_wait is None
     app.processEvents()
 

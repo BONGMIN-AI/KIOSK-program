@@ -1021,9 +1021,35 @@ class Notice(QLabel):
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.hide)
+        self.tick = QTimer(self)                 # 초시계 안내: 1초마다 남은 초를 줄인다
+        self.tick.setInterval(1000)
+        self.tick.timeout.connect(self.count_down)
+        self.text_for, self.left, self.alive = None, 0, None
         self.hide()
 
+    def show_countdown(self, text_for, seconds, alive=None):
+        """'15초 뒤 …'처럼 남은 초가 눈에 보이게 줄어드는 안내 (11/01).
+
+        text_for(남은 초) -> 글. alive()가 False가 되면(카드가 찍혔거나 기다림이 취소됨) 바로 내린다.
+        """
+        self.show_message(text_for(seconds), seconds + 1)
+        self.text_for, self.left, self.alive = text_for, seconds, alive
+        self.tick.start()
+
+    def count_down(self):
+        self.left -= 1
+        if self.left <= 0 or (self.alive is not None and not self.alive()):
+            self.stop_countdown()
+            return
+        self.setText(self.text_for(self.left))
+
+    def stop_countdown(self):
+        if self.tick.isActive():
+            self.tick.stop()
+            self.hide()
+
     def show_message(self, text, seconds=6):
+        self.tick.stop()
         self.setStyleSheet(f"QLabel#notice {{ background: {theme.BROWN}; color: {theme.CARD};"
                            " border-radius: 18px; padding: 16px 28px; }")
         self.setText(text)

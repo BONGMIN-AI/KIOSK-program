@@ -334,20 +334,50 @@ def find_account(r):
 
 
 def card_login(r):
-    r.router.open_action("member")
+    """11/01 회원카드: 가입 때 신청 → 운영자 허용 → 빈 카드 찍어 할당 → 카드로 로그인 · 첫 주문 10% · 분실."""
+    r.router.open_action("signup")
+    signup = r.screen("signup")
+    for field, text in ((signup.name, "카드손님"), (signup.login_id, "cardguest"), (signup.password, "1234"),
+                        (signup.password_again, "1234"), (signup.phone, "01077778888")):
+        field.setText(text)
+    signup.privacy.setChecked(True)
+    signup.card_request.setChecked(True)
+    r.step("10 회원가입 · 회원카드 신청 체크 (혜택 안내)", "signup", lambda: signup.card_box.isVisible())
+    signup.submit()
+    r.step("가입 → My Menu · 위 줄에 '승인 대기'", "menu",
+           lambda: "승인 대기" in r.screen("menu").member_detail.text())
+    r.router.admin_id = "admin"
+    r.router.show_screen("admin", tab="cards")
+    admin = r.screen("admin")
+    r.step("09 회원카드 발급: 승인 대기 1건", "admin", lambda: "(1)" in admin.tab_group.buttons()[2].text())
+    admin.card_table.selectRow(0)
+    admin.allow_card()
+    r.step("허용 → 빈 카드 찍기 (위쪽 초시계)", "admin", lambda: r.router.card_wait is not None and r.router.notice.isVisible())
+    r.router.card_scanned("A1B2C3D4")
+    r.step("빈 카드 할당 → 발급 완료 · 카운터 전달", "admin", lambda: "C3D4" in admin.message.text())
+    r.router.show_screen("idle")
+    r.router.card_scanned("A1B2C3D4")
+    r.step("카드 태그 → 비밀번호 화면 (아이디 자동)", "login", lambda: r.screen("login").login_id.text() == "cardguest")
     login = r.screen("login")
-    login.login_id.setText("bomin")
+    login.password.setText("1234")
+    login.password_login()
+    r.session.add("M001", None, 2)
+    r.router.show_screen("benefit")
+    r.step("06 회원카드 첫 주문 10% 할인", "benefit", lambda: r.session.benefit()["card_discount"] == 600)
+    r.router.show_screen("idle")
+    r.router.open_action("member")
+    login.login_id.setText("cardguest")
+    login.set_mode("password")
     login.password.setText("1234")
     login.password_then_card()
-    r.step("02-B 카드 연결 대기", "login", lambda: r.router.card_active())
-    r.router.card_scanned("0012345678")
-    r.step("카드 연결됨", None, lambda: member(r)["extra"].get("card_id") or True)
+    login.password.setText("1234")
+    login.password_then_card()
+    r.step("분실 → 한 번 더 눌러 재발급 신청 (1,000원)", "login", lambda: "재발급을 신청했어요" in login.message.text())
     r.router.show_screen("home")
-    r.router.card_scanned("0012345678")
-    r.step("RFID 카드 태그 → 회원 확인 진행", None)
-    r.router.show_screen("home")
+    r.router.card_scanned("A1B2C3D4")
+    r.step("분실 신고된 카드 → 안내", None, lambda: "분실" in r.router.notice.text())
     r.router.card_scanned("9999999999")
-    r.step("등록 안 된 카드 → 연결 방법 안내", None)
+    r.step("등록 안 된 카드 → 신청 방법 안내", None, lambda: "신청" in r.router.notice.text())
 
 
 def signup_errors_then_face(r):
@@ -684,7 +714,7 @@ SCENARIOS = [
     ("비밀번호 틀림 · 없는 ID", "비밀번호 실패 → 회원 ID 다시", member_password_fail),
     ("카메라 고장", "얼굴 인증 중 카메라 오류 → 비밀번호 안내", camera_broken),
     ("아이디 찾기 · 임시 비밀번호", "02-C → 임시 비밀번호 → 로그인 → 새 비밀번호 → My Menu", find_account),
-    ("RFID 카드", "카드 연결 → 카드 태그 · 모르는 카드", card_login),
+    ("회원카드 신청 · 발급 · 분실", "가입 때 신청 → 운영자 허용 → 빈 카드 할당 → 카드 로그인 → 첫 주문 10% → 분실 재발급", card_login),
     ("회원가입 오류 → 얼굴 등록", "10 빈칸·중복·비밀번호 다름 → 10-B → My Menu", signup_errors_then_face),
     ("회원가입 (얼굴 없이)", "10 → My Menu", signup_no_face),
     ("얼굴 등록 중 카메라 고장", "10-B 카메라 오류", enroll_camera_broken),

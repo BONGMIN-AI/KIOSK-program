@@ -56,6 +56,7 @@ class _Relay(QObject):
 
     number = Signal(str)
     text = Signal(str)
+    misread = Signal()
 
 
 class SerialCardReader(QObject):
@@ -63,6 +64,7 @@ class SerialCardReader(QObject):
 
     scanned = Signal(str)
     status = Signal(str)
+    notice = Signal(str)               # 손님에게 보여 줄 안내 (받지 않는 화면 · 번호를 못 읽음)
 
     def __init__(self, active=lambda: True, port=None, parent=None):
         super().__init__(parent)
@@ -73,10 +75,14 @@ class SerialCardReader(QObject):
         self.relay = _Relay()
         self.relay.number.connect(self.deliver)
         self.relay.text.connect(self.status)
+        self.relay.misread.connect(lambda: self.notice.emit(
+            "카드를 읽지 못했어요 · 리더기 가운데에 카드를 2초쯤 대 주세요"))
 
     def deliver(self, number):
         if self.active():
             self.scanned.emit(number)
+        else:                          # 11/01: 메뉴·결제 화면 등에서는 받지 않는다는 걸 알려 준다
+            self.notice.emit("카드는 처음 화면 · 시작 화면 · 로그인 화면에서 대 주세요")
 
     def start(self):
         """포트가 있고 pyserial이 있으면 읽기 시작. 시작했으면 True."""
@@ -105,6 +111,8 @@ class SerialCardReader(QObject):
                         number = parse_line(line)
                         if number:
                             self.relay.number.emit(number)
+                        elif line.startswith("INFO"):      # 카드는 느꼈지만 번호를 못 읽음
+                            self.relay.misread.emit()
                         elif line.startswith(("READY", "ERROR")):
                             self.relay.text.emit(f"카드 리더: {line.strip()}")
             except (OSError, serial.SerialException):

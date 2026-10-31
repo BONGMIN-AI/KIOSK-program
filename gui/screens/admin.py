@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QC
 import config
 from core import audit, auth, schema
 from core.validators import mask_phone
+from domain import member_cards as card_logic
 from domain import policy as policy_logic
 from domain.titles import title_name
 from domain.customers import adjust_points
@@ -25,7 +26,9 @@ from gui.order import CATEGORY_ORDER
 from gui.screens.login import info_box, nav_bar
 from gui.widgets import Card, TouchKeyboard, button, label, message_label, text_field
 
-TABS = [("menu", "메뉴 관리"), ("members", "회원·주문 조회"), ("events", "이벤트·포인트"), ("points", "포인트 조정·로그")]
+TABS = [("menu", "메뉴 관리"), ("members", "회원·주문 조회"), ("cards", "회원카드 발급"), ("events", "이벤트·포인트"),
+        ("points", "포인트 조정·로그")]
+CARD_SECONDS = 20          # 허용 뒤 빈 카드를 찍을 시간
 THEME_NAMES = policy_logic.THEMES
 
 
@@ -195,7 +198,8 @@ class AdminScreen(QWidget):
         layout.addLayout(tabs)
         self.pages = QStackedWidget()
         self.page_of = {"menu": self.make_menu_page(), "members": self.make_members_page(),
-                        "events": self.make_events_page(), "points": self.make_points_page()}
+                        "cards": self.make_cards_page(), "events": self.make_events_page(),
+                        "points": self.make_points_page()}
         for page in self.page_of.values():
             self.pages.addWidget(page)
         layout.addWidget(self.pages, 1)
@@ -579,6 +583,110 @@ class AdminScreen(QWidget):
         self.done("이벤트를 삭제했습니다")
 
     # ---- 09-E 포인트 조정·감사 로그
+    # ---- 회원카드 발급 (11/01): 신청 → 허용 → 빈 카드 찍기 → 카운터에서 전달
+    def make_cards_page(self):
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(10)
+        column.addWidget(label("회원카드 신청 · 승인 대기가 위에 와요", 17, bold=True))
+        self.card_table = table(["신청", "회원 (아이디)", "종류", "수수료", "상태", "신청 시각"])
+        column.addWidget(self.card_table, 1)
+        self.card_help = label("① 신청을 고르고 '허용' → ② 빈 카드를 리더기에 대면 그 카드가 회원에게 할당돼요 → "
+                               "③ 카운터에서 손님에게 건네요 (재발급은 수수료를 받아요)", 14, muted=True)
+        self.card_help.setWordWrap(True)
+        column.addWidget(self.card_help)
+        actions = QHBoxLayout()
+        self.card_allow_button = button("허용 → 빈 카드 찍기", "primary", self.allow_card)
+        actions.addWidget(self.card_allow_button, 2)
+        actions.addWidget(button("카드 다시 찍기", "outline", self.scan_card_again), 1)
+        actions.addWidget(button("거절", "outline", self.reject_card), 1)
+        column.addLayout(actions)
+        return page
+
+    def load_cards(self, keep=None):
+        """신청 목록 (승인 대기가 위). keep: 다시 그린 뒤에도 고른 채로 둘 신청 번호."""
+        requests = card_logic.requests_of(self.vault())
+        customers = self.vault().read("customers", default={})
+        order = {"waiting": 0, "approved": 1, "issued": 2, "rejected": 3}
+        items = sorted(requests.values(), key=lambda r: (order[r["status"]], r["requested_at"]))
+        rows, keys = [], []
+        for request in items:
+            extra = customers.get(request["customer_id"], {}).get("extra", {})
+            status = card_logic.STATUS[request["status"]]
+            if request["status"] == "issued":
+                status += f" · 끝자리 {request['card_tail']}"
+            rows.append([request["id"], f"{extra.get('nickname', '?')} ({extra.get('login_id', '')})",
+                         card_logic.KINDS[request["kind"]], f"{request['fee']:,}원" if request["fee"] else "무료",
+                         status, request["requested_at"][5:16].replace("T", " ")])
+            keys.append(request["id"])
+        fill_table(self.card_table, rows, keys)
+        if keep in keys:
+            self.card_table.selectRow(keys.index(keep))
+        waiting = sum(r["status"] == "waiting" for r in requests.values())
+        tab = next(t for t in self.tab_group.buttons() if t.objectName() == "tab_cards")
+        tab.setText(f"회원카드 발급 ({waiting})" if waiting else "회원카드 발급")
+
+    def selected_card_request(self):
+        request_id = selected_key(self.card_table)
+        if request_id is None:
+            self.fail("목록에서 신청을 먼저 골라 주세요")
+        return request_id
+
+    def allow_card(self):
+        """허용 → 바로 빈 카드를 기다린다 (남은 초는 위쪽 띠에)."""
+        request_id = self.selected_card_request()
+        if request_id is None:
+            return
+        try:
+            card_logic.approve_request(self.vault(), request_id, self.router.admin_id)
+        except ValueError as error:
+            self.fail(error)
+            return
+        self.router.audit("card_approved", request_id)
+        self.load_cards(keep=request_id)
+        self.wait_blank_card(request_id)
+
+    def scan_card_again(self):
+        """허용해 둔 신청(카드 찍기 대기)에 카드를 다시 찍는다 (시간이 지났을 때)."""
+        request_id = self.selected_card_request()
+        if request_id is None:
+            return
+        if card_logic.requests_of(self.vault())[request_id]["status"] != "approved":
+            self.fail("'카드 찍기 대기' 상태인 신청만 카드를 찍을 수 있어요")
+            return
+        self.wait_blank_card(request_id)
+
+    def wait_blank_card(self, request_id):
+        self.done(f"빈 카드를 리더기에 대 주세요 ({CARD_SECONDS}초 · 남은 시간은 위쪽에)")
+
+        def on_card(number):
+            try:
+                request = card_logic.issue_card(self.vault(), request_id, number, self.router.admin_id)
+            except ValueError as error:
+                self.fail(f"{error} · '카드 다시 찍기'를 눌러 주세요")
+                return
+            self.router.audit("card_issued", f"{request_id} {request['customer_id']}")
+            fee = f" · 재발급 수수료 {request['fee']:,}원을 받아 주세요" if request["fee"] else ""
+            self.load_cards(keep=request_id)
+            self.done(f"발급 완료 · 카드 끝자리 {request['card_tail']} · 카운터에서 손님에게 건네 주세요{fee}")
+
+        self.router.wait_card(on_card, CARD_SECONDS, owner=self, prompt="빈 회원카드를 리더기에 대 주세요",
+                              on_timeout=lambda: self.fail("카드가 찍히지 않았어요 · '카드 다시 찍기'를 눌러 주세요"))
+
+    def reject_card(self):
+        request_id = self.selected_card_request()
+        if request_id is None:
+            return
+        try:
+            card_logic.reject_request(self.vault(), request_id, self.router.admin_id)
+        except ValueError as error:
+            self.fail(error)
+            return
+        self.router.audit("card_rejected", request_id)
+        self.load_cards()
+        self.done("신청을 거절했어요")
+
     def make_points_page(self):
         page = QWidget()
         column = QVBoxLayout(page)

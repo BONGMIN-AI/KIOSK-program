@@ -9,6 +9,9 @@ settings["point_policy"] = {
     "visit_coupon_amount": 1000, # 방문 쿠폰 금액
     "visit_coupon_days": 0,      # 쿠폰 유효 일수 (0이면 그해 12월 31일까지)
     "eco_points": 100,           # 개인 컵(텀블러) 음료 1잔마다 주는 에코 포인트 (0이면 끔)
+    "card_first_discount": 10,   # 회원카드를 받은 뒤 첫 주문 음료 할인(%)
+    "card_bonus_rate": 1.0,      # 회원카드가 있으면 적립률에 더하는 %p
+    "card_reissue_fee": 1000,    # 분실 재발급 수수료(원, 카운터에서 받음)
     "events": [ {이벤트}, ... ],
 }
 
@@ -41,6 +44,9 @@ DEFAULT_POLICY = {
     "visit_coupon_amount": 1000,
     "visit_coupon_days": 0,
     "eco_points": 100,
+    "card_first_discount": 10,
+    "card_bonus_rate": 1.0,
+    "card_reissue_fee": 1000,
     "events": [],
 }
 
@@ -77,10 +83,16 @@ def validate_policy(raw: dict) -> dict:
     eco = int(policy["eco_points"])
     if not 0 <= eco <= 1000:
         raise ValueError("에코 포인트는 0~1000P 사이로 입력하세요")
+    card_discount = int(policy["card_first_discount"])
+    card_bonus = float(policy["card_bonus_rate"])
+    card_fee = int(policy["card_reissue_fee"])
+    if not 0 <= card_discount <= 50 or not 0 <= card_bonus <= 10 or card_fee < 0:
+        raise ValueError("회원카드 값: 첫 주문 할인 0~50%, 추가 적립 0~10%p, 재발급 수수료 0원 이상")
     return {
         "base_rate": rate, "point_unit": unit, "min_use": min_use, "max_use_percent": max_percent,
         "visit_coupon_every": every, "visit_coupon_amount": amount, "visit_coupon_days": days,
-        "eco_points": eco, "events": [validate_event(e) for e in policy.get("events", [])],
+        "eco_points": eco, "card_first_discount": card_discount, "card_bonus_rate": card_bonus,
+        "card_reissue_fee": card_fee, "events": [validate_event(e) for e in policy.get("events", [])],
     }
 
 
@@ -266,11 +278,11 @@ def display_event(policy: dict, now: datetime | None = None) -> dict | None:
 
 
 def calculate_points(policy: dict, lines: list[dict], menu: dict, final_total: int,
-                     now: datetime | None = None) -> dict:
+                     now: datetime | None = None, extra_rate: float = 0.0) -> dict:
     """실제 결제액을 메뉴별로 나눠 메뉴마다 가장 높은 적립률을 적용한다.
 
     쿠폰·포인트 할인은 각 줄 금액 비율대로 나눠 뺀다. 보너스 포인트는 조건을 만족한
-    이벤트마다 한 번씩 더한다.
+    이벤트마다 한 번씩 더한다. extra_rate(%p)는 회원카드 회원의 추가 적립처럼 모든 줄에 더한다.
     """
     events = active_events(policy, now)
     total = sum(line["subtotal"] for line in lines)
@@ -286,7 +298,7 @@ def calculate_points(policy: dict, lines: list[dict], menu: dict, final_total: i
                 rate, source = event["rate"], event["name"]
         if source:
             used_events.add(source)
-        raw_points += line["subtotal"] * final_total / total * rate / 100
+        raw_points += line["subtotal"] * final_total / total * (rate + extra_rate) / 100
     bonus = 0
     categories = {menu.get(line["menu_id"], {}).get("category") for line in lines}
     for event in events:

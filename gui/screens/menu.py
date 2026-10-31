@@ -207,8 +207,10 @@ class MenuScreen(QWidget):
         extra = customer["extra"]
         title = f"[{title_name(extra['title'])}] " if extra.get("title") else ""
         self.member_name.setText(f"{title}{extra['nickname']} 님")
+        card = self.session.card_status()
+        card = f"   ·   {card}" if card and card != "회원카드 사용 중" else ""
         self.member_detail.setText(f"포인트 {extra['points']:,}P   ·   쿠폰 {len(self.session.coupons())}장"
-                                   f"   ·   방문 {extra['visits']}회")
+                                   f"   ·   방문 {extra['visits']}회{card}")
 
     def make_banner(self):
         banner = ElidedLabel()

@@ -99,6 +99,8 @@ class KioskWindow(QMainWindow):
         QApplication.instance().installEventFilter(self.card_reader)
         # RC522 + 아두이노처럼 시리얼로 번호를 보내는 리더 (꽂혀 있지 않으면 None)
         self.serial_card = start_serial_reader(self.router.card_active, self.router.card_scanned, parent=self)
+        if self.serial_card is not None:
+            self.serial_card.notice.connect(self.router.card_refused)
         self.build_screens()
         self.router.show_screen("idle" if vault is not None else "unlock")
         if vault is not None:

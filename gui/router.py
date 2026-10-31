@@ -14,6 +14,7 @@ import config
 from core import audit
 from core.storage import recover_journal
 from domain.customers import face_locked, find_by_card
+from domain.member_cards import is_lost_card
 from face import FaceError
 from gui import theme
 from gui.order import OrderSession
@@ -78,8 +79,8 @@ class Router(QStackedWidget):
                 screen = self.screens[name]
         elif name != "unlock":
             self.restart_timer()
-        if name != "login":
-            self.card_wait = None      # 카드 연결은 로그인 화면에서만 기다린다 (다른 화면에서 찍힌 카드를 잘못 연결하지 않게)
+        if name != "admin":
+            self.card_wait = None      # 카드 기다리기는 운영자 '회원카드 발급'에서만 (다른 화면에서 찍힌 카드를 잘못 할당하지 않게)
         if hasattr(screen, "on_show"):
             screen.on_show(**options)
         self.setCurrentWidget(screen)
@@ -98,7 +99,10 @@ class Router(QStackedWidget):
     def warn_time_out(self):
         amount = self.session.inserted
         money = f"\n넣은 현금 {theme.won(amount)}은 반환돼요." if amount else ""
-        self.notify(f"15초 뒤 처음 화면으로 돌아가요. 계속하려면 화면을 눌러 주세요.{money}", 15)
+        left = min(15, (self.timer.remainingTime() + 999) // 1000) if self.timer.isActive() else 15
+        if self.notice is not None:              # 11/01: 남은 초가 위쪽 띠에서 줄어든다
+            self.notice.show_countdown(
+                lambda s: f"{s}초 뒤 처음 화면으로 돌아가요. 계속하려면 화면을 눌러 주세요.{money}", left)
         self.warning_shown = True
 
     def time_out(self):
@@ -174,14 +178,17 @@ class Router(QStackedWidget):
         return self.session.vault is not None and (
             self.card_wait is not None or self.current_name in self.CARD_SCREENS) and not self.camera_busy
 
-    def wait_card(self, on_card, seconds=15, on_timeout=None, owner=None):
-        """카드 연결: seconds 안에 찍힌 카드 번호를 on_card로 넘긴다.
+    def wait_card(self, on_card, seconds=15, on_timeout=None, owner=None, prompt="카드를 리더기에 대 주세요"):
+        """카드 기다리기: seconds 안에 찍힌 카드 번호를 on_card로 넘긴다. 남은 초는 위쪽 띠에서 줄어든다.
 
         owner(기다리는 화면)가 그 사이 없어지면(큰 글자로 바꿔 화면을 새로 만들 때 등) 타이머도 함께 취소된다.
         """
         token = object()
         self.card_wait = on_card
         self._card_token = token
+        if self.notice is not None:
+            self.notice.show_countdown(lambda s: f"{prompt} · {s}초", seconds,
+                                       alive=lambda: self.card_wait is on_card and self._card_token is token)
 
         def expire():
             if self.card_wait is on_card and self._card_token is token:
@@ -194,6 +201,8 @@ class Router(QStackedWidget):
         """카드가 찍혔다: 연결 중이면 그 화면에 넘기고, 아니면 그 회원으로 바로 얼굴 인증을 시작한다."""
         if self.card_wait is not None:
             on_card, self.card_wait = self.card_wait, None
+            if self.notice is not None:
+                self.notice.stop_countdown()
             on_card(number)
             return
         try:
@@ -202,7 +211,10 @@ class Router(QStackedWidget):
             self.notify(str(error))
             return
         if customer is None:
-            self.notify("등록되지 않은 카드예요.\n회원 로그인 → 비밀번호로 로그인 → '회원 카드 연결'에서 연결할 수 있어요.", 8)
+            if is_lost_card(self.session.vault, number):
+                self.notify("분실 신고된 카드예요. 이 카드로는 로그인할 수 없어요.\n새 카드는 카운터에서 받아 주세요.", 8)
+            else:
+                self.notify("등록되지 않은 카드예요.\n회원카드는 회원가입 때나 로그인 화면에서 신청하고, 카운터에서 받아요.", 8)
             return
         self.audit("card_tag", customer["id"])
         login_id = customer["extra"]["login_id"]
@@ -214,6 +226,10 @@ class Router(QStackedWidget):
         else:
             self.show_screen("login", mode="password", login_id=login_id,
                              message="회원 카드 확인 · 얼굴 정보가 없어 비밀번호를 넣어 주세요")
+
+    def card_refused(self, text):
+        """시리얼 리더가 카드를 읽었지만 지금 화면이 받지 않거나 번호를 못 읽었을 때 (조용히 버리지 않는다)."""
+        self.notify(text, 5)
 
     def start_member_order(self, customer):
         """회원 확인이 끝나면(얼굴·비밀번호·가입) My Menu가 먼저 열린 03 메뉴로 간다."""
