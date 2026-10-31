@@ -25,6 +25,7 @@ from domain.random_members import make_random_members
 from face import create_face_provider
 from gui import theme
 from gui.card_reader import CardReader
+from gui.serial_card import start_serial_reader
 from gui.router import Router
 from gui.screens.admin import AdminLoginScreen, AdminScreen
 from gui.screens.benefit import BenefitScreen
@@ -96,6 +97,8 @@ class KioskWindow(QMainWindow):
         self.card_reader = CardReader(self.router.card_active, self)   # USB RFID 리더 (키보드처럼 입력)
         self.card_reader.scanned.connect(self.router.card_scanned)
         QApplication.instance().installEventFilter(self.card_reader)
+        # RC522 + 아두이노처럼 시리얼로 번호를 보내는 리더 (꽂혀 있지 않으면 None)
+        self.serial_card = start_serial_reader(self.router.card_active, self.router.card_scanned, parent=self)
         self.build_screens()
         self.router.show_screen("idle" if vault is not None else "unlock")
         if vault is not None:
@@ -131,6 +134,8 @@ class KioskWindow(QMainWindow):
         # 창을 닫으면 무입력 감시도 함께 뗀다 (남아 있으면 다른 창의 입력마다 계속 불린다)
         QApplication.instance().removeEventFilter(self.router)
         QApplication.instance().removeEventFilter(self.card_reader)
+        if self.serial_card is not None:
+            self.serial_card.stop()
         super().closeEvent(event)
 
 

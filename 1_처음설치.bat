@@ -28,13 +28,14 @@ call :check opencv-python cv2
 call :check onnxruntime onnxruntime
 call :check pillow PIL
 call :check pyrealsense2 pyrealsense2
+call :check pyserial serial
 call :check pytest pytest
 goto report
 
 :venv_missing
 set "NEED_VENV=1"
 echo   [없음] Python 가상환경
-set "MISSING= PySide6 cryptography textual numpy opencv-python onnxruntime pillow pyrealsense2 pytest"
+set "MISSING= PySide6 cryptography textual numpy opencv-python onnxruntime pillow pyrealsense2 pyserial pytest"
 
 :report
 echo.
