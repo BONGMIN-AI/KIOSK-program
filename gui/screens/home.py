@@ -110,11 +110,9 @@ class HomeScreen(QWidget):
         body.addWidget(self.slideshow, 3)
         right = QVBoxLayout()
         right.setSpacing(10)
-        heading = self.text(label("", 28 if theme.SCALE == 1 else 22, title=True), "heading")
-        heading.setWordWrap(True)
+        heading = self.text(label("", 28 if theme.SCALE == 1 else 22, title=True, guide=True), "heading")
         right.addWidget(heading)
-        intro = self.text(label("", muted=True), "intro")
-        intro.setWordWrap(True)
+        intro = self.text(label("", muted=True, guide=True), "intro")
         intro.setVisible(theme.SCALE == 1)       # 큰 글자에서는 줄여서 버튼이 눌리지 않게
         right.addWidget(intro)
         right.addSpacing(6)
@@ -205,9 +203,8 @@ class HomeScreen(QWidget):
         if theme.SCALE == 1:                     # 큰 글자에서는 혜택 줄을 빼서 한 화면에
             lines.append((f"{kind}_benefit", 18, False, True))
         for key, size, title_font, muted in lines:
-            line = self.text(label("", size, title=title_font, muted=muted), key)
+            line = self.text(label("", size, title=title_font, muted=muted, guide=True), key)
             line.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            line.setWordWrap(True)
             layout.addWidget(line)
         layout.addStretch()
         action = "member" if member else "guest"

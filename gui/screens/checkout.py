@@ -106,8 +106,7 @@ class CartScreen(QWidget):
         self.eco_check.setFont(theme.font(18, bold=True))
         self.eco_check.toggled.connect(self.toggle_eco)
         eco.addWidget(self.eco_check)
-        self.eco_note = label("", 14, muted=True)
-        self.eco_note.setWordWrap(True)
+        self.eco_note = label("", 14, muted=True, guide=True)
         eco.addWidget(self.eco_note)
         column.addWidget(self.eco_box)
         self.pay_button = button("결제하기 →", "primary", self.go_pay)
@@ -222,18 +221,15 @@ class CashScreen(QWidget):
         left.addLayout(grid)
         # 방금 일어난 일(받음·반환·거절)은 위 작은 줄, 지금 상태(더 넣을 돈·거스름돈)는 아래 큰 줄에 따로 쓴다.
         # 그래서 반환 뒤에도 큰 줄은 항상 지금 상태를 맞게 보여 준다.
-        self.event = label("", 16, bold=True)
+        self.event = label("", 16, bold=True, guide=True)
         self.event.setStyleSheet(f"color: {theme.CARAMEL};")
-        self.event.setWordWrap(True)
         left.addWidget(self.event)
-        self.status = label("", 20, bold=True)
-        self.status.setWordWrap(True)
+        self.status = label("", 20, bold=True, guide=True)
         left.addWidget(self.status)
         self.change_text = label("", 16, muted=True)
         left.addWidget(self.change_text)
-        self.coin_tip = label("", 16, bold=True)             # C-6 동전 최소화 안내
+        self.coin_tip = label("", 16, bold=True, guide=True)             # C-6 동전 최소화 안내
         self.coin_tip.setStyleSheet(f"color: {theme.CARAMEL};")
-        self.coin_tip.setWordWrap(True)
         left.addWidget(self.coin_tip)
         left.addStretch()
         left.addWidget(button("투입 취소 · 반환", "outline", self.refund))
@@ -426,8 +422,7 @@ class DoneScreen(QWidget):
         question = QVBoxLayout()
         self.ask_label = label("", 24, bold=True)
         question.addWidget(self.ask_label)
-        self.ask_hint = label("", 15, muted=True)
-        self.ask_hint.setWordWrap(True)
+        self.ask_hint = label("", 15, muted=True, guide=True)
         question.addWidget(self.ask_hint)
         ask.addLayout(question, 1)
         self.more_button = button("예 · 더 주문하기", "primary", self.order_more)
@@ -521,9 +516,9 @@ class DoneScreen(QWidget):
         self.update_order_status()
         self.ask_label.setText(f"더 주문하시겠어요? ({self.seconds_left})")
         if self.session.is_member():
-            self.ask_hint.setText("예: 로그인 그대로 메뉴로 · 아니요: 로그아웃하고 처음 화면 (시간이 지나면 아니요)")
+            self.ask_hint.setText("예: 로그인한 채 메뉴로 · 아니요: 로그아웃")
         else:
-            self.ask_hint.setText("예: 메뉴로 · 아니요: 처음 화면 (시간이 지나면 아니요)")
+            self.ask_hint.setText("예: 메뉴로 · 아니요: 처음 화면")
 
     def order_more(self):
         self.countdown.stop()

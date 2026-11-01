@@ -255,8 +255,7 @@ def saved_routes_card(session, on_open, on_remove):
         row.addWidget(remove)
         column.addLayout(row)
     if not routes:
-        hint = label("승차권을 살 때 '예 · 저장'을 고르면 여기에 모여요", 15, muted=True)
-        hint.setWordWrap(True)
+        hint = label("승차권을 살 때 '예 · 저장'을 고르면 여기에 모여요", 15, muted=True, guide=True)
         column.addWidget(hint)
     return card
 

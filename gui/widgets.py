@@ -1,6 +1,7 @@
 """여러 화면에서 같이 쓰는 작은 부품."""
 
 import math
+import re
 
 from PySide6.QtCore import QElapsedTimer, QEvent, QPointF, QRectF, QTimer, QVariantAnimation, Qt
 from PySide6.QtGui import (QBitmap, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap,
@@ -40,8 +41,42 @@ def chip(text):
     return result
 
 
-def label(text, size=theme.BODY_SIZE, title=False, muted=False, bold=False):
-    result = QLabel(text)
+LONG_LINE = 26      # 이보다 긴 줄은 ' · ' 마디마다 줄을 바꾼다
+
+
+def tidy(text):
+    """안내 글을 읽기 좋게 (11/02): 문장이 끝나면 줄을 바꾸고, 긴 줄은 ' · '로 이어진 마디마다 줄을 바꾼다.
+
+    Qt는 칸 끝에서 아무 띄어쓰기에서나 줄을 바꿔 '직원 승인 / 뒤 카운터에서'처럼 애매하게 끊기므로,
+    뜻이 끊기는 자리(문장 끝 · 마디)에서 먼저 줄을 바꿔 둔다. 짧은 글은 그대로 둔다.
+    """
+    lines = []
+    for raw in (text or "").split("\n"):
+        for sentence in re.split(r"(?<=[.!?])\s+(?=\S)", raw.strip()):
+            # 따옴표 안('예 · 저장')의 ' · '는 한 덩어리로 둔다
+            parts = re.split(r" · (?=(?:[^'‘’]*['‘’][^'‘’]*['‘’])*[^'‘’]*$)", sentence)
+            if len(sentence) > LONG_LINE and len(parts) > 1:
+                lines.extend(part.strip() for part in parts if part.strip())
+            else:
+                lines.append(sentence)
+    return "\n".join(lines)
+
+
+class GuideLabel(QLabel):
+    """안내 글 칸: 넣는 글을 tidy()로 줄바꿈해 보여 준다 (칸 폭을 넘으면 낱말 단위로 한 번 더 줄바꿈)."""
+
+    def __init__(self, text=""):
+        super().__init__()
+        self.setWordWrap(True)
+        self.setText(text)
+
+    def setText(self, text):
+        super().setText(tidy(text))
+
+
+def label(text, size=theme.BODY_SIZE, title=False, muted=False, bold=False, guide=False):
+    """글자 칸. guide=True면 안내 글 칸(GuideLabel: 읽기 좋은 줄바꿈)."""
+    result = GuideLabel(text) if guide else QLabel(text)
     result.setFont(theme.font(size, title=title, bold=bold))
     if muted:
         result.setStyleSheet(f"color: {theme.TEXT2};")
@@ -514,8 +549,8 @@ def phone_field(placeholder=""):
 
 
 def message_label():
-    """오류·안내 한 줄 (빨간 글자)."""
-    result = label("", 15, bold=True)
+    """오류·안내 글 (빨간 글자, 읽기 좋은 줄바꿈)."""
+    result = label("", 15, bold=True, guide=True)
     result.setStyleSheet(f"color: {theme.ERROR};")
     result.setWordWrap(True)
     return result
@@ -716,8 +751,7 @@ class ConfirmBox(QWidget):
         column.setSpacing(12)
         self.title = label("", 24, bold=True)
         column.addWidget(self.title)
-        self.text = label("", 17)
-        self.text.setWordWrap(True)
+        self.text = label("", 17, guide=True)
         column.addWidget(self.text)
         row = QHBoxLayout()
         self.no_button = button("아니요", "outline", self.hide)
@@ -1041,7 +1075,8 @@ class Notice(QLabel):
         if self.left <= 0 or (self.alive is not None and not self.alive()):
             self.stop_countdown()
             return
-        self.setText(self.text_for(self.left))
+        self.setText(tidy(self.text_for(self.left)))
+        self.adjustSize()
 
     def stop_countdown(self):
         if self.tick.isActive():
@@ -1052,7 +1087,7 @@ class Notice(QLabel):
         self.tick.stop()
         self.setStyleSheet(f"QLabel#notice {{ background: {theme.BROWN}; color: {theme.CARD};"
                            " border-radius: 18px; padding: 16px 28px; }")
-        self.setText(text)
+        self.setText(tidy(text))
         width = min(760, self.parentWidget().width() - 80)
         self.setFixedWidth(width)
         self.adjustSize()

@@ -33,9 +33,8 @@ class UnlockScreen(QWidget):
             field.setStyleSheet(f"background: {theme.CARD}; border: 1px solid {theme.LINE};"
                                 " border-radius: 12px; padding: 0 12px;")
             column.addWidget(field)
-        self.message = label("", 15)
+        self.message = label("", 15, guide=True)
         self.message.setStyleSheet(f"color: {theme.ERROR};")
-        self.message.setWordWrap(True)
         column.addWidget(self.message)
         column.addWidget(button("금고 열기", "primary", self.open_vault))
         outer.addWidget(card)

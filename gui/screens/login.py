@@ -32,8 +32,7 @@ def info_box(title, text):
     column = QVBoxLayout(box)
     column.setContentsMargins(18, 14, 18, 14)
     column.addWidget(label(title, 18, bold=True))
-    body = label(text, 15, muted=True)
-    body.setWordWrap(True)
+    body = label(text, 15, muted=True, guide=True)
     column.addWidget(body)
     return box, body
 

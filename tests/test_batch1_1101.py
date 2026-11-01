@@ -138,7 +138,7 @@ def test_screens_show_eco_coin_tip_and_habit(window):
     cart.eco_check.setChecked(True)
     router.show_screen("cash")
     cash = router.screens["cash"]
-    assert cash.coin_tip.text() == "동전 줄이기 팁 · 700원을 동전으로 같이 넣으면 거스름돈에 동전이 없어요"
+    assert cash.coin_tip.text() == "동전 줄이기 팁\n700원을 동전으로 같이 넣으면 거스름돈에 동전이 없어요"   # 11/02 마디마다 줄바꿈
     cash.findChild(QPushButton, "cash_10000").click()
     assert not cash.coin_tip.isVisible()                               # 충분해지면 사라진다
     cash.pay_button.click()
