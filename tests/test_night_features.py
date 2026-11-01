@@ -184,7 +184,8 @@ def issue_card_through_admin(router, number):
     router.show_screen("admin", tab="cards")
     admin = router.screens["admin"]
     admin.card_table.selectRow(0)
-    admin.allow_card()
+    admin.approve_cards()
+    admin.register_cards()
     assert router.card_wait is not None, admin.message.text()
     router.card_scanned(number)
     return admin
@@ -200,10 +201,11 @@ def test_card_request_admin_issue_then_tag_starts_face_login(window, app):
     login.set_mode("password")
     login.login_id.setText(member["extra"]["login_id"])
     login.password.setText("1234")                    # 시연 데이터 회원 비밀번호
-    login.password_then_card()
-    assert "신청했어요" in login.message.text() and router.session.customer is None
+    login.card_check.setChecked(True)                 # 11/02: 로그인하면서 '회원카드 신청' 체크
+    login.password_login()
+    assert router.current_name == "menu" and "신청했어요" in router.notice.text()
     admin = issue_card_through_admin(router, "0099887766")
-    assert "발급 완료" in admin.message.text() and "7766" in admin.message.text()
+    assert "카드 등록 완료" in admin.message.text() and "7766" in admin.message.text()
     router.show_screen("idle")
     handle = window.windowHandle()                    # 실제 키처럼 창으로 보낸다
     for digit in "0099887766":                        # 대기 화면에서 리더기가 번호 + Enter
@@ -276,7 +278,8 @@ def test_card_wait_is_cancelled_by_leaving_or_rebuilding(window, app):
     router.show_screen("admin", tab="cards")
     admin = router.screens["admin"]
     admin.card_table.selectRow(0)
-    admin.allow_card()
+    admin.approve_cards()
+    admin.register_cards()
     assert router.card_wait is not None and router.notice.isVisible() and "20초" in router.notice.text()
     router.set_display(large=True)                    # 화면을 새로 만든다 (옛 운영자 화면은 지워짐)
     assert router.current_name == "admin"

@@ -11,10 +11,12 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
                                QVBoxLayout, QWidget)
 
-from domain.customers import find_by_login_id, link_card, login_with_face, login_with_password, must_change_password
+from domain.customers import find_by_login_id, login_with_face, login_with_password, must_change_password
+from domain.member_cards import perks_text
 from face import FaceError, guide_view
 from gui import theme
-from gui.widgets import Card, FixedWidthCard, TouchKeyboard, button, label, message_label, promo_row, text_field
+from gui.widgets import (Card, FixedWidthCard, TouchKeyboard, button, label, link_button, message_label, option_check,
+                         promo_row, text_field)
 
 
 def nav_bar(router, back):
@@ -93,31 +95,50 @@ class LoginScreen(QWidget):
         self.message = message_label()
         right.addWidget(self.message)
         right.addStretch(1)                    # 버튼은 아래쪽에 붙인다 (홍보는 키보드 아래 배너만)
-        self.signup_link = QPushButton("처음 오셨나요?  회원가입 하기 →")
-        self.signup_link.setObjectName("signup_link")
-        self.signup_link.setFont(theme.font(15, bold=True))
-        self.signup_link.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.signup_link.setStyleSheet(f"QPushButton#signup_link {{ border: none; background: transparent;"
-                                       f" color: {theme.CARAMEL}; text-decoration: underline; padding: 4px; }}")
-        self.signup_link.clicked.connect(lambda: self.router.open_action("signup"))
-        right.addWidget(self.signup_link, alignment=Qt.AlignmentFlag.AlignRight)
+        # 비밀번호 로그인(02-B): 로그인하면서 함께 할 일을 혜택과 함께 체크 상자로 고른다 (11/02)
+        self.options_box = QFrame()
+        self.options_box.setObjectName("login_options")
+        self.options_box.setStyleSheet(f"QFrame#login_options {{ background: {theme.CREAM}; border-radius: 16px; }}")
+        options = QVBoxLayout(self.options_box)
+        options.setContentsMargins(16, 12, 16, 12)
+        options.setSpacing(2)
+        options.addWidget(label("로그인하면서 함께 할까요? (선택)", 15, bold=True))
+        self.enroll_check = option_check("얼굴도 등록할게요")
+        options.addWidget(self.enroll_check)
+        self.enroll_note = label("다음부터 카메라만 보면 바로 로그인돼요", 14, muted=True)
+        self.enroll_note.setContentsMargins(28, 0, 0, 4)
+        options.addWidget(self.enroll_note)
+        self.card_check = option_check("회원카드 신청 (무료)")
+        options.addWidget(self.card_check)
+        self.card_note = label("", 14, muted=True)
+        self.card_note.setStyleSheet(f"color: {theme.CARAMEL};")
+        self.card_note.setContentsMargins(28, 0, 0, 0)
+        options.addWidget(self.card_note)
+        right.addWidget(self.options_box)
         self.cancel_face_button = button("얼굴 인증 취소", "outline", self.cancel_face)
         self.cancel_face_button.hide()
         right.addWidget(self.cancel_face_button)
         self.face_button = button("얼굴 인증", "primary", self.face_login)
         self.password_mode_button = button("비밀번호로 로그인", "outline",
                                            lambda: self.set_mode("password"))
-        self.password_button = button("비밀번호로 로그인 →", "primary", self.password_login)
-        self.back_to_face_button = button("얼굴 인증으로 돌아가기", "outline", lambda: self.set_mode("face"))
-        self.enroll_button = button("비밀번호 확인 후 얼굴 등록 → 10-B", "outline", self.password_then_enroll)
-        self.card_button = button("회원카드 신청 · 분실 신고", "outline", self.password_then_card)
-        self.find_button = button("아이디·비밀번호를 잊었어요", "outline", self.find_account)
-        for widget in (self.face_button, self.password_mode_button, self.password_button,
-                       self.back_to_face_button, self.enroll_button, self.card_button, self.find_button):
+        self.password_button = button("로그인 →", "primary", self.password_login)
+        for widget in (self.face_button, self.password_mode_button, self.password_button):
             right.addWidget(widget)
+        # 작은 밑줄 링크: 회원가입 · 아이디/비밀번호 찾기 · 회원카드 분실
+        links = QVBoxLayout()                    # 한 줄에 하나씩, 오른쪽에 붙여 (큰 글자에서도 겹치지 않게)
+        links.setSpacing(0)
+        self.signup_link = link_button("처음 오셨나요? 회원가입", lambda: self.router.open_action("signup"),
+                                       strong=True)
+        self.signup_link.setObjectName("signup_link")
+        self.find_button = link_button("아이디·비밀번호를 잊었어요", self.find_account)
+        self.lost_card_link = link_button("회원카드를 잃어버렸어요", self.report_lost_card)
+        for widget in (self.signup_link, self.lost_card_link, self.find_button):
+            links.addWidget(widget, alignment=Qt.AlignmentFlag.AlignRight)
+        right.addLayout(links)
         body.addWidget(right_card)
         layout.addLayout(body, 1)
         layout.addLayout(nav_bar(router, self.go_back))
+        self.reissue_armed = None
         self.set_mode("face")      # 처음부터 02 모양으로 (02-B 버튼은 숨김)
 
     def on_show(self, mode="face", message="", keep_id=False, login_id=""):
@@ -126,19 +147,24 @@ class LoginScreen(QWidget):
         if login_id:
             self.login_id.setText(login_id)
         self.password.clear()
+        self.enroll_check.setChecked(False)       # 새 손님마다 체크는 비운다
+        self.card_check.setChecked(False)
         self.set_mode(mode, message)
 
     def set_mode(self, mode, message=""):
         self.mode = mode
         face = mode == "face"
-        self.title.setText("회원 ID · 얼굴 인증" if face else "02-B 비밀번호 대체 로그인")
+        self.title.setText("회원 ID · 얼굴 인증" if face else "비밀번호로 로그인")
         self.password.setVisible(not face)
         self.camera_box.setVisible(face)
         self.signup_link.setVisible(face)
         self.face_button.setVisible(face)
         self.password_mode_button.setVisible(face)
-        for widget in (self.password_button, self.back_to_face_button, self.enroll_button, self.card_button):
+        for widget in (self.password_button, self.options_box, self.lost_card_link):
             widget.setVisible(not face)
+        if not face:
+            self.card_note.setText(perks_text(self.router.session.policy()))
+            self.reissue_armed = None
         self.fail_box.setVisible(False)
         self.face_button.setText("얼굴 인증")     # 다음 손님에게는 '재시도'가 아니라 처음 상태로
         self.say(message, ok=False)
@@ -254,28 +280,42 @@ class LoginScreen(QWidget):
 
     def password_login(self):
         customer = self.check_password()
-        if customer and must_change_password(customer):     # 임시 비밀번호 → 새 비밀번호부터 정한다
+        if not customer:
+            return
+        if must_change_password(customer):                  # 임시 비밀번호 → 새 비밀번호부터 정한다
             self.router.show_screen("find", mode="change", customer=customer)
-        elif customer:
-            self.router.start_member_order(customer)
-
-    def password_then_enroll(self):
-        customer = self.check_password()
-        if customer:
-            self.router.session.login(customer)
+            return
+        session = self.router.session
+        note = ""
+        if self.card_check.isChecked():                    # 회원카드 신청 → 운영자 '회원카드 발급'으로
+            session.login(customer)
+            try:
+                session.request_card("new")
+                self.router.audit("card_requested", customer["id"])
+                note = "회원카드를 신청했어요.\n직원 승인 뒤 카운터에서 받아 가세요."
+            except ValueError as error:
+                note = str(error)
+        if self.enroll_check.isChecked():                  # 얼굴 등록 화면 → 끝나면 주문으로
+            session.login(customer)
             self.router.show_screen("enroll", customer=customer)
+        else:
+            self.router.start_member_order(customer)
+        if note:
+            self.router.notify(note, 7)
 
     def say(self, text, ok=True):
         """오른쪽 안내 한 줄: ok면 갈색(안내), 아니면 빨강(오류)."""
         self.message.setStyleSheet(f"color: {theme.BROWN if ok else theme.ERROR};")
         self.message.setText(text)
 
-    def password_then_card(self):
-        """회원카드 (11/01): 비밀번호로 본인 확인 → 카드가 없으면 신청, 있으면 분실 재발급(한 번 더 눌러 확인).
+    def report_lost_card(self):
+        """'회원카드를 잃어버렸어요' (11/02): 비밀번호로 본인 확인 → 한 번 더 누르면 예전 카드를 막고 재발급 신청.
 
-        카드는 손님이 스스로 연결하지 않는다. 신청은 운영자 화면 '회원카드 발급'으로 넘어가고,
-        운영자가 허용한 뒤 빈 카드를 찍어 할당해 카운터에서 건넨다.
+        재발급은 운영자 화면 '회원카드 발급'으로 넘어가고, 새 카드는 카운터에서 받는다(수수료).
         """
+        if not self.password.text():
+            self.say("회원 ID와 비밀번호를 넣고 다시 눌러 주세요", ok=False)
+            return
         customer = self.check_password()
         if not customer:
             return
@@ -285,24 +325,19 @@ class LoginScreen(QWidget):
         try:
             if status.startswith("회원카드 승인") or status.startswith("회원카드 발급"):
                 self.say(status)
-                return
-            if status == "회원카드 사용 중":
-                if getattr(self, "reissue_armed", None) != customer["id"]:
-                    self.reissue_armed = customer["id"]
-                    fee = session.policy()["card_reissue_fee"]
-                    self.say(f"카드를 잃어버렸나요? 비밀번호를 넣고 한 번 더 누르면 예전 카드를 바로 막고 "
-                             f"재발급을 신청해요 (수수료 {fee:,}원, 카운터)")
-                    return
+            elif status != "회원카드 사용 중":
+                self.say("발급받은 회원카드가 없어요. '회원카드 신청'을 체크하고 로그인해 주세요", ok=False)
+            elif self.reissue_armed != customer["id"]:
+                self.reissue_armed = customer["id"]
+                fee = session.policy()["card_reissue_fee"]
+                self.say(f"예전 카드를 바로 막고 새 카드를 신청할까요? (재발급 수수료 {fee:,}원)\n"
+                         "비밀번호를 넣고 한 번 더 누르면 신청돼요")
+            else:
                 self.reissue_armed = None
                 session.request_card("reissue")
                 self.router.audit("card_reissue_requested", customer["id"])
                 self.say("분실 신고 · 재발급을 신청했어요. 예전 카드는 이제 쓸 수 없어요.\n"
                          "직원 승인 뒤 카운터에서 새 카드를 받아 가세요")
-                return
-            session.request_card("new")
-            self.router.audit("card_requested", customer["id"])
-            self.say("회원카드를 신청했어요. 직원 승인 뒤 카운터에서 받아 가세요\n"
-                     "혜택: 첫 주문 10% 할인 · 매 주문 적립 +1%p")
         except ValueError as error:
             self.say(str(error), ok=False)
         finally:

@@ -277,7 +277,19 @@ def states(window):
         login = router.screens["login"]
         login.login_id.setText("bomin")
         login.password.setText("1234")
-        login.password_then_card()
+        login.enroll_check.setChecked(True)
+        login.card_check.setChecked(True)
+
+    def lost_card():
+        from domain.member_cards import approve_request, issue_card, request_card
+        request = request_card(session.vault, bomin["id"])
+        approve_request(session.vault, request["id"], "admin")
+        issue_card(session.vault, request["id"], "A1B2C3D4", "admin")
+        password_mode()
+        login = router.screens["login"]
+        login.login_id.setText("bomin")
+        login.password.setText("1234")
+        login.report_lost_card()
 
     def admin_card_wait():
         from domain.member_cards import request_card
@@ -285,7 +297,8 @@ def states(window):
         router.admin_id = "admin"
         router.show_screen("admin", tab="cards")
         router.screens["admin"].card_table.selectRow(0)
-        router.screens["admin"].allow_card()
+        router.screens["admin"].approve_cards()
+        router.screens["admin"].register_cards()
 
     def signup_card():
         router.open_action("signup")
@@ -442,7 +455,8 @@ def states(window):
         ("02 로그인 실패", login_fail),
         ("02 로그인 실패(긴 문구)", login_fail_long),
         ("02-B 비밀번호", password_mode),
-        ("02-B 회원카드 신청", card_request),
+        ("02-B 얼굴 등록 · 회원카드 신청 체크", card_request),
+        ("02-B 회원카드 분실 (확인 질문)", lost_card),
         ("02-C 아이디 찾기", find_id),
         ("02-C 임시 비밀번호 발급", find_reset),
         ("02-C 새 비밀번호 정하기 (오류)", find_change),
@@ -494,7 +508,9 @@ def states(window):
         ("09-C 회원·주문", admin("members")),
         ("09-C2 회원카드 발급 (카드 찍기)", admin_card_wait),
         ("09-D 이벤트", admin("events", "이벤트 적립률이나 보너스 포인트 중 하나는 입력하세요")),
-        ("09-E 포인트·로그", admin("points")),
+        ("09-E 포인트 조정", admin("points")),
+        ("09-F 혜택 설정", admin("perks")),
+        ("09-G 운영 기록", admin("log")),
     ]
 
 

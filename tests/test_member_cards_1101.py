@@ -138,7 +138,7 @@ def test_signup_with_card_request_goes_to_admin(window):
     router.admin_id = "admin"
     router.show_screen("admin", tab="cards")
     admin = router.screens["admin"]
-    assert admin.card_table.rowCount() == 1 and "회원카드 발급 (1)" in [b.text() for b in admin.tab_group.buttons()]
+    assert admin.card_table.rowCount() == 1 and "회원카드 (1)" in [b.text() for b in admin.tab_group.buttons()]
 
 
 def test_serial_reader_explains_refused_and_misread_cards(window):
@@ -152,3 +152,29 @@ def test_serial_reader_explains_refused_and_misread_cards(window):
     assert router.notice.isVisible() and "처음 화면" in router.notice.text()
     reader.relay.misread.emit()
     assert "읽지 못했어요" in router.notice.text()
+
+
+def test_admin_screen_has_no_idle_logout_and_perks_are_adjustable(window):
+    """11/02: 운영자 화면은 직접 로그아웃할 때만 · 회원카드 혜택은 운영자가 바꾸고 가입 화면에 바로 보인다."""
+    router = window.router
+    router.admin_id = "admin"
+    router.show_screen("admin", tab="perks")             # 11/02: 왼쪽 목록 '혜택 설정'
+    assert not router.timer.isActive() and not router.warn_timer.isActive()
+    admin = router.screens["admin"]
+    assert admin.perk_fields["card_bonus_rate"].text() == "1"
+    admin.perk_fields["card_first_discount"].setText("15")
+    admin.perk_fields["card_bonus_rate"].setText("2")
+    admin.perk_fields["card_reissue_fee"].setText("2000")
+    admin.save_perks()
+    assert "저장" in admin.message.text()
+    policy = router.session.policy()
+    assert (policy["card_first_discount"], policy["card_bonus_rate"], policy["card_reissue_fee"]) == (15, 2.0, 2000)
+    admin.perk_fields["card_first_discount"].setText("90")       # 범위 밖 → 저장 안 됨
+    admin.save_perks()
+    assert router.session.policy()["card_first_discount"] == 15
+    admin.logout()
+    assert router.timer.isActive()                               # 손님 화면으로 나오면 다시 무입력 시간
+    router.open_action("signup")
+    signup = router.screens["signup"]
+    assert "첫 주문 15% 할인" in signup.card_perks.text() and "매 주문 적립 추가 +2%p" in signup.card_perks.text()
+    assert "2,000원" in signup.card_how.text()

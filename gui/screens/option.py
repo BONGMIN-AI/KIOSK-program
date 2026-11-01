@@ -83,9 +83,8 @@ class OptionPopup(QWidget):
                 remove_layout(entry.layout())
 
     def build(self):
-        size = (250 if menu_photo_path(self.item) else 230) if theme.SCALE == 1 else 170
-        self.photo_layout.addWidget(menu_icon(self.item, size),
-                                    alignment=Qt.AlignmentFlag.AlignCenter)
+        self.photo_size = (250 if menu_photo_path(self.item) else 230) if theme.SCALE == 1 else 170
+        self.photo_widget = None
         head = QHBoxLayout()
         title = QVBoxLayout()
         title.addWidget(label(self.item["name"], 32, title=True))
@@ -106,12 +105,14 @@ class OptionPopup(QWidget):
 
         self.temperature_group = self.option_row(
             "온도", [(t, t) for t in self.rules["temperatures"]], exclusive=True)
+        self.temperature_group.buttonClicked.connect(lambda _button: self.update_photo())
         self.size_group = self.option_row(
             "사이즈", [(s, f"{s} +{SIZE_PRICES[s]:,}원") for s in self.rules["sizes"]], exclusive=True)
         self.extra_group = self.option_row(
             "추가", [(e, f"{EXTRA_LABELS[e]} +{EXTRA_PRICES[e]:,}원") for e in self.rules["extras"]],
             exclusive=False)
 
+        self.update_photo()
         self.habit_note = label("", 14, bold=True)           # 옵션 습관을 미리 골랐을 때 한 줄
         self.habit_note.setStyleSheet(f"color: {theme.CARAMEL};")
         self.body.addWidget(self.habit_note)
@@ -198,6 +199,15 @@ class OptionPopup(QWidget):
         self.body.addLayout(row)
         return group
 
+    def update_photo(self):
+        """고른 온도의 사진으로 바꾼다 (ICE를 고르면 유리잔·얼음 사진, 11/02)."""
+        temperature = self.temperature_group.checkedButton()
+        temperature = temperature.property("value") if temperature else None
+        if self.photo_widget is not None:
+            self.photo_widget.setParent(None)
+        self.photo_widget = menu_icon(self.item, self.photo_size, temperature)
+        self.photo_layout.addWidget(self.photo_widget, alignment=Qt.AlignmentFlag.AlignCenter)
+
     def apply_habit(self):
         """회원이 이 메뉴에서 늘 고르던 옵션을 미리 골라 둔다 (M3). 지금 고를 수 없는 값은 건너뛴다."""
         habit = self.session.option_habit(self.menu_id) if self.rules["temperatures"] else None
@@ -209,6 +219,7 @@ class OptionPopup(QWidget):
             for item in group.buttons():
                 if item.property("value") == value:
                     item.setChecked(True)
+        self.update_photo()
         extras = habit.get("extras") or []
         for item in self.extra_group.buttons():
             item.setChecked(item.property("value") in extras)

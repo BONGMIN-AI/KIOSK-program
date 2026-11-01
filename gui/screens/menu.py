@@ -207,8 +207,10 @@ class MenuScreen(QWidget):
         extra = customer["extra"]
         title = f"[{title_name(extra['title'])}] " if extra.get("title") else ""
         self.member_name.setText(f"{title}{extra['nickname']} 님")
-        card = self.session.card_status()
-        card = f"   ·   {card}" if card and card != "회원카드 사용 중" else ""
+        card = {"회원카드 승인 대기 중": "카드 승인 대기"}.get(self.session.card_status(), "")
+        if self.session.card_status().startswith("회원카드 발급"):
+            card = "카드 수령 대기"
+        card = f"   ·   {card}" if card else ""
         self.member_detail.setText(f"포인트 {extra['points']:,}P   ·   쿠폰 {len(self.session.coupons())}장"
                                    f"   ·   방문 {extra['visits']}회{card}")
 
@@ -352,7 +354,6 @@ class MenuScreen(QWidget):
         else:
             badges = [f"{rank}위 · {row['text']}" for rank, row in enumerate(rows, 1)]
             column.addLayout(self.card_grid([row["item"] for row in rows], badges))
-        column.addWidget(label("다른 손님들의 ♥ 좋아요와 주문 기록으로 매긴 순위예요 (시연용 기본값 포함)", 13, muted=True))
         column.addStretch()
         return page
 
@@ -423,7 +424,8 @@ class MenuScreen(QWidget):
             column.addLayout(row)
             return card
         lines = recent["lines"]
-        row.addWidget(menu_icon(self.session.menu()[lines[0]["menu_id"]], 96))
+        row.addWidget(menu_icon(self.session.menu()[lines[0]["menu_id"]], 96,
+                                (lines[0]["options"] or {}).get("temperature")))
         for line in lines[:3]:                   # 세 줄까지 보여 주고 나머지는 '외 n개'
             detail = f"  {short_options(line['options'])}" if line["options"] else ""
             row_text = ElidedLabel(f"{line['name']} × {line['quantity']}{detail}")
@@ -519,8 +521,6 @@ class MenuScreen(QWidget):
         sheet = Overlay(self, 520)
         body = sheet.body
         body.addWidget(label("카페인 알리미 설정", 26, title=True))
-        guide = label("이번 주에 마실 양을 정하면, 넘게 담을 때 한 번 물어봐요.", 16, muted=True, guide=True)
-        body.addWidget(guide)
         units = QHBoxLayout()
         units.setSpacing(8)
         self.unit_buttons = {}

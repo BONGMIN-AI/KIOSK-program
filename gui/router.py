@@ -77,6 +77,8 @@ class Router(QStackedWidget):
             if self.display != DEFAULT_DISPLAY:    # 다음 손님은 기본 화면으로
                 self.apply_display(DEFAULT_DISPLAY)
                 screen = self.screens[name]
+        elif name == "admin":
+            self.stop_timer()          # 11/02: 운영자 화면은 직접 '로그아웃'할 때만 나간다 (무입력 시간 없음)
         elif name != "unlock":
             self.restart_timer()
         if name != "admin":
@@ -288,7 +290,7 @@ class Router(QStackedWidget):
                   QEvent.Type.KeyPress, QEvent.Type.Wheel, QEvent.Type.TouchBegin,
                   QEvent.Type.TouchUpdate)
         if isinstance(watched, QWidget) and watched.window() is self.window():
-            if (event.type() in inputs and self.current_name not in ("idle", "unlock")
+            if (event.type() in inputs and self.current_name not in ("idle", "unlock", "admin")
                     and not self.camera_busy):
                 self.restart_timer()
         return super().eventFilter(watched, event)

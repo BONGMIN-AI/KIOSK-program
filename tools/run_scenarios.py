@@ -349,12 +349,13 @@ def card_login(r):
     r.router.admin_id = "admin"
     r.router.show_screen("admin", tab="cards")
     admin = r.screen("admin")
-    r.step("09 회원카드 발급: 승인 대기 1건", "admin", lambda: "(1)" in admin.tab_group.buttons()[2].text())
+    r.step("09 회원카드 발급: 승인 대기 1건", "admin", lambda: "(1)" in admin.card_view_buttons["new"].text())
     admin.card_table.selectRow(0)
-    admin.allow_card()
-    r.step("허용 → 빈 카드 찍기 (위쪽 초시계)", "admin", lambda: r.router.card_wait is not None and r.router.notice.isVisible())
+    admin.approve_cards()
+    admin.register_cards()
+    r.step("승인 → 카드 등록 → 빈 카드 기다림 (위쪽 초시계)", "admin", lambda: r.router.card_wait is not None and r.router.notice.isVisible())
     r.router.card_scanned("A1B2C3D4")
-    r.step("빈 카드 할당 → 발급 완료 · 카운터 전달", "admin", lambda: "C3D4" in admin.message.text())
+    r.step("빈 카드 등록 완료 · 카운터 전달", "admin", lambda: "C3D4" in admin.message.text())
     r.router.show_screen("idle")
     r.router.card_scanned("A1B2C3D4")
     r.step("카드 태그 → 비밀번호 화면 (아이디 자동)", "login", lambda: r.screen("login").login_id.text() == "cardguest")
@@ -369,10 +370,11 @@ def card_login(r):
     login.login_id.setText("cardguest")
     login.set_mode("password")
     login.password.setText("1234")
-    login.password_then_card()
+    login.report_lost_card()
+    r.step("'회원카드를 잃어버렸어요' → 재발급 확인 질문 (1,000원)", "login", lambda: "1,000원" in login.message.text())
     login.password.setText("1234")
-    login.password_then_card()
-    r.step("분실 → 한 번 더 눌러 재발급 신청 (1,000원)", "login", lambda: "재발급을 신청했어요" in login.message.text())
+    login.report_lost_card()
+    r.step("한 번 더 → 분실 신고 · 재발급 신청", "login", lambda: "재발급을 신청했어요" in login.message.text())
     r.router.show_screen("home")
     r.router.card_scanned("A1B2C3D4")
     r.step("분실 신고된 카드 → 안내", None, lambda: "분실" in r.router.notice.text())
@@ -516,6 +518,22 @@ def recent_reorder_and_caffeine(r):
     for view in ("주별", "월별"):
         menu.view_buttons[view].click()
         r.step(f"카페인 그래프 {view}", "menu", lambda: menu.caffeine_view == view)
+
+
+def password_login_options(r):
+    """11/02 비밀번호 로그인 화면: 체크 상자로 얼굴 등록 · 회원카드 신청을 함께."""
+    r.router.open_action("member")
+    login = r.screen("login")
+    login.set_mode("password")
+    login.login_id.setText("bomin")
+    login.password.setText("1234")
+    login.enroll_check.setChecked(True)
+    login.card_check.setChecked(True)
+    r.step("02-B 비밀번호 로그인 · 얼굴 등록 · 회원카드 신청 체크", "login", lambda: login.options_box.isVisible())
+    login.password_login()
+    r.step("로그인 → 얼굴 등록 화면 · 카드 신청 안내", "enroll", lambda: "신청했어요" in r.router.notice.text())
+    r.screen("enroll").go_order()
+    r.step("얼굴 등록 건너뛰고 주문 → My Menu", "menu")
 
 
 def batch1_habit_eco_coin(r):
@@ -712,6 +730,7 @@ SCENARIOS = [
     ("회원 얼굴 로그인", "HOME → 회원 → ID → 얼굴 성공 → My Menu", member_face_success),
     ("얼굴 3번 실패 → 잠금 → 비밀번호", "얼굴 불일치 ×3 → 잠금 → 비밀번호 → My Menu", member_face_lock_then_password),
     ("비밀번호 틀림 · 없는 ID", "비밀번호 실패 → 회원 ID 다시", member_password_fail),
+    ("비밀번호 로그인 · 함께 할 일", "체크 상자로 얼굴 등록 · 회원카드 신청 → 얼굴 등록 → My Menu", password_login_options),
     ("카메라 고장", "얼굴 인증 중 카메라 오류 → 비밀번호 안내", camera_broken),
     ("아이디 찾기 · 임시 비밀번호", "02-C → 임시 비밀번호 → 로그인 → 새 비밀번호 → My Menu", find_account),
     ("회원카드 신청 · 발급 · 분실", "가입 때 신청 → 운영자 허용 → 빈 카드 할당 → 카드 로그인 → 첫 주문 10% → 분실 재발급", card_login),

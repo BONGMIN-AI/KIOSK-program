@@ -53,8 +53,9 @@ def tidy(text):
     lines = []
     for raw in (text or "").split("\n"):
         for sentence in re.split(r"(?<=[.!?])\s+(?=\S)", raw.strip()):
-            # 따옴표 안('예 · 저장')의 ' · '는 한 덩어리로 둔다
-            parts = re.split(r" · (?=(?:[^'‘’]*['‘’][^'‘’]*['‘’])*[^'‘’]*$)", sentence)
+            # 따옴표('예 · 저장')·괄호((20초 · 남은 시간)) 안의 ' · '는 한 덩어리로 둔다
+            kept = re.sub(r"'[^']*'|‘[^’]*’|\([^()]*\)", lambda m: m.group(0).replace(" · ", "\0"), sentence)
+            parts = [part.replace("\0", " · ") for part in kept.split(" · ")]
             if len(sentence) > LONG_LINE and len(parts) > 1:
                 lines.extend(part.strip() for part in parts if part.strip())
             else:
@@ -369,11 +370,16 @@ class CupIcon(QWidget):
 
 
 MENU_PHOTOS = theme.ASSETS / "menu"     # 메뉴 사진: M001_아메리카노.png 처럼 '메뉴 번호_이름'
+TEMPERATURE_PHOTOS = MENU_PHOTOS / "temp"   # 온도별 사진 (11/02): M001_ICE.png · M008_HOT.png
 _photo_cache = {}
 
 
-def menu_photo_path(item):
-    """메뉴 번호로 사진 파일을 찾는다. 디카페인은 자기 사진이 없으면 같은 이름의 일반 메뉴 사진을 쓴다."""
+def menu_photo_path(item, temperature=None):
+    """메뉴 번호로 사진 파일을 찾는다. 디카페인은 자기 사진이 없으면 같은 이름의 일반 메뉴 사진을 쓴다.
+
+    temperature('ICE'·'HOT')를 주면 그 온도 사진(temp/M001_ICE.png)이 있을 때 그것을 쓴다 (11/02 B-17).
+    없으면 기본 사진 (예: 기본 사진이 이미 아이스인 연유라떼는 HOT 사진만 따로 있다).
+    """
     def find(menu_id):
         return next(iter(sorted(MENU_PHOTOS.glob(f"{menu_id}_*"))), None) if MENU_PHOTOS.exists() else None
     found = find(item["id"])
@@ -381,12 +387,16 @@ def menu_photo_path(item):
         plain = item["name"].replace("디카페인", "").strip()
         found = next((path for path in sorted(MENU_PHOTOS.glob("*")) if path.stem.split("_", 1)[-1] == plain), None) \
             if MENU_PHOTOS.exists() else None
+    if found is not None and temperature:
+        variant = TEMPERATURE_PHOTOS / f"{found.stem.split('_', 1)[0]}_{temperature}.png"
+        if variant.exists():
+            return variant
     return found
 
 
-def menu_icon(item, size):
-    """메뉴 사진이 있으면 둥근 사진, 없으면 그린 잔(CupIcon)."""
-    path = menu_photo_path(item)
+def menu_icon(item, size, temperature=None):
+    """메뉴 사진이 있으면 둥근 사진, 없으면 그린 잔(CupIcon). temperature를 주면 그 온도 사진."""
+    path = menu_photo_path(item, temperature)
     if path is None:
         return CupIcon(cup_kind(item), size)
     key = (str(path), size)
@@ -546,6 +556,31 @@ def phone_field(placeholder=""):
             field.blockSignals(False)
     field.textChanged.connect(reshape)
     return field
+
+
+def link_button(text, on_click, strong=False):
+    """작은 밑줄 글자 버튼 (아이디 찾기 · 회원가입 · 카드 분실처럼 자주 안 쓰는 일)."""
+    result = QPushButton(text)
+    result.setFont(theme.font(14, bold=strong))
+    result.setCursor(Qt.CursorShape.PointingHandCursor)
+    result.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    color = theme.CARAMEL if strong else theme.TEXT2
+    result.setStyleSheet(f"QPushButton {{ border: none; background: transparent; color: {color};"
+                         " text-decoration: underline; padding: 4px 2px; }")
+    result.clicked.connect(on_click)
+    result.setMinimumWidth(result.sizeHint().width() + 10)   # 밑줄 글자가 잘리지 않게 여유
+    return result
+
+
+def option_check(text):
+    """혜택 설명이 붙는 선택 체크 상자 (큰 글자)."""
+    from PySide6.QtWidgets import QCheckBox
+    result = QCheckBox(text)
+    result.setFont(theme.font(17, bold=True))
+    result.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    result.setStyleSheet("QCheckBox { background: transparent; spacing: 10px; }")
+    result.setMinimumHeight(34)
+    return result
 
 
 def message_label():

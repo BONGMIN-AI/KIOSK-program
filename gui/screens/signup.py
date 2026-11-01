@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScro
 
 from domain.allergens import ALLERGENS, search
 from domain.customers import register_customer, set_face_enrolled, validate_password_pair
-from domain.member_cards import request_card
+from domain.member_cards import perks_text, request_card
 from face import FaceError
 from gui import theme
 from gui.screens.login import nav_bar
@@ -52,7 +52,6 @@ class SignupScreen(QWidget):
         self.phone = phone_field("전화번호 * (숫자만 치면 010-0000-0000 모양으로)")
         for field in (self.name, self.login_id, self.password, self.password_again, self.phone):
             left.addWidget(field)
-        left.addWidget(label("이름은 대기 화면에 닉네임으로 보여요. 비밀번호는 ●로 가려져요.", 13, muted=True))
         left.addStretch()
         body.addWidget(info, 1)
 
@@ -79,7 +78,7 @@ class SignupScreen(QWidget):
         section(self.allergy_title, self.allergy_search, self.allergy_area)
         self.privacy = check_box("[필수] 개인정보 수집·이용 동의", bold=True)
         self.marketing = check_box("[선택] 마케팅 정보 수신 동의")
-        self.face_consent = check_box("[선택] 얼굴 정보(특징값) 등록 동의 → 다음 화면 10-B")
+        self.face_consent = check_box("[선택] 얼굴 등록 동의 · 다음부터 카메라만 보면 로그인")
         section(label("약관 동의", 18, bold=True), self.privacy, self.marketing, self.face_consent)
         # 11/01 회원카드 신청 (선택): 혜택을 보여 주고 고르게 한다 → 운영자 승인 → 카운터에서 받기
         self.card_box = QFrame()
@@ -92,10 +91,10 @@ class SignupScreen(QWidget):
         self.card_request = check_box("[선택] 회원카드 신청 (무료)", bold=True)
         self.card_request.setStyleSheet("border: none;")
         card.addWidget(self.card_request)
-        perks = label("첫 주문 10% 할인 · 매 주문 적립 +1%p\n카드만 대면 바로 로그인", 14, bold=True)
+        self.card_perks = perks = label("", 14, bold=True)       # 운영자 정책 값으로 on_show에서 채운다
         perks.setStyleSheet(f"border: none; color: {theme.CARAMEL};")
         card.addWidget(perks)
-        how = label("직원 승인 뒤 카운터에서 받아요 · 분실 재발급 1,000원", 13, muted=True)
+        self.card_how = how = label("", 13, muted=True)
         how.setStyleSheet(f"border: none; color: {theme.TEXT2};")
         how.setVisible(theme.SCALE == 1)         # 큰 글자에서는 칸 높이에 맞춰 뺀다
         card.addWidget(how)
@@ -114,6 +113,9 @@ class SignupScreen(QWidget):
             field.clear()
         for box in (self.privacy, self.marketing, self.face_consent, self.card_request):
             box.setChecked(False)
+        policy = self.router.session.policy()
+        self.card_perks.setText(f"{perks_text(policy)}\n카드만 대면 바로 로그인")
+        self.card_how.setText(f"직원 승인 뒤 카운터에서 받아요 · 분실 재발급 {policy['card_reissue_fee']:,}원")
         self.checked_allergies = set()
         self.message.setText("")
         self.show_allergies()
@@ -176,7 +178,7 @@ class EnrollScreen(QWidget):
         head = QHBoxLayout()
         head.addWidget(label("얼굴 등록", 32, title=True))
         head.addStretch()
-        head.addWidget(label("얼굴 동의자만 · 회원가입 2 / 2", 16, muted=True))
+        head.addWidget(label("회원가입 2 / 2", 16, muted=True))
         layout.addLayout(head)
         body = QHBoxLayout()
         body.setSpacing(20)

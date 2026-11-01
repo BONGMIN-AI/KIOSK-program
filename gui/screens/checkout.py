@@ -157,7 +157,7 @@ class CartScreen(QWidget):
         row = QHBoxLayout(box)
         row.setContentsMargins(14, 10, 14, 10)
         row.setSpacing(12)
-        row.addWidget(menu_icon(self.session.menu()[line["menu_id"]], 64))
+        row.addWidget(menu_icon(self.session.menu()[line["menu_id"]], 64, (line["options"] or {}).get("temperature")))
         text = QVBoxLayout()
         text.addWidget(label(line["name"], 20, title=True))
         detail = line["option_label"] or "옵션 없음"
@@ -208,7 +208,6 @@ class CashScreen(QWidget):
         left.setContentsMargins(24, 22, 24, 22)
         left.setSpacing(14)
         left.addWidget(label("현금을 넣어 주세요", 26, title=True))
-        left.addWidget(label("시연: 넣을 지폐·동전을 누르세요. 넣을 때마다 금액이 더해집니다.", 15, muted=True))
         grid = QGridLayout()
         grid.setSpacing(12)
         self.cash_buttons = []
@@ -271,7 +270,7 @@ class CashScreen(QWidget):
         self.change_check.setStyleSheet("border: none;")
         self.change_check.toggled.connect(self.toggle_change_points)
         column.addWidget(self.change_check)
-        self.change_note = label("회원에게만 보임", 13, muted=True)
+        self.change_note = label("", 13, muted=True)
         self.change_note.setStyleSheet(f"border: none; color: {theme.TEXT2};")
         column.addWidget(self.change_note)
         return card
@@ -332,12 +331,12 @@ class CashScreen(QWidget):
         self.change_check.setEnabled(not no_change)
         if show_card and no_change:
             self.change_check.setText("거스름돈이 없어요")
-            self.change_note.setText("딱 맞게 넣으셨어요 · 회원에게만 보임")
+            self.change_note.setText("딱 맞게 넣으셨어요")
         show_card = show_card and not no_change
         if show_card:
             arrow = " → " if theme.SCALE == 1 else "\n→ "     # 큰 글자는 두 줄로
             self.change_check.setText(f"잔돈 {theme.won(status['change'])}{arrow}포인트 적립")
-            self.change_note.setText(f"+{status['change']:,}P 적립 · 회원에게만 보임")
+            self.change_note.setText(f"+{status['change']:,}P 적립")
         self.inserted_value.setText(theme.won(status["cash"]))
         self.remain_value.setText(theme.won(status["shortage"]))
         state, detail = self.state_text(status)

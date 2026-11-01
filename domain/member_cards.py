@@ -17,7 +17,8 @@ from .customers import card_hash, link_card
 
 REQUESTS = "card_requests"
 KINDS = {"new": "신규 발급", "reissue": "분실 재발급"}
-STATUS = {"waiting": "승인 대기", "approved": "카드 찍기 대기", "issued": "발급 완료", "rejected": "거절"}
+STATUS = {"waiting": "승인 대기", "approved": "승인됨 · 카드 대기", "issued": "등록됨", "rejected": "거절",
+          "revoked": "등록 해제"}
 OPEN = ("waiting", "approved")
 
 CARD_DEFAULTS = {"card_first_discount": 10, "card_bonus_rate": 1.0, "card_reissue_fee": 1000}
@@ -126,6 +127,26 @@ def issue_card(vault, request_id: str, card_uid: str, admin_id: str, now: dateti
     return request
 
 
+def unregister_card(vault, request_id: str, admin_id: str, now: datetime | None = None) -> dict:
+    """등록 해제 (11/02): 등록된 카드를 회원에게서 뗀다. 그 카드로는 더 로그인할 수 없다."""
+    request = _get(vault, request_id, "issued")
+    customers = vault.read("customers", default={})
+    record = customers.get(request["customer_id"])
+    if record is not None:
+        record["extra"].pop("card_hash", None)
+        record["extra"].pop("card_first_discount", None)
+        schema.touch(record)
+        vault.write("customers", customers)
+    request.update(status="revoked", decided_at=(now or datetime.now()).isoformat(timespec="seconds"), by=admin_id)
+    _save_request(vault, request)
+    return request
+
+
+def masked_card(tail: str) -> str:
+    """카드 번호는 끝 4자리만: '****D273'."""
+    return f"****{tail}" if tail else ""
+
+
 def is_lost_card(vault, card_uid: str) -> bool:
     digest = card_hash(card_uid)
     return any(digest in record["extra"].get("lost_card_hashes", [])
@@ -142,6 +163,17 @@ def card_status_text(vault, customer: dict) -> str:
     if has_card(customer):
         return "회원카드 사용 중"
     return ""
+
+
+def perks_text(policy: dict | None = None) -> str:
+    """회원카드 혜택 한 줄 (운영자 정책 값 그대로): '첫 주문 10% 할인 · 매 주문 적립 추가 +1%p'."""
+    policy = {**CARD_DEFAULTS, **(policy or {})}
+    parts = []
+    if policy["card_first_discount"]:
+        parts.append(f"첫 주문 {policy['card_first_discount']}% 할인")
+    if policy["card_bonus_rate"]:
+        parts.append(f"매 주문 적립 추가 +{policy['card_bonus_rate']:g}%p")
+    return " · ".join(parts) or "카드만 대면 바로 로그인"
 
 
 def first_card_discount(customer: dict | None, total: int, policy: dict | None = None) -> int:
