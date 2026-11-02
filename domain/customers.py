@@ -7,7 +7,7 @@ import re
 
 from core import schema
 from core.validators import normalize_phone
-from .allergens import normalize, normalize_all
+from .allergens import ALLERGENS, normalize, normalize_all
 
 MEMBER_PASSWORD_ITERATIONS = 120_000
 
@@ -77,6 +77,35 @@ def register_customer(vault, name: str, nickname: str, phone: str,
         face_enrolled=bool(face_enrolled), points=0, coupons=[], visits=0,
     )
     customers[customer_id] = record
+    vault.write("customers", customers)
+    return record
+
+
+def update_member_info(vault, customer_id: str, nickname: str, phone: str, birthday: str = "",
+                       allergies=None, marketing_agreed: bool | None = None) -> dict:
+    """운영자가 회원 정보를 고친다 (11/02 B5). 전화번호 형식·중복, 알레르기 이름을 검사한다."""
+    customers = vault.read("customers", default={})
+    if customer_id not in customers:
+        raise ValueError("회원을 찾을 수 없어요")
+    nickname = (nickname or "").strip()
+    if not nickname:
+        raise ValueError("닉네임을 입력하세요")
+    phone = normalize_phone(phone)
+    if any(key != customer_id and record["phone"] == phone for key, record in customers.items()):
+        raise ValueError("다른 회원이 쓰는 전화번호예요")
+    allergies = normalize_all(allergies)
+    unknown = [name for name in allergies if name not in ALLERGENS]
+    if unknown:
+        raise ValueError(f"알레르기 목록에 없는 이름이에요: {', '.join(unknown)}")
+    birthday = (birthday or "").strip()
+    if birthday and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", birthday):
+        raise ValueError("생일은 2000-01-31 모양으로 입력하세요")
+    record = customers[customer_id]
+    record["phone"] = phone
+    record["extra"].update(nickname=nickname, birthday=birthday, allergies=allergies)
+    if marketing_agreed is not None:
+        record["extra"]["marketing_agreed"] = bool(marketing_agreed)
+    schema.touch(record)
     vault.write("customers", customers)
     return record
 

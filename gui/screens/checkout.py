@@ -11,6 +11,7 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
+from domain.kiosk_settings import load_kiosk
 from domain.payment import breakdown_text, coin_tip
 from domain.tickets import depart_text, ticket_summary, until_text
 from domain.titles import title_name
@@ -532,6 +533,8 @@ class DoneScreen(QWidget):
         super().hideEvent(event)
 
     def on_show(self):
+        settings = self.session.vault.read("settings", default={}) if self.session.vault else {}
+        self.ASK_SECONDS = load_kiosk(settings)["more_order_seconds"]
         self.seconds_left = self.ASK_SECONDS
         self.update_ask()
         self.countdown.start()

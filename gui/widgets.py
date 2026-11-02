@@ -855,13 +855,8 @@ class Slideshow(QWidget):
 
     def __init__(self, slides, parent=None):
         super().__init__(parent)
-        self.slides = [(QPixmap(str(theme.ASSETS / name)), caption, fit) for name, caption, fit in slides]
-        # 'contain' 그림 뒤에 깔 흐린 배경: 아주 작게 줄였다가 크게 늘리면 흐려진다 (크림색 빈 띠 대신)
-        self.blurred = [picture.scaled(12, 12, Qt.AspectRatioMode.KeepAspectRatio,
-                                       Qt.TransformationMode.SmoothTransformation)
-                        if fit == "contain" and not picture.isNull() else None
-                        for picture, _caption, fit in self.slides]
-        self.index = 0
+        self.source = None
+        self.set_slides(slides)
         self.progress = 0.0           # 0 = 지금 그림만, 1 = 다음 그림으로 다 바뀜
         self.setMinimumSize(240, 200)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -874,6 +869,22 @@ class Slideshow(QWidget):
         self.fade.setEndValue(1.0)
         self.fade.valueChanged.connect(self.set_progress)
         self.fade.finished.connect(self.finish_fade)
+
+    def set_slides(self, slides, seconds=None):
+        """광고 목록 [(그림, 글, 맞춤)]을 바꾼다 (운영자 '광고 배너'에서 고친 것). 같으면 그대로 둔다."""
+        if seconds and hasattr(self, "timer"):
+            self.timer.setInterval(seconds * 1000)
+        if slides == self.source:
+            return
+        self.source = list(slides)
+        self.slides = [(QPixmap(str(theme.ASSETS / name)), caption, fit) for name, caption, fit in slides]
+        # 'contain' 그림 뒤에 깔 흐린 배경: 아주 작게 줄였다가 크게 늘리면 흐려진다 (크림색 빈 띠 대신)
+        self.blurred = [picture.scaled(12, 12, Qt.AspectRatioMode.KeepAspectRatio,
+                                       Qt.TransformationMode.SmoothTransformation)
+                        if fit == "contain" and not picture.isNull() else None
+                        for picture, _caption, fit in self.slides]
+        self.index = 0
+        self.update()
 
     def showEvent(self, event):
         self.timer.start()

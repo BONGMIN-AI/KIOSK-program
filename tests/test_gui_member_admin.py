@@ -185,6 +185,8 @@ def test_admin_flow(window):
     assert router.current_name == "admin" and router.admin_id == "admin"
     admin = router.screens["admin"]
 
+    assert admin.title.text() == "매출 요약"             # 11/02: 첫 화면은 매출 요약
+    admin.show_tab("menu")
     admin.menu_table.selectRow(0)                    # 09-B 품절 전환
     admin.toggle_sold_out()
     assert router.session.vault.read("menu")["M001"]["sold_out"]

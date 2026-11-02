@@ -5,6 +5,7 @@
   00 대기 → 01 시작 → (회원) 02 로그인 · (비회원) 03 메뉴 · (회원가입) 10 · (운영자) 09-A
 """
 
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QTimer
@@ -14,6 +15,7 @@ import config
 from core import audit
 from core.storage import recover_journal
 from domain.customers import face_locked, find_by_card
+from domain.kiosk_settings import load_kiosk
 from domain.member_cards import is_lost_card
 from face import FaceError
 from gui import theme
@@ -50,6 +52,7 @@ class Router(QStackedWidget):
         self.warn_timer.setInterval(45_000)
         self.warn_timer.setSingleShot(True)
         self.warn_timer.timeout.connect(self.warn_time_out)
+        self.apply_kiosk_settings()
         QApplication.instance().installEventFilter(self)
 
     def add_screen(self, name, screen):
@@ -87,6 +90,14 @@ class Router(QStackedWidget):
             screen.on_show(**options)
         self.setCurrentWidget(screen)
 
+    def apply_kiosk_settings(self):
+        """운영자 '키오스크 설정'의 시간들을 타이머에 넣는다 (시작할 때 · 저장할 때)."""
+        settings = load_kiosk(self.session.vault.read("settings", default={}) if self.session.vault else {})
+        self.timer.setInterval(settings["idle_seconds"] * 1000)
+        self.warn_timer.setInterval((settings["idle_seconds"] - settings["warn_seconds"]) * 1000)
+        self.warn_seconds = settings["warn_seconds"]
+        return settings
+
     def restart_timer(self):
         self.timer.start()
         self.warn_timer.start()
@@ -101,7 +112,8 @@ class Router(QStackedWidget):
     def warn_time_out(self):
         amount = self.session.inserted
         money = f"\n넣은 현금 {theme.won(amount)}은 반환돼요." if amount else ""
-        left = min(15, (self.timer.remainingTime() + 999) // 1000) if self.timer.isActive() else 15
+        warn = getattr(self, "warn_seconds", 15)
+        left = min(warn, (self.timer.remainingTime() + 999) // 1000) if self.timer.isActive() else warn
         if self.notice is not None:              # 11/01: 남은 초가 위쪽 띠에서 줄어든다
             self.notice.show_countdown(
                 lambda s: f"{s}초 뒤 처음 화면으로 돌아가요. 계속하려면 화면을 눌러 주세요.{money}", left)
@@ -162,6 +174,7 @@ class Router(QStackedWidget):
     def set_vault(self, vault):
         """운영자가 금고를 열면 주문에 쓸 데이터를 연결하고 대기 화면으로 간다."""
         self.session.vault = vault
+        self.apply_kiosk_settings()        # 금고가 열리면 운영자가 정한 시간을 읽는다
         self.show_screen("idle")
         self.check_last_shutdown()
 
@@ -279,7 +292,7 @@ class Router(QStackedWidget):
         if config.KEYSTORE_PATH.exists() and not self.audit_memory_only():
             audit.AuditLog(Path(config.DATA_DIR) / "audit.log").append(actor, action, target)
         else:
-            self.audit_memory.append({"actor": actor, "action": action, "target": target})
+            self.audit_memory.append({"actor": actor, "action": action, "target": target, "ts": time.time()})
 
     def audit_memory_only(self):
         # 메모리 금고(--demo·테스트)이면 실제 data 폴더 로그에 쓰지 않는다

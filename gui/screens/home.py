@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMenu, QSizePolicy, QVBoxLayout,
                                QWidget)
 
+from domain.kiosk_settings import load_kiosk, shown_slides
 from gui import theme
 from gui.widgets import Card, Slideshow, button, label, trimmed_pixmap
 
@@ -47,17 +48,6 @@ def logo(filename, width, height):
     result.setAlignment(Qt.AlignmentFlag.AlignCenter)
     result.setStyleSheet(f"background: {theme.LOGO_PLATE}; border-radius: 16px;")
     return result
-
-
-# 01 왼쪽에 돌아가는 광고·사진 (그림 파일, 아래 글, 맞춤 방식). 사진을 바꾸려면 여기만 고치면 된다.
-SLIDES = [
-    ("promo_photo.webp", "", "contain"),
-    ("menu/M006_카라멜마키아토.png", "시그니처 · 카라멜마키아토", "cover"),
-    ("promo_smile.webp", "", "contain"),
-    ("menu/M012_딸기라떼.png", "계절 메뉴 · 딸기라떼", "cover"),
-    ("menu/M031_레몬에이드.png", "상큼하게 · 레몬에이드", "cover"),
-    ("menu/M044_치즈케이크.png", "커피와 함께 · 치즈케이크", "cover"),
-]
 
 
 class FitLogo(QWidget):
@@ -106,7 +96,8 @@ class HomeScreen(QWidget):
         layout.addLayout(self.make_header(), 2)
         body = QHBoxLayout()
         body.setSpacing(28)
-        self.slideshow = Slideshow(SLIDES)
+        settings = self.router.session.vault.read("settings", default={}) if self.router.session.vault else {}
+        self.slideshow = Slideshow(shown_slides(settings))     # 광고는 운영자 '광고 배너'에서 고친다
         body.addWidget(self.slideshow, 3)
         right = QVBoxLayout()
         right.setSpacing(10)
@@ -173,6 +164,10 @@ class HomeScreen(QWidget):
 
     def on_show(self):
         self.apply_language()
+        vault = self.router.session.vault
+        if vault is not None:
+            settings = vault.read("settings", default={})
+            self.slideshow.set_slides(shown_slides(settings), load_kiosk(settings)["slide_seconds"])
         self.fade_in()
 
     def action_button(self, text, action, kind="outline"):

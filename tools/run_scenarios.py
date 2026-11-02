@@ -675,6 +675,8 @@ def admin_all(r):
     login.password.setText("demo")
     login.password_login()
     admin = r.screen("admin")
+    r.step("09-A2 매출 요약 (첫 화면)", "admin", lambda: admin.title.text() == "매출 요약")
+    admin.show_tab("menu")
     r.step("09-B 메뉴 관리", "admin")
     admin.menu_table.selectRow(0)
     admin.toggle_sold_out()
