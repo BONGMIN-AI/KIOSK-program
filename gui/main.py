@@ -22,6 +22,7 @@ from core import auth, schema
 from core.storage import MemoryVault
 from domain import seed
 from domain.random_members import make_random_members
+from domain.team_members import add_team_members
 from face import create_face_provider
 from face.presence import CameraPresence, presence_wanted
 from gui import theme
@@ -48,7 +49,8 @@ ERROR_LOG = config.ROOT / "logs" / "kiosk_error.log"   # 오류 기록 (얼굴·
 def demo_vault(random_members=False):
     """시연·테스트용: 메모리에만 있는 금고에 샘플 데이터를 채운다.
 
-    random_members=True(시연 모드 실행)이면 주문 습관이 다른 무작위 회원 16명(user01~user16 / 1234)도 더한다.
+    random_members=True(시연 모드 실행)이면 주문 습관이 다른 무작위 회원 16명(user01~user16 / 1234)과
+    팀원 시연 계정 3명(withtop77 · asd1625 · jisung0642 / 1234)도 더한다.
     자동 테스트는 정해진 4명만 쓴다.
     """
     vault = MemoryVault()
@@ -57,6 +59,7 @@ def demo_vault(random_members=False):
     seed.add_demo_events(vault)
     if random_members:
         make_random_members(vault)
+        add_team_members(vault)          # 팀원 시연 계정 withtop77 · asd1625 · jisung0642 / 1234
     return vault
 
 
