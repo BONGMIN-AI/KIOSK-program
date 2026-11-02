@@ -62,6 +62,9 @@ class BenefitScreen(QWidget):
         row, self.card_value = money_row("회원카드 첫 주문", theme.won(0))
         self.card_row = row
         right.addLayout(row)
+        row, self.smile_value = money_row("스마일 할인", theme.won(0))
+        self.smile_row = row
+        right.addLayout(row)
         row, self.coupon_value = money_row("쿠폰 할인", theme.won(0))
         right.addLayout(row)
         row, self.points_value = money_row("포인트 사용", "0P")
@@ -150,6 +153,11 @@ class BenefitScreen(QWidget):
             item = self.card_row.itemAt(index).widget()
             if item is not None:
                 item.setVisible(benefit["card_discount"] > 0)
+        self.smile_value.setText(f"−{theme.won(benefit['smile_discount'])}")
+        for index in range(self.smile_row.count()):
+            item = self.smile_row.itemAt(index).widget()
+            if item is not None:
+                item.setVisible(benefit["smile_discount"] > 0)
         self.points_value.setText(f"−{benefit['points_used']:,}P")
         self.final_value.setText(theme.won(benefit["final_total"]))
         self.pay_button.setText(f"{theme.won(benefit['final_total'])} 결제로 이동 →")

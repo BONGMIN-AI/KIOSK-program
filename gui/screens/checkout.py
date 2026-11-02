@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
 
 from domain.kiosk_settings import load_kiosk
+from face import FaceError
 from domain.payment import breakdown_text, coin_tip
 from domain.tickets import depart_text, ticket_summary, until_text
 from domain.titles import title_name
@@ -110,6 +111,9 @@ class CartScreen(QWidget):
         self.eco_note = label("", 14, muted=True, guide=True)
         eco.addWidget(self.eco_note)
         column.addWidget(self.eco_box)
+        # B9 스마일 할인: 진행 중인 행사가 있을 때만. 누르면 카메라로 웃음을 확인한다 (비회원도)
+        self.smile_button = button("", "outline", self.try_smile)
+        column.addWidget(self.smile_button)
         self.pay_button = button("결제하기 →", "primary", self.go_pay)
         column.addWidget(self.pay_button)
         column.addWidget(button("← 메뉴 더 담기", "outline", lambda: self.router.show_screen("menu")))
@@ -129,9 +133,30 @@ class CartScreen(QWidget):
             self.lines.addWidget(label("장바구니가 비어 있어요", 18, muted=True))
         self.lines.addStretch()
         self.count_value.setText(f"{self.session.count()}개")
-        self.total_value.setText(theme.won(self.session.total()))
+        self.total_value.setText(theme.won(self.session.total() - self.session.smile_discount()))
         self.pay_button.setEnabled(not self.session.is_empty())
         self.update_eco()
+        self.update_smile()
+
+    def update_smile(self):
+        amount = self.session.smile_offer()
+        self.smile_button.setVisible(amount > 0)
+        self.smile_button.setEnabled(not self.session.smiled)
+        self.smile_button.setText(f"스마일 할인 −{amount:,}원 적용됨" if self.session.smiled
+                                  else f"웃고 {amount:,}원 할인 받기")
+
+    def try_smile(self):
+        try:
+            smiled = self.router.run_face(lambda face: face.detect_smile(print))
+        except FaceError as error:
+            self.router.notify(str(error), 4)
+            return
+        if smiled:
+            self.session.smiled = True
+            self.router.notify(f"좋아요! 스마일 할인 −{self.session.smile_discount():,}원", 3)
+        else:
+            self.router.notify("웃는 얼굴을 찾지 못했어요 · 다시 눌러 주세요", 4)
+        self.on_show()
 
     def update_eco(self):
         """개인 컵 체크는 회원이고 음료가 있을 때만 보인다."""
@@ -589,10 +614,11 @@ class DoneScreen(QWidget):
         if any(p["benefit"] != "없음" for t in order.get("tickets", []) for p in t["passengers"]):
             self.receipt.addWidget(label("  할인 승차권은 승차 때 증명서 확인", 13, muted=True))
         self.receipt.addStretch()
-        discount = order.get("card_discount", 0) + order.get("coupon_discount", 0) + order.get("points_used", 0)
+        discount = (order.get("card_discount", 0) + order.get("smile_discount", 0) + order.get("coupon_discount", 0)
+                    + order.get("points_used", 0))
         rows = [("주문 금액", theme.won(order["total"]))]
         if discount:
-            rows.append(("할인 (카드·쿠폰·포인트)", f"−{theme.won(discount)}"))
+            rows.append(("할인", f"−{theme.won(discount)}"))
         rows += [("결제 금액", theme.won(order["final_total"])), ("받은 현금", theme.won(order["cash"])),
                  ("거스름돈", theme.won(order["change"]))]
         for name, value in rows:

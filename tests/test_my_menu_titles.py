@@ -42,7 +42,7 @@ class EventThemeTest(unittest.TestCase):
         shown = display_event(policy, datetime(2026, 10, 23, 12))
         self.assertEqual(shown["name"], "가을 더블 포인트")
         self.assertEqual(shown["theme"], "season")
-        self.assertIsNone(display_event(policy, datetime(2026, 12, 1, 12)))
+        self.assertIsNone(display_event(policy, datetime(2027, 3, 10, 12)))   # 스마일 할인(~2/28) 뒤
 
 
 class ChangeToPointsTest(unittest.TestCase):

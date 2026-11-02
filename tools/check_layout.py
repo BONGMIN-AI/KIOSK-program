@@ -5,6 +5,7 @@
 결과: 문제마다 [화면/상태 @ 크기] 위젯 종류 · 글자 · 이유. 문제가 없으면 '문제 없음'.
 """
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -509,9 +510,12 @@ def states(window):
         ("09-C 회원 목록", admin("members")),
         ("09-C 주문 기록", admin("orders")),
         ("09-C2 회원카드 발급 (카드 찍기)", admin_card_wait),
-        ("09-D 이벤트", admin("events", "이벤트 적립률이나 보너스 포인트 중 하나는 입력하세요")),
+        ("09-D 이벤트", admin("events", "적립률 · 보너스 · 스마일 할인 중 하나는 입력하세요")),
         ("09-E 포인트 조정", admin("points")),
+        ("09-D2 쿠폰", admin("coupons")),
         ("09-F 혜택 설정", admin("perks")),
+        ("09-F2 광고 배너", admin("banners")),
+        ("09-F3 키오스크 설정", admin("kiosk")),
         ("09-G 운영 기록", admin("log")),
     ]
 
@@ -535,6 +539,19 @@ def main():
     first.close()
     displays = {"기본": {}} if "--basic" in sys.argv else DISPLAYS
     cases = [(display, size) for display in displays for size in SIZES]
+    if "--case" in sys.argv:            # 자식 프로세스: 크기·글자 한 묶음만
+        cases = [cases[int(sys.argv[sys.argv.index("--case") + 1])]]
+    else:
+        # 창 수백 개를 한 프로세스에서 만들면 Qt가 가끔 죽는다(11/02). 묶음마다 새 프로세스로 돈다.
+        flags = [flag for flag in sys.argv[1:] if flag == "--basic"]
+        failed = 0
+        for index in range(len(cases)):
+            code = subprocess.call([sys.executable, __file__, "--case", str(index), *flags])
+            if code not in (0, 1):
+                print(f"[중단] {cases[index][0]} · {cases[index][1]} 점검이 비정상 종료 (코드 {code})", flush=True)
+            failed += code != 0
+        print("전체 결과:", "문제 없음" if not failed else f"묶음 {failed}개에서 문제", flush=True)
+        return 1 if failed else 0
     for display, size in cases:
         print(f"{display} · 크기 {size[0]}x{size[1]} 점검 중…", flush=True)
         for name in names:
@@ -562,7 +579,7 @@ def main():
             # 창을 바로 지운다. processEvents만으로는 안 지워져 창마다 앱 전체 이벤트 필터가 쌓이다가 멈췄다
             app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             app.processEvents()
-    print(f"점검한 경우: {count}개 (화면·상태 {len(names)}개 × 크기 {len(SIZES)}개 × 글자 {len(displays)}가지)")
+    print(f"점검한 경우: {count}개 (화면·상태 {len(names)}개)", flush=True)
     for line in grown:
         print("[창 커짐]", line)
     seen = set()

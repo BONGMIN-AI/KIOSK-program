@@ -135,6 +135,8 @@ DEMO_EVENTS = [
      "message": "회원은 커피 3% 적립 + 1만원 이상 200P · 11/11까지"},
     {"name": "할로윈 축제", "start": "2026-10-31", "end": "2026-10-31", "categories": [],
      "rate": 0, "bonus_points": 300, "min_order": 0, "theme": "festival"},
+    {"name": "스마일 할인", "start": "2026-11-01", "end": "2027-02-28", "categories": [],
+     "rate": 0, "bonus_points": 0, "min_order": 0, "smile_discount": 500, "theme": "basic"},
 ]
 
 

@@ -156,12 +156,15 @@ def validate_event(raw: dict) -> dict:
     rate = float(raw.get("rate") or 0)
     bonus = int(raw.get("bonus_points") or 0)
     min_order = int(raw.get("min_order") or 0)
+    smile = int(raw.get("smile_discount") or 0)
+    if not 0 <= smile <= 5000:
+        raise ValueError("스마일 할인은 0~5,000원 사이로 입력하세요")
     if not 0 <= rate <= 50:
         raise ValueError("이벤트 적립률은 0~50% 사이로 입력하세요")
     if bonus < 0 or min_order < 0:
         raise ValueError("보너스 포인트와 최소 결제액은 0 이상이어야 합니다")
-    if rate == 0 and bonus == 0:
-        raise ValueError("이벤트 적립률이나 보너스 포인트 중 하나는 입력하세요")
+    if rate == 0 and bonus == 0 and smile == 0:
+        raise ValueError("적립률 · 보너스 · 스마일 할인 중 하나는 입력하세요")
     theme = raw.get("theme") or "basic"
     if theme not in THEMES:
         raise ValueError("테마는 기본·시즌·축제 중에서 고르세요")
@@ -183,6 +186,7 @@ def validate_event(raw: dict) -> dict:
         "rate": rate,
         "bonus_points": bonus,
         "min_order": min_order,
+        "smile_discount": smile,
         "member_only": True,
         "theme": theme,
         "message": message,
@@ -228,6 +232,11 @@ def active_events(policy: dict, now: datetime | None = None) -> list[dict]:
     return [e for e in policy.get("events", []) if event_is_active(e, now)]
 
 
+def smile_amount(policy: dict, now: datetime | None = None) -> int:
+    """지금 진행 중인 스마일 할인 (B9). 여러 개면 가장 큰 금액. 비회원도 받는다."""
+    return max((e.get("smile_discount", 0) for e in active_events(policy, now)), default=0)
+
+
 def event_status(event: dict, now: datetime | None = None) -> str:
     now = now or datetime.now()
     today = now.date().isoformat()
@@ -250,6 +259,8 @@ def describe_event(event: dict) -> str:
     if event.get("bonus_points"):
         cond = f" ({event['min_order']:,}원 이상)" if event.get("min_order") else ""
         parts.append(f"보너스 +{event['bonus_points']:,}P{cond}")
+    if event.get("smile_discount"):
+        parts.append(f"스마일 −{event['smile_discount']:,}원")
     return f"{event['start']}~{event['end']} · {days} · {hours} · {scope} · " + " · ".join(parts)
 
 
@@ -264,6 +275,8 @@ def banner_message(event: dict) -> str:
     if event.get("bonus_points"):
         cond = f"{event['min_order'] // 10000:g}만원 이상 " if event.get("min_order") else ""
         parts.append(f"{cond}{event['bonus_points']:,}P")
+    if not parts and event.get("smile_discount"):
+        return f"카메라 보고 웃으면 {event['smile_discount']:,}원 할인 · {int(event['end'][5:7])}/{int(event['end'][8:10])}까지"
     return "회원은 " + " + ".join(parts) + f" · {int(event['end'][5:7])}/{int(event['end'][8:10])}까지"
 
 

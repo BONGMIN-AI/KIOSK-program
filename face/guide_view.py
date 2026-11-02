@@ -131,7 +131,10 @@ def _font(size: int, bold: bool = False):
     return _fonts[key]
 
 
-def render_panel(title: str, labels, current: int, alert: str, progress: float):
+FOOTER = "ESC 취소 · 사진은 저장하지 않고 특징값만 암호화해 저장"
+
+
+def render_panel(title: str, labels, current: int, alert: str, progress: float, footer: str = FOOTER):
     """오른쪽 안내 패널. 끝난 단계 ✓ 회색, 지금 단계 ▶ 크게·진하게, 남은 단계 ○ 흐리게."""
     from PIL import Image, ImageDraw
     img = Image.new("RGB", (PANEL_W, HEIGHT), (255, 255, 255))
@@ -159,8 +162,7 @@ def render_panel(title: str, labels, current: int, alert: str, progress: float):
     d.rounded_rectangle((40, HEIGHT - 100, PANEL_W - 40, HEIGHT - 80), 8, fill=(225, 225, 225))
     if bar_w > 0:
         d.rounded_rectangle((40, HEIGHT - 100, 40 + bar_w, HEIGHT - 80), 8, fill=(70, 200, 70))
-    d.text((40, HEIGHT - 62), "ESC 취소 · 사진은 저장하지 않고 특징값만 암호화해 저장",
-           font=_font(20), fill=(120, 120, 120))
+    d.text((40, HEIGHT - 62), footer, font=_font(20), fill=(120, 120, 120))
     return np.asarray(img)[:, :, ::-1].copy()
 
 

@@ -19,6 +19,7 @@ from core import audit, auth, schema
 from core.validators import mask_phone
 from domain import member_cards as card_logic
 from domain import policy as policy_logic
+from domain import coupons as coupon_logic
 from domain import kiosk_settings as kiosk_logic
 from domain import sales as sales_logic
 from domain.titles import title_name
@@ -33,7 +34,7 @@ from gui.widgets import Card, TouchKeyboard, TrendBars, button, label, message_l
 SECTIONS = [
     ("매장", [("sales", "매출 요약"), ("menu", "메뉴 · 재고")]),
     ("회원", [("members", "회원 목록"), ("orders", "주문 기록"), ("cards", "회원카드"), ("points", "포인트 조정")]),
-    ("혜택 · 행사", [("events", "이벤트"), ("perks", "혜택 설정")]),
+    ("혜택 · 행사", [("events", "이벤트"), ("coupons", "쿠폰"), ("perks", "혜택 설정")]),
     ("화면 · 설정", [("banners", "광고 배너"), ("kiosk", "키오스크 설정")]),
     ("기록", [("log", "운영 기록")]),
 ]
@@ -60,7 +61,7 @@ def table(headers):
 
 LOG_KINDS = {   # 운영 기록 걸러 보기 (11/02): 이름 → 이 글자로 시작하는 기록
     "전체": (), "로그인·종료": ("admin_", "kiosk_"), "메뉴": ("menu_",), "회원카드": ("card_",),
-    "포인트": ("points_",), "이벤트·혜택": ("event_", "card_perks"), "회원": ("member_",),
+    "포인트": ("points_",), "이벤트·혜택": ("event_", "card_perks", "coupon_"), "회원": ("member_",),
     "화면·설정": ("banner_", "kiosk_settings"),
     "현금": ("cash_",),
 }
@@ -291,7 +292,7 @@ class AdminScreen(QWidget):
                         "orders": self.make_orders_page(),
                         "cards": self.make_cards_page(), "points": self.make_points_page(),
                         "events": self.make_events_page(), "perks": self.make_perks_page(),
-                        "banners": self.make_banners_page(), "kiosk": self.make_kiosk_page(),
+                        "coupons": self.make_coupons_page(), "banners": self.make_banners_page(), "kiosk": self.make_kiosk_page(),
                         "log": self.make_log_page()}
         for page in self.page_of.values():
             self.pages.addWidget(page)
@@ -789,10 +790,12 @@ class AdminScreen(QWidget):
         self.ev_rate = text_field("이벤트 적립률 %")
         self.ev_bonus = text_field("보너스 P")
         self.ev_min = text_field("보너스 최소 결제액")
+        self.ev_smile = text_field("웃으면 할인 (원)")
         self.ev_message = text_field("배너 문구 (비우면 자동)")
         for title, widget in (("이름 *", self.ev_name), ("시작일 *", self.ev_start), ("종료일 *", self.ev_end),
                               ("요일", self.ev_days), ("시간", self.ev_hours), ("적립률", self.ev_rate),
-                              ("보너스", self.ev_bonus), ("최소 결제", self.ev_min), ("문구", self.ev_message)):
+                              ("보너스", self.ev_bonus), ("최소 결제", self.ev_min), ("스마일", self.ev_smile),
+                              ("문구", self.ev_message)):
             widget.setMinimumHeight(40)
             form.addLayout(field_row(title, widget, 90))
         category_row = QHBoxLayout()
@@ -856,7 +859,7 @@ class AdminScreen(QWidget):
         self.event_table.clearSelection()
         self.event_form_title.setText("새 이벤트")
         for field in (self.ev_name, self.ev_start, self.ev_end, self.ev_days, self.ev_hours, self.ev_rate,
-                      self.ev_bonus, self.ev_min, self.ev_message):
+                      self.ev_bonus, self.ev_min, self.ev_smile, self.ev_message):
             field.clear()
         for box in self.ev_categories.values():
             box.setChecked(False)
@@ -882,6 +885,7 @@ class AdminScreen(QWidget):
         self.ev_rate.setText(f"{event['rate']:g}" if event["rate"] else "")
         self.ev_bonus.setText(str(event["bonus_points"] or ""))
         self.ev_min.setText(str(event["min_order"] or ""))
+        self.ev_smile.setText(str(event.get("smile_discount") or ""))
         self.ev_message.setText(event.get("message", ""))
         for name, box in self.ev_categories.items():
             box.setChecked(name in event["categories"])
@@ -898,6 +902,7 @@ class AdminScreen(QWidget):
                 "categories": [n for n, box in self.ev_categories.items() if box.isChecked()],
                 "rate": float(self.ev_rate.text() or 0), "bonus_points": as_int(self.ev_bonus.text(), "보너스"),
                 "min_order": as_int(self.ev_min.text(), "최소 결제액"),
+                "smile_discount": as_int(self.ev_smile.text(), "스마일 할인"),
                 "theme": checked.property("theme") if checked else "basic",
                 "message": self.ev_message.text(), "enabled": self.ev_enabled.isChecked()})
             self.save_policy(policy)
@@ -1195,6 +1200,178 @@ class AdminScreen(QWidget):
             keys.append(customer_id)
         fill_table(self.point_table, rows, keys)
         self.update_adjust_button()
+
+    # ---- 쿠폰 (11/02 B10): 쿠폰 종류 · 발급 · 내역
+    def make_coupons_page(self):
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(10)
+        views = QHBoxLayout()
+        self.coupon_view_buttons = {}
+        self.coupon_stack = QStackedWidget()
+        for key, name, maker in (("kinds", "쿠폰 종류", self.make_coupon_kinds), ("issue", "발급", self.make_coupon_issue),
+                                 ("history", "발급 내역", self.make_coupon_history)):
+            chip = button(name, "pill", lambda checked=False, k=key: self.set_coupon_view(k))
+            chip.setCheckable(True)
+            chip.setMinimumHeight(44)
+            self.coupon_view_buttons[key] = chip
+            views.addWidget(chip)
+            self.coupon_stack.addWidget(maker())
+        views.addStretch()
+        column.addLayout(views)
+        column.addWidget(self.coupon_stack, 1)
+        self.coupon_view = "kinds"
+        return page
+
+    def make_coupon_kinds(self):
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        self.coupon_kind_table = table(["", "쿠폰 이름", "할인", "최소 주문", "유효"])
+        fit_columns(self.coupon_kind_table, 1)
+        self.coupon_kind_table.itemChanged.connect(lambda _item: self.update_coupon_buttons())
+        column.addWidget(self.coupon_kind_table, 1)
+        form = QHBoxLayout()
+        self.coupon_name = text_field("쿠폰 이름")
+        self.coupon_amount = text_field("할인 원")
+        self.coupon_min = text_field("최소 주문 원")
+        self.coupon_days = text_field("유효 일수")
+        form.addWidget(self.coupon_name, 3)
+        for field in (self.coupon_amount, self.coupon_min, self.coupon_days):
+            form.addWidget(field, 1)
+        form.addWidget(button("+ 추가", "primary", self.add_coupon_kind))
+        column.addLayout(form)
+        actions = QHBoxLayout()
+        actions.addStretch()
+        self.coupon_kind_delete = button("삭제", "outline", self.delete_coupon_kinds)
+        actions.addWidget(self.coupon_kind_delete)
+        column.addLayout(actions)
+        return page
+
+    def make_coupon_issue(self):
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        top = QHBoxLayout()
+        self.coupon_pick = QComboBox()
+        self.coupon_pick.setFont(theme.font(15))
+        self.coupon_pick.setMinimumHeight(44)
+        top.addWidget(self.coupon_pick, 2)
+        self.coupon_member_search = text_field("회원 ID · 닉네임")
+        self.coupon_member_search.textChanged.connect(lambda _text: self.load_coupon_members())
+        top.addWidget(self.coupon_member_search, 2)
+        column.addLayout(top)
+        self.coupon_member_table = table(["", "회원 ID", "닉네임", "보유 쿠폰", "방문"])
+        fit_columns(self.coupon_member_table, 2)
+        self.coupon_member_table.itemChanged.connect(lambda _item: self.update_coupon_buttons())
+        column.addWidget(self.coupon_member_table, 1)
+        actions = QHBoxLayout()
+        actions.addWidget(button("전체 선택", "outline", lambda: check_all(self.coupon_member_table)))
+        actions.addStretch()
+        self.coupon_issue_button = button("발급", "primary", self.issue_coupons)
+        actions.addWidget(self.coupon_issue_button)
+        column.addLayout(actions)
+        return page
+
+    def make_coupon_history(self):
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        self.coupon_history_table = table(["발급일", "회원", "쿠폰", "할인", "유효기간", "상태", "발급"])
+        fit_columns(self.coupon_history_table, 2)
+        column.addWidget(self.coupon_history_table, 1)
+        self.coupon_history_total = label("", 15, bold=True)
+        column.addWidget(self.coupon_history_total)
+        return page
+
+    def set_coupon_view(self, view):
+        self.coupon_view = view
+        self.load_coupons()
+
+    def load_coupons(self):
+        for key, chip in self.coupon_view_buttons.items():
+            chip.setChecked(key == self.coupon_view)
+        self.coupon_stack.setCurrentIndex(list(self.coupon_view_buttons).index(self.coupon_view))
+        kinds = coupon_logic.templates(self.vault().read("settings", default={}))
+        fill_table(self.coupon_kind_table, [["", k["name"], f"{k['amount']:,}원",
+                                             f"{k['min_order']:,}원" if k["min_order"] else "없음", f"{k['days']}일"]
+                                            for k in kinds], [k["id"] for k in kinds])
+        add_checks(self.coupon_kind_table)
+        current = self.coupon_pick.currentData()
+        self.coupon_pick.clear()
+        for kind in kinds:
+            self.coupon_pick.addItem(f"{kind['name']} · {kind['amount']:,}원", kind["id"])
+        if current is not None and self.coupon_pick.findData(current) >= 0:
+            self.coupon_pick.setCurrentIndex(self.coupon_pick.findData(current))
+        self.load_coupon_members()
+        rows = coupon_logic.history(self.vault())
+        fill_table(self.coupon_history_table, [[r["at"][5:10], r["nickname"], r["name"], f"{r['amount']:,}원",
+                                                r["expires"][5:], r["state"], r["by"]] for r in rows])
+        used = sum(r["state"] == "사용함" for r in rows)
+        self.coupon_history_total.setText(f"발급 {len(rows)}장 · 사용 {used}장")
+        self.update_coupon_buttons()
+
+    def load_coupon_members(self):
+        keyword = self.coupon_member_search.text().strip().lower()
+        customers = self.vault().read("customers", default={})
+        rows, keys = [], []
+        for customer_id, record in sorted(customers.items()):
+            extra = record["extra"]
+            if keyword and keyword not in f"{extra.get('login_id', '')} {extra['nickname']}".lower():
+                continue
+            rows.append(["", extra.get("login_id", ""), extra["nickname"], f"{len(extra.get('coupons', []))}장",
+                         f"{extra['visits']}회"])
+            keys.append(customer_id)
+        fill_table(self.coupon_member_table, rows, keys)
+        add_checks(self.coupon_member_table)
+        self.update_coupon_buttons()
+
+    def update_coupon_buttons(self):
+        members = [self.coupon_member_table.item(r, 0) for r in range(self.coupon_member_table.rowCount())]
+        any_member = any(item is not None and item.checkState() == Qt.CheckState.Checked for item in members)
+        kinds = [self.coupon_kind_table.item(r, 0) for r in range(self.coupon_kind_table.rowCount())]
+        any_kind = any(item is not None and item.checkState() == Qt.CheckState.Checked for item in kinds)
+        self.coupon_issue_button.setEnabled(any_member and self.coupon_pick.count() > 0)
+        self.coupon_kind_delete.setEnabled(any_kind)
+
+    def add_coupon_kind(self):
+        try:
+            kind = coupon_logic.add_template(self.vault(), {"name": self.coupon_name.text(),
+                                                            "amount": self.coupon_amount.text(),
+                                                            "min_order": self.coupon_min.text(),
+                                                            "days": self.coupon_days.text()})
+        except ValueError as error:
+            self.fail(error)
+            return
+        self.router.audit("coupon_kind_add", kind["id"])
+        for field in (self.coupon_name, self.coupon_amount, self.coupon_min, self.coupon_days):
+            field.clear()
+        self.load_coupons()
+        self.done(f"'{kind['name']}' 쿠폰을 만들었어요")
+
+    def delete_coupon_kinds(self):
+        chosen = [self.coupon_kind_table.item(r, 0).data(Qt.ItemDataRole.UserRole)
+                  for r in range(self.coupon_kind_table.rowCount())
+                  if self.coupon_kind_table.item(r, 0).checkState() == Qt.CheckState.Checked]
+        removed = coupon_logic.delete_templates(self.vault(), chosen)
+        self.router.audit("coupon_kind_delete", " ".join(chosen))
+        self.load_coupons()
+        self.done(f"쿠폰 종류 {removed}개를 지웠어요 (이미 나눠 준 쿠폰은 그대로예요)")
+
+    def issue_coupons(self):
+        members = [self.coupon_member_table.item(r, 0).data(Qt.ItemDataRole.UserRole)
+                   for r in range(self.coupon_member_table.rowCount())
+                   if self.coupon_member_table.item(r, 0).checkState() == Qt.CheckState.Checked]
+        template_id = self.coupon_pick.currentData()
+        try:
+            count = coupon_logic.issue(self.vault(), members, template_id, self.router.admin_id)
+        except ValueError as error:
+            self.fail(error)
+            return
+        self.router.audit("coupon_issue", f"{template_id} x{count}")
+        self.load_coupons()
+        self.done(f"{count}명에게 '{self.coupon_pick.currentText()}' 쿠폰을 발급했어요")
 
     # ---- 광고 배너 (11/02 B7): 시작 화면 왼쪽 광고 넣기 · 빼기 · 순서 · 보이기
     def make_banners_page(self):

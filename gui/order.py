@@ -13,7 +13,7 @@ from domain.options import available_options, option_price
 from domain.member_cards import card_status_text, request_card
 from domain.orders import complete_order, eco_cup_points
 from domain.payment import insert_cash, payment_status
-from domain.policy import display_event, load_policy
+from domain.policy import display_event, load_policy, smile_amount
 from domain.tickets import TicketOffice, forget_route, is_saved, saved_routes
 from domain.titles import count_stats, customer_lines, progress
 from core.schema import now_iso
@@ -67,6 +67,7 @@ class OrderSession:
         self.use_points = 0
         self.change_to_points = False
         self.eco_cup = False          # 회원: 개인 컵(텀블러)으로 받기 → 에코 포인트
+        self.smiled = False           # 카메라로 웃음 확인 → 스마일 할인 (B9)
         self.benefit_note = ""        # 쿠폰·포인트 선택을 자동으로 풀었을 때 화면에 한 번 보여 줄 말
         self.inserted = 0
         self.last_order = None
@@ -276,7 +277,7 @@ class OrderSession:
 
     def _apply_benefit(self):
         result = apply_benefits(self.drink_total(), self.customer, self.coupon_id, self.use_points,
-                                date.today().isoformat(), self.policy())
+                                date.today().isoformat(), self.policy(), self.smile_discount())
         return dict(result, final_total=result["final_total"] + self.ticket_total())   # 승차권은 할인 제외
 
     def benefit(self):
@@ -294,11 +295,19 @@ class OrderSession:
             self.benefit_note = f"장바구니가 바뀌어 쿠폰·포인트 선택을 풀었어요 · 다시 골라 주세요 ({error})"
             return self._apply_benefit()
 
+    def smile_offer(self):
+        """지금 받을 수 있는 스마일 할인 금액 (행사 없거나 음료가 없으면 0)."""
+        return smile_amount(self.policy()) if self.cart else 0
+
+    def smile_discount(self):
+        return self.smile_offer() if self.smiled else 0
+
     def max_points(self):
         if not self.customer:
             return 0
         benefit = self.benefit()
-        after_coupon = self.drink_total() - benefit["card_discount"] - benefit["coupon_discount"]
+        after_coupon = (self.drink_total() - benefit["card_discount"] - benefit["smile_discount"]
+                        - benefit["coupon_discount"])
         return max_usable_points(after_coupon, self.customer["extra"]["points"], self.policy())
 
     def set_benefit(self, coupon_id, use_points):
@@ -340,7 +349,7 @@ class OrderSession:
                                customer_id=self.customer["id"] if self.customer else None,
                                coupon_id=self.coupon_id, use_points=self.use_points,
                                change_to_points=change_to_points,
-                               eco_cup=self.eco_cup and self.is_member(),
+                               eco_cup=self.eco_cup and self.is_member(), smiled=self.smiled,
                                also_write={CASH_RECORD: self.cash_record(0)},   # 주문과 함께 현금 기록도 0으로
                                tickets=tickets)
         for ticket in self.tickets:                # 잡아 둔 좌석을 판 좌석으로
@@ -351,5 +360,6 @@ class OrderSession:
         self._inserted = 0
         self.coupon_id, self.use_points, self.change_to_points = None, 0, False
         self.eco_cup = False
+        self.smiled = False
         self.reload_customer()
         return order

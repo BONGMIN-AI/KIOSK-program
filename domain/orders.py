@@ -9,7 +9,7 @@ from .options import DRINK_CATEGORIES
 from .customers import add_point_history
 from .member_cards import has_card
 from .payment import change_breakdown, payment_status
-from .policy import calculate_points, load_policy
+from .policy import calculate_points, load_policy, smile_amount
 from .tickets import is_saved, remember_route
 from .titles import customer_lines, update_titles
 
@@ -23,7 +23,8 @@ def eco_cup_points(lines: list[dict], menu: dict, policy: dict) -> int:
 def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
                    coupon_id: str | None = None, use_points: int = 0,
                    now: datetime | None = None, change_to_points: bool = False,
-                   also_write: dict | None = None, tickets: list | None = None, eco_cup: bool = False) -> dict:
+                   also_write: dict | None = None, tickets: list | None = None, eco_cup: bool = False,
+                   smiled: bool = False) -> dict:
     """현금이 충분할 때만 주문·재고·회원 카드를 한 번에 저장한다.
 
     현금이 부족하면 ValueError를 내고 아무것도 바꾸지 않는다.
@@ -52,8 +53,9 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         raise ValueError("잔돈 포인트 적립은 회원만 할 수 있습니다")
     settings = vault.read("settings", default=dict(schema.DEFAULT_SETTINGS))
     policy = load_policy(settings)
+    smile = smile_amount(policy, now) if smiled else 0      # 웃음 확인(B9) · 행사가 끝났으면 0
     benefit = apply_benefits(total, customer, coupon_id, use_points,
-                             now.date().isoformat(), policy)
+                             now.date().isoformat(), policy, smile)
 
     ticket_total = sum(ticket["total"] for ticket in tickets)
     payment = payment_status(benefit["final_total"] + ticket_total, cash)
@@ -133,6 +135,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         "lines": lines,
         "total": total + ticket_total,
         "card_discount": benefit["card_discount"],
+        "smile_discount": benefit["smile_discount"],
         "coupon_name": benefit["coupon"]["name"] if benefit["coupon"] else None,
         "coupon_discount": benefit["coupon_discount"],
         "points_used": benefit["points_used"],

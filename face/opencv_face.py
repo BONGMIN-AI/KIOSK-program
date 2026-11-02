@@ -45,6 +45,13 @@ COVERED_GIVE_UP_FRAMES = 90    # 마스크·선글라스가 약 3초 계속 보�
 NEAR_DISTANCE_M = 0.55         # D435: 코까지 거리
 NEAR_FACE_WIDTH = 120          # 웹캠(640x480): 얼굴 폭이 이보다 작으면 50~60cm보다 멀다
 FAR_ALERT = "카메라 앞 50cm 안으로 와 주세요"
+# 스마일 할인 (11/02 B9): YuNet 점 5개 중 입꼬리 사이 / 두 눈 사이 비율. 웃으면 입이 옆으로 넓어진다.
+# 처음 몇 장의 평소 얼굴보다 SMILE_RISE배 넓어지거나 SMILE_RATIO를 넘은 채 SMILE_FRAMES장 이어지면 통과.
+# 현장 카메라에서 너무 쉽거나 어려우면 KIOSK_SMILE_RATIO로 바꾼다.
+SMILE_SECONDS = 12
+SMILE_FRAMES = 6
+SMILE_RISE = 1.12
+SMILE_BASE_FRAMES = 5
 ANTISPOOF_MODELS = (           # (모델, 얼굴 박스를 넓히는 배수)
     (config.FACE_ANTISPOOF_V2_PATH, 2.7),
     (config.FACE_ANTISPOOF_V1SE_PATH, 4.0),
@@ -82,6 +89,13 @@ def judge_login(samples, stored, others, threshold):
     if rival >= float(probe @ stored):
         return False, f"{text} · 다른 등록 얼굴과 더 닮았어요 ({rival:.3f})"
     return True, text
+
+
+def smile_ratio(face) -> float:
+    """입꼬리 사이 거리 / 두 눈 사이 거리 (YuNet 점: 4-7 두 눈, 10-13 두 입꼬리)."""
+    eyes = float(np.hypot(face[6] - face[4], face[7] - face[5]))
+    mouth = float(np.hypot(face[12] - face[10], face[13] - face[11]))
+    return mouth / eyes if eyes > 1 else 0.0
 
 
 def check_models() -> None:
@@ -168,6 +182,50 @@ class OpenCVFace:
     def verify_face(self, on_status=print) -> bool:
         self._capture_samples("VERIFY", on_status)
         return True
+
+    def detect_smile(self, on_status=print) -> bool:
+        """카메라 앞에서 웃으면 True. 시간 안에 못 찾으면 False, 취소하면 FaceError. 아무것도 저장하지 않는다."""
+        title = "COFFEE & SPOON KIOSK - Smile (ESC: cancel)"
+        labels = ["카메라 앞에 서기", "활짝 웃기", "할인 적용"]
+        footer = "ESC 취소 · 사진은 저장하지 않아요"
+        threshold = float(os.environ.get("KIOSK_SMILE_RATIO", "1.0"))
+        cap = self._open_camera()
+        base, streak = [], 0
+        started = time.monotonic()
+        on_status("카메라를 보고 활짝 웃어 주세요")
+        try:
+            while time.monotonic() - started < SMILE_SECONDS:
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    raise FaceError("카메라 영상을 받지 못했습니다")
+                frame = cv2.flip(frame, 1)
+                face, count, _far = self._detect_one(frame)
+                ratio = smile_ratio(face) if face is not None else 0.0
+                if face is not None and len(base) < SMILE_BASE_FRAMES:
+                    base.append(ratio)
+                neutral = min(base) if base else 0.0
+                smiling = face is not None and (ratio >= threshold or
+                                                (len(base) >= SMILE_BASE_FRAMES and ratio >= neutral * SMILE_RISE))
+                streak = streak + 1 if smiling else 0
+                done = streak >= SMILE_FRAMES
+                alert = "" if face is not None else ("한 사람만 카메라 앞에 서 주세요" if count > 1 else
+                                                     "카메라 앞에 서 주세요")
+                view, _scale, _offset = guide_view.fit_camera(frame)
+                panel = guide_view.render_panel("스마일 할인", labels, 2 if done else (1 if face is not None else 0),
+                                                alert, streak / SMILE_FRAMES, footer)
+                if self.on_step is not None:
+                    self.on_step(alert or ("좋아요!" if done else "활짝 웃어 주세요"))
+                if self._show(title, np.hstack([view, panel]), 1):
+                    raise FaceError("스마일 할인을 취소했어요")
+                if done:
+                    on_status("웃음 확인 완료")
+                    return True
+            on_status("웃음을 찾지 못했어요")
+            return False
+        finally:
+            cap.release()
+            if self.viewer is None:
+                cv2.destroyWindow(title)
 
     def _open_camera(self):
         cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)

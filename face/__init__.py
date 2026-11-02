@@ -28,6 +28,10 @@ class FakeFace:
         on_status("[TEST] 가짜 얼굴 식별 통과")
         return claimed_customer_id
 
+    def detect_smile(self, on_status=print) -> bool:
+        on_status("[TEST] 가짜 웃음 확인")
+        return True
+
 
 def create_face_provider(vault, camera_index: int = 0):
     """실제 OpenCV 공급자를 만든다. 의존성 오류는 실행 시 명확히 알린다."""

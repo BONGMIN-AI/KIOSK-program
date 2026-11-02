@@ -40,18 +40,23 @@ def make_visit_coupon(visits: int, existing: list, policy: dict | None = None) -
 
 
 def apply_benefits(total: int, customer: dict | None, coupon_id: str | None = None,
-                   use_points: int = 0, today: str | None = None, policy: dict | None = None) -> dict:
-    """할인 계산만 한다. 저장은 orders.complete_order가 한다."""
+                   use_points: int = 0, today: str | None = None, policy: dict | None = None,
+                   smile: int = 0) -> dict:
+    """할인 계산만 한다. 저장은 orders.complete_order가 한다. smile은 스마일 할인 금액(B9)."""
     policy = policy or DEFAULT_POLICY
     unit, min_use = policy["point_unit"], policy["min_use"]
     if customer is None:
         if coupon_id or use_points:
             raise ValueError("비회원은 쿠폰과 포인트를 사용할 수 없습니다")
-        return {"card_discount": 0, "coupon": None, "coupon_discount": 0, "points_used": 0, "final_total": total}
+        smile_discount = min(smile, total)
+        return {"card_discount": 0, "smile_discount": smile_discount, "coupon": None, "coupon_discount": 0,
+                "points_used": 0, "final_total": total - smile_discount}
 
     today = today or date.today().isoformat()
     card_discount = first_card_discount(customer, total, policy)   # 회원카드 받은 뒤 첫 주문
     total -= card_discount
+    smile_discount = min(smile, total)
+    total -= smile_discount
     coupon = None
     coupon_discount = 0
     if coupon_id:
@@ -83,6 +88,7 @@ def apply_benefits(total: int, customer: dict | None, coupon_id: str | None = No
 
     return {
         "card_discount": card_discount,
+        "smile_discount": smile_discount,
         "coupon": coupon,
         "coupon_discount": coupon_discount,
         "points_used": use_points,
