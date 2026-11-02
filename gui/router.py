@@ -15,13 +15,18 @@ import config
 from core import audit
 from core.storage import recover_journal
 from domain.customers import face_locked, find_by_card
-from domain.kiosk_settings import load_kiosk
+from domain.kiosk_settings import load_kiosk, presence_on
 from domain.member_cards import is_lost_card
 from face import FaceError
 from gui import theme
 from gui.order import OrderSession
 
 DEFAULT_DISPLAY = {"contrast": False, "large": False}
+# 사람 감지 (11/02 C): 대기 화면에서 1m 안에 1초 머물면 시작, 주문 중 1.5m 안에 아무도 없으면 자리 비움
+APPROACH_M, SEEN_M = 1.0, 1.5
+APPROACH_TICKS = 2                     # 0.5초 × 2
+NO_AWAY_SCREENS = ("idle", "unlock", "admin_login", "admin", "done")   # 완료 화면은 자기 시간으로 돌아간다
+AWAY_ASK_SECONDS = 10
 
 
 class Router(QStackedWidget):
@@ -52,6 +57,14 @@ class Router(QStackedWidget):
         self.warn_timer.setInterval(45_000)
         self.warn_timer.setSingleShot(True)
         self.warn_timer.timeout.connect(self.warn_time_out)
+        self.presence = None                  # KioskWindow가 넣어 준다: 카메라 사람 감지 (없으면 터치로만)
+        self.away_box = None                  # KioskWindow가 넣어 준다: '로그아웃할까요? (10)' 상자
+        self.near_ticks = 0
+        self.last_seen = time.monotonic()
+        self.presence_timer = QTimer(self)
+        self.presence_timer.setInterval(500)
+        self.presence_timer.timeout.connect(self.check_presence)
+        self.presence_timer.start()
         self.apply_kiosk_settings()
         QApplication.instance().installEventFilter(self)
 
@@ -96,6 +109,7 @@ class Router(QStackedWidget):
         self.timer.setInterval(settings["idle_seconds"] * 1000)
         self.warn_timer.setInterval((settings["idle_seconds"] - settings["warn_seconds"]) * 1000)
         self.warn_seconds = settings["warn_seconds"]
+        self.away_seconds = settings["away_seconds"]
         return settings
 
     def restart_timer(self):
@@ -121,12 +135,66 @@ class Router(QStackedWidget):
 
     def time_out(self):
         """60초 동안 입력이 없으면 처음 화면으로. 넣은 현금이 있으면 반환하고 알려 준다."""
+        self.leave("오래 입력이 없어", "cash_refund_timeout")
+
+    def leave(self, why, audit_action):
         amount = self.session.refund()
         if amount:
-            self.audit("cash_refund_timeout", f"{amount}")
+            self.audit(audit_action, f"{amount}")
+        if self.away_box is not None:
+            self.away_box.hide()
         self.show_screen("idle")
         if amount:
-            self.notify(f"오래 입력이 없어 처음 화면으로 돌아왔어요.\n넣은 현금 {theme.won(amount)}을 반환했어요.", 10)
+            self.notify(f"{why} 처음 화면으로 돌아왔어요.\n넣은 현금 {theme.won(amount)}을 반환했어요.", 10)
+
+    # ---- 사람 감지 (11/02 C)
+    def presence_active(self):
+        if self.presence is None or not getattr(self.presence, "working", True):
+            return False
+        return presence_on(self.session.vault.read("settings", default={}) if self.session.vault else {})
+
+    def check_presence(self):
+        """0.5초마다: 대기 화면이면 다가온 사람을 맞고, 주문 중이면 자리를 비웠는지 본다."""
+        active = self.presence_active()
+        idle = self.screens.get("idle")
+        if self.presence is not None and idle is not None and idle.show_approach_hint != active:
+            idle.set_approach_hint(active)          # '가까이 오시면 자동으로 시작' 안내
+        now = time.monotonic()
+        if not active:
+            self.last_seen = now
+            return
+        distance = self.presence.latest()
+        name = self.current_name
+        if name == "idle":
+            near = distance is not None and distance <= APPROACH_M
+            self.near_ticks = self.near_ticks + 1 if near else 0
+            if self.near_ticks >= APPROACH_TICKS:
+                self.near_ticks = 0
+                self.last_seen = now
+                self.audit("presence_start")
+                self.show_screen("home")
+            return
+        self.near_ticks = 0
+        seen = distance is not None and distance <= SEEN_M
+        asking = self.away_box is not None and self.away_box.isVisible()
+        if seen or self.camera_busy or name in NO_AWAY_SCREENS:
+            self.last_seen = now
+            if seen and asking:                  # 돌아왔으면 묻지 않고 닫는다
+                self.away_box.hide()
+            return
+        if not asking and now - self.last_seen >= getattr(self, "away_seconds", 10):
+            self.ask_away()
+
+    def ask_away(self):
+        if self.away_box is None:
+            return
+        member = self.session.is_member()
+        money = f"\n넣은 현금 {theme.won(self.session.inserted)}은 반환돼요." if self.session.inserted else ""
+        self.away_box.ask_countdown(
+            "자리를 비우셨나요?",
+            ("계속 주문하려면 '아니요'를 눌러 주세요." if member else "계속하려면 '아니요'를 눌러 주세요.") + money,
+            (lambda s: f"로그아웃 ({s})") if member else (lambda s: f"처음 화면으로 ({s})"),
+            AWAY_ASK_SECONDS, lambda: self.leave("자리를 비워", "cash_refund_away"))
 
     def notify(self, text, seconds=6):
         if self.notice is not None:
@@ -274,6 +342,8 @@ class Router(QStackedWidget):
         """
         self.stop_timer()
         self.camera_busy = True
+        if self.presence is not None:
+            self.presence.pause()               # 사람 감지가 잡고 있는 카메라를 놓는다
         try:
             return work(self.face(viewer, on_step))
         except ValueError:
@@ -285,6 +355,9 @@ class Router(QStackedWidget):
             self.camera_busy = False
             if self.camera_view is not None:
                 self.camera_view.close_view()
+            if self.presence is not None:
+                self.presence.resume()
+            self.last_seen = time.monotonic()
             self.restart_timer()
 
     def audit(self, action, target=""):
@@ -306,4 +379,6 @@ class Router(QStackedWidget):
             if (event.type() in inputs and self.current_name not in ("idle", "unlock", "admin")
                     and not self.camera_busy):
                 self.restart_timer()
+            if event.type() in inputs:
+                self.last_seen = time.monotonic()      # 화면을 만지는 사람은 자리에 있다
         return super().eventFilter(watched, event)

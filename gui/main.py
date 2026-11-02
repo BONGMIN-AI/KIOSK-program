@@ -23,6 +23,7 @@ from core.storage import MemoryVault
 from domain import seed
 from domain.random_members import make_random_members
 from face import create_face_provider
+from face.presence import CameraPresence, presence_wanted
 from gui import theme
 from gui.card_reader import CardReader
 from gui.serial_card import start_serial_reader
@@ -38,7 +39,7 @@ from gui.screens.menu import MenuScreen
 from gui.screens.placeholder import PlaceholderScreen
 from gui.screens.signup import EnrollScreen, SignupScreen
 from gui.screens.unlock import UnlockScreen
-from gui.widgets import CameraView, Notice
+from gui.widgets import CameraView, CountdownBox, Notice
 
 DEMO_ADMIN = ("admin", "demo")
 ERROR_LOG = config.ROOT / "logs" / "kiosk_error.log"   # 오류 기록 (얼굴·비밀번호 같은 개인 정보는 쓰지 않는다)
@@ -75,7 +76,8 @@ def demo_admin_check(admin_id, password):
 
 
 class KioskWindow(QMainWindow):
-    def __init__(self, event=theme.FROM_POLICY, vault=None, face_factory=real_face, admin_check=None):
+    def __init__(self, event=theme.FROM_POLICY, vault=None, face_factory=real_face, admin_check=None,
+                 presence=None):
         super().__init__()
         theme.load_fonts()
         theme.set_display()          # 새 창은 기본 색·글자 크기로
@@ -94,6 +96,8 @@ class KioskWindow(QMainWindow):
         self.layout().setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         self.router.camera_view = CameraView(self)      # 얼굴 인증 카메라를 창 안에 덮어 보여 준다
         self.router.notice = Notice(self)               # 위쪽 안내 띠 (현금 반환·오류 안내)
+        self.router.away_box = CountdownBox(self)       # 자리 비움 '로그아웃할까요? (10)' (11/02 C)
+        self.router.presence = presence                 # 카메라 사람 감지 (None이면 터치로만)
         self.card_reader = CardReader(self.router.card_active, self)   # USB RFID 리더 (키보드처럼 입력)
         self.card_reader.scanned.connect(self.router.card_scanned)
         QApplication.instance().installEventFilter(self.card_reader)
@@ -133,6 +137,9 @@ class KioskWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.router.stop_timer()
+        self.router.presence_timer.stop()
+        if self.router.presence is not None:
+            self.router.presence.stop()
         # 창을 닫으면 무입력 감시도 함께 뗀다 (남아 있으면 다른 창의 입력마다 계속 불린다)
         QApplication.instance().removeEventFilter(self.router)
         QApplication.instance().removeEventFilter(self.card_reader)
@@ -174,7 +181,8 @@ def main():
     parser.add_argument("--demo", action="store_true", help="메모리 샘플 데이터로 실행(저장 안 됨)")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
-    window = KioskWindow(vault=demo_vault(random_members=True) if args.demo else None)
+    presence = CameraPresence(config.CAMERA_INDEX) if presence_wanted() else None
+    window = KioskWindow(vault=demo_vault(random_members=True) if args.demo else None, presence=presence)
     install_error_handler(window)
     if args.fullscreen:
         window.showFullScreen()

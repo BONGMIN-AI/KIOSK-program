@@ -770,6 +770,7 @@ class Overlay(QWidget):
         event.accept()
 
 
+
 class ConfirmBox(QWidget):
     """화면 위에 덮어 한 번 묻는 상자 (아니요 / 예). 예를 누르면 on_yes()."""
 
@@ -815,6 +816,35 @@ class ConfirmBox(QWidget):
 
     def mousePressEvent(self, event):
         event.accept()
+
+
+class CountdownBox(ConfirmBox):
+    """남은 초가 '예' 버튼에서 줄어드는 질문 상자. 0초가 되면 '예'를 누른 것과 같다 (11/02 C 자리 비움)."""
+
+    def __init__(self, parent):
+        self.tick = None
+        super().__init__(parent)             # 여기서 hide()가 불리므로 tick은 먼저 None으로
+        self.tick = QTimer(self)
+        self.tick.setInterval(1000)
+        self.tick.timeout.connect(self.count_down)
+        self.left, self.yes_text_for = 0, None
+
+    def ask_countdown(self, title, text, yes_text_for, seconds, on_yes):
+        self.left, self.yes_text_for = seconds, yes_text_for
+        self.ask(title, text, yes_text_for(seconds), on_yes)
+        self.tick.start()
+
+    def count_down(self):
+        self.left -= 1
+        if self.left <= 0:
+            self.yes()
+            return
+        self.yes_button.setText(self.yes_text_for(self.left))
+
+    def hideEvent(self, event):
+        if self.tick is not None:
+            self.tick.stop()
+        super().hideEvent(event)
 
 
 class PromoBanner(QWidget):

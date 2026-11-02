@@ -2,6 +2,7 @@
 
 settings["kiosk"]  = {idle_seconds, warn_seconds, more_order_seconds, card_wait_seconds, slide_seconds}
 settings["ticket_sales"] = True/False   (승차권 탭 — 예전부터 쓰던 키 그대로)
+settings["presence"] = True/False       (카메라 사람 감지: 다가오면 시작 · 자리 비움 확인, 11/02 C)
 settings["slides"] = [{"file", "caption", "fit", "on"}, ...]   (시작 화면 왼쪽 광고, 위에서부터 순서)
 """
 
@@ -21,6 +22,7 @@ KIOSK_FIELDS = [
     ("more_order_seconds", "'더 주문하시겠어요?' 시간", "초", 15, 5, 60),
     ("card_wait_seconds", "운영자 카드 등록 대기", "초", 20, 5, 120),
     ("slide_seconds", "시작 화면 광고 넘김", "초", 5, 2, 30),
+    ("away_seconds", "자리 비움 확인까지", "초", 10, 5, 120),
 ]
 KIOSK_DEFAULTS = {key: default for key, _name, _unit, default, _low, _high in KIOSK_FIELDS}
 
@@ -44,10 +46,15 @@ def validate_kiosk(raw: dict) -> dict:
     return result
 
 
-def save_kiosk(vault, raw: dict, ticket_sales: bool) -> dict:
+def presence_on(settings: dict | None) -> bool:
+    return (settings or {}).get("presence", True) is not False
+
+
+def save_kiosk(vault, raw: dict, ticket_sales: bool, presence: bool = True) -> dict:
     settings = vault.read("settings", default={})
     settings["kiosk"] = validate_kiosk(raw)
     settings["ticket_sales"] = bool(ticket_sales)
+    settings["presence"] = bool(presence)
     vault.write("settings", settings)
     return settings["kiosk"]
 

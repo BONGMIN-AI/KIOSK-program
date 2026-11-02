@@ -1513,13 +1513,20 @@ class AdminScreen(QWidget):
         self.ticket_switch = QCheckBox("승차권 탭 보이기")
         self.ticket_switch.setFont(theme.font(17, bold=True))
         rows.addWidget(self.ticket_switch)
-        column.addWidget(form)
+        self.presence_switch = QCheckBox("카메라로 사람 감지 (다가오면 시작 · 자리 비움 확인)")
+        self.presence_switch.setFont(theme.font(17, bold=True))
+        rows.addWidget(self.presence_switch)
+        scroll = QScrollArea()          # 큰 글자 · 낮은 화면이면 위아래로 밀어 본다
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(form)
+        column.addWidget(scroll, 1)
         save = QHBoxLayout()
         save.addStretch()
         save.addWidget(button("기본값으로", "outline", self.reset_kiosk))
         save.addWidget(button("설정 저장", "primary", self.save_kiosk))
         column.addLayout(save)
-        column.addStretch()
         return page
 
     def load_kiosk(self):
@@ -1528,16 +1535,19 @@ class AdminScreen(QWidget):
         for key, field in self.kiosk_fields.items():
             field.setText(str(values[key]))
         self.ticket_switch.setChecked(settings.get("ticket_sales", True) is not False)
+        self.presence_switch.setChecked(kiosk_logic.presence_on(settings))
 
     def reset_kiosk(self):
         for key, field in self.kiosk_fields.items():
             field.setText(str(kiosk_logic.KIOSK_DEFAULTS[key]))
         self.ticket_switch.setChecked(True)
+        self.presence_switch.setChecked(True)
 
     def save_kiosk(self):
         raw = {key: field.text().strip() or field.placeholderText() for key, field in self.kiosk_fields.items()}
         try:
-            saved = kiosk_logic.save_kiosk(self.vault(), raw, self.ticket_switch.isChecked())
+            saved = kiosk_logic.save_kiosk(self.vault(), raw, self.ticket_switch.isChecked(),
+                                           self.presence_switch.isChecked())
         except ValueError as error:
             self.fail(error)
             return
