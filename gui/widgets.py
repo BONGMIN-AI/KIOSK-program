@@ -743,6 +743,18 @@ class LimitBar(QWidget):
             painter.drawRoundedRect(QRectF(0, 0, width, self.height()), 7, 7)
 
 
+class TapLabel(QLabel):
+    """눌리면 on_tap()을 부르는 그림 글자 (메뉴 화면 로고 · 이스터에그)."""
+
+    def __init__(self, on_tap, parent=None):
+        super().__init__(parent)
+        self.on_tap = on_tap
+
+    def mousePressEvent(self, event):
+        self.on_tap()
+        super().mousePressEvent(event)
+
+
 class Overlay(QWidget):
     """화면 위에 덮어 띄우는 카드 한 장 (뒤는 어둡게). 내용은 self.body에 넣는다."""
 
@@ -798,6 +810,7 @@ class ConfirmBox(QWidget):
         self.hide()
 
     def ask(self, title, text, yes_text, on_yes):
+        self.no_button.show()
         self.title.setText(title)
         self.text.setText(text)
         self.yes_button.setText(yes_text)
@@ -805,6 +818,11 @@ class ConfirmBox(QWidget):
         self.setGeometry(self.parentWidget().rect())
         self.show()
         self.raise_()
+
+    def tell(self, title, text, ok_text="확인"):
+        """묻지 않고 알리기만 하는 팝업 (축하 · 이스터에그). 버튼 하나."""
+        self.ask(title, text, ok_text, None)
+        self.no_button.hide()
 
     def yes(self):
         self.hide()

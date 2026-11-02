@@ -39,7 +39,7 @@ from gui.screens.menu import MenuScreen
 from gui.screens.placeholder import PlaceholderScreen
 from gui.screens.signup import EnrollScreen, SignupScreen
 from gui.screens.unlock import UnlockScreen
-from gui.widgets import CameraView, CountdownBox, Notice
+from gui.widgets import CameraView, ConfirmBox, CountdownBox, Notice
 
 DEMO_ADMIN = ("admin", "demo")
 ERROR_LOG = config.ROOT / "logs" / "kiosk_error.log"   # 오류 기록 (얼굴·비밀번호 같은 개인 정보는 쓰지 않는다)
@@ -97,6 +97,7 @@ class KioskWindow(QMainWindow):
         self.router.camera_view = CameraView(self)      # 얼굴 인증 카메라를 창 안에 덮어 보여 준다
         self.router.notice = Notice(self)               # 위쪽 안내 띠 (현금 반환·오류 안내)
         self.router.away_box = CountdownBox(self)       # 자리 비움 '로그아웃할까요? (10)' (11/02 C)
+        self.router.popup = ConfirmBox(self)            # 축하 · 이스터에그 팝업 (11/03 E)
         self.router.presence = presence                 # 카메라 사람 감지 (None이면 터치로만)
         self.card_reader = CardReader(self.router.card_active, self)   # USB RFID 리더 (키보드처럼 입력)
         self.card_reader.scanned.connect(self.router.card_scanned)

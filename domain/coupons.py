@@ -13,8 +13,9 @@ DEFAULT_TEMPLATES = [
     {"id": "T001", "name": "웰컴 1,000원 할인", "amount": 1000, "min_order": 5000, "days": 30},
     {"id": "T002", "name": "생일 축하 2,000원", "amount": 2000, "min_order": 0, "days": 14},
     {"id": "T003", "name": "이스터에그 100원", "amount": 100, "min_order": 0, "days": 30},
+    {"id": "T004", "name": "가입 기념 1,000원", "amount": 1000, "min_order": 0, "days": 14},
 ]
-BIRTHDAY_TEMPLATE, EASTER_EGG_TEMPLATE = "T002", "T003"
+BIRTHDAY_TEMPLATE, EASTER_EGG_TEMPLATE, ANNIVERSARY_TEMPLATE = "T002", "T003", "T004"
 
 
 def templates(settings: dict | None) -> list[dict]:

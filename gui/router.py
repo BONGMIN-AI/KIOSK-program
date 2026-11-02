@@ -6,6 +6,7 @@
 """
 
 import time
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QTimer
@@ -17,6 +18,7 @@ from core.storage import recover_journal
 from domain.customers import face_locked, find_by_card
 from domain.kiosk_settings import load_kiosk, presence_on
 from domain.member_cards import is_lost_card
+from domain.visits import celebrate, easter_egg, visit_greeting
 from face import FaceError
 from gui import theme
 from gui.order import OrderSession
@@ -59,6 +61,7 @@ class Router(QStackedWidget):
         self.warn_timer.timeout.connect(self.warn_time_out)
         self.presence = None                  # KioskWindow가 넣어 준다: 카메라 사람 감지 (없으면 터치로만)
         self.away_box = None                  # KioskWindow가 넣어 준다: '로그아웃할까요? (10)' 상자
+        self.popup = None                     # KioskWindow가 넣어 준다: 축하 · 이스터에그 팝업
         self.near_ticks = 0
         self.last_seen = time.monotonic()
         self.presence_timer = QTimer(self)
@@ -316,8 +319,32 @@ class Router(QStackedWidget):
 
     def start_member_order(self, customer):
         """회원 확인이 끝나면(얼굴·비밀번호·가입) My Menu가 먼저 열린 03 메뉴로 간다."""
-        self.session.login(customer)
+        greeting = visit_greeting(self.session.vault.read("orders", default={}), customer["id"])
+        gifts = celebrate(self.session.vault, customer["id"])          # E19 생일 · 가입 기념 쿠폰
+        self.session.login(self.session.vault.read("customers", default={}).get(customer["id"], customer))
         self.show_screen("menu")
+        self.notify(f"{customer['extra']['nickname']} 님, {greeting}", 4)   # E14 방문 간격 인사
+        if gifts and self.popup is not None:
+            self.popup.tell(" · ".join(g["title"] for g in gifts), "\n".join(g["text"] for g in gifts))
+
+    def easter_egg(self):
+        """E22: 메뉴 화면 로고를 빠르게 다섯 번 → 100원 쿠폰 (회원마다 한 번)."""
+        if self.popup is None:
+            return
+        customer = self.session.customer
+        if customer is None:
+            self.popup.tell("숨은 쿠폰을 찾았어요!", "회원으로 로그인하면\n100원 할인 쿠폰을 받을 수 있어요.")
+            return
+        kind = easter_egg(self.session.vault, customer["id"])
+        if kind is None:
+            self.popup.tell("이미 찾으셨네요!", "숨은 쿠폰은 한 번만 받을 수 있어요.")
+            return
+        self.audit("easter_egg", customer["id"])
+        self.session.reload_customer()
+        menu = self.screens.get("menu")
+        if menu is not None:
+            menu.update_top_bar()
+        self.popup.tell("숨은 쿠폰을 찾았어요!", f"{kind['name']} 쿠폰을 넣어 드렸어요.\n결제할 때 쓸 수 있어요.")
 
     # 서비스
     def face(self, viewer=None, on_step=None):

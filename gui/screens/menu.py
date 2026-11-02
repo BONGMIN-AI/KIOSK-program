@@ -5,6 +5,7 @@ My Menu = 최근 주문 보기(지난 주문을 통째로 다시 담아 장바�
 승차권 탭(T1)은 My Menu 다음에 있고, 가운데 칸만 승차권 화면(gui/screens/ticket.py)으로 바뀐다.
 """
 
+import time
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QSizePolicy,
@@ -16,9 +17,9 @@ from domain.titles import title_name
 from gui import theme
 from gui.order import CATEGORY_ORDER, MY_MENU, POPULAR, TICKET
 from gui.screens.option import OptionPopup
-from gui.screens.ticket import BusIcon, TicketCartLine, TicketPanel, saved_routes_card
+from gui.screens.ticket import BusIcon, TicketCartLine, TicketPanel, clear, saved_routes_card
 from gui.widgets import (FixedWidthCard, Card, CategoryIcon, ConfirmBox, CupIcon, ElidedLabel, GearButton, LimitBar, Overlay,
-                         TrendBars, button, label, menu_icon,
+                         TapLabel, TrendBars, button, label, menu_icon,
                          menu_photo_path, trimmed_pixmap)
 CARD_MIN_WIDTH = 200     # 화면이 넓으면 한 줄에 카드를 더 놓는다 (최소 3칸)
 GRID_GAP = 14
@@ -142,6 +143,7 @@ class MenuScreen(QWidget):
         self.popup.hide()
         self.confirm_box = ConfirmBox(self)       # 카페인 알리미 '그래도 담을까요?' (최근 주문 다시 담기)
         self.caffeine_settings = self.make_caffeine_settings()   # 톱니바퀴 → 알리미 설정 창
+        self.titles_sheet = self.make_titles_sheet()             # E21 칭호 진행 현황
         self.ticket_lines = []
         self.ticket_clock = QTimer(self)          # 장바구니 승차권 줄의 좌석 유지 시간
         self.ticket_clock.setInterval(1000)
@@ -154,7 +156,8 @@ class MenuScreen(QWidget):
         column = QVBoxLayout(side)
         column.setContentsMargins(12, 16, 12, 16)
         column.setSpacing(6)
-        logo = QLabel()
+        logo = TapLabel(self.logo_tap)          # E22: 빠르게 다섯 번 누르면 숨은 쿠폰
+        self.taps, self.last_tap = 0, 0.0
         logo.setPixmap(trimmed_pixmap("logo_sub.png").scaled(
             60, 60, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -191,22 +194,60 @@ class MenuScreen(QWidget):
         row = QHBoxLayout(bar)
         row.setContentsMargins(20, 0, 20, 0)
         row.setSpacing(16)
-        self.member_name = label("비회원 주문", 19, bold=True)
+        self.member_name = TapLabel(self.open_titles)    # E21: 회원 이름을 누르면 칭호 진행 현황
+        self.member_name.setFont(theme.font(19, bold=True))
+        self.member_name.setText("비회원 주문")
         row.addWidget(self.member_name)
         self.member_detail = label("", 15, muted=True)
         row.addWidget(self.member_detail)
         row.addStretch()
         return bar
 
+    def logo_tap(self):
+        """1초 안 간격으로 다섯 번 누르면 이스터에그 (E22)."""
+        now = time.monotonic()
+        self.taps = self.taps + 1 if now - self.last_tap <= 1.0 else 1
+        self.last_tap = now
+        if self.taps >= 5:
+            self.taps = 0
+            self.router.easter_egg()
+
+    def make_titles_sheet(self):
+        """E21 칭호 진행 현황: 칭호마다 지금 수 / 목표 수 막대."""
+        sheet = Overlay(self, 600)
+        sheet.body.addWidget(label("칭호 진행 현황", 26, title=True))
+        self.title_rows = QVBoxLayout()
+        self.title_rows.setSpacing(10)
+        sheet.body.addLayout(self.title_rows)
+        sheet.body.addWidget(button("닫기", "primary", sheet.hide))
+        return sheet
+
+    def open_titles(self):
+        if self.session.customer is None:
+            return
+        clear(self.title_rows)
+        for item in self.session.title_progress():
+            head = QHBoxLayout()
+            name = label(item["title"], 18, bold=True)
+            head.addWidget(name)
+            head.addWidget(label(item["description"], 14, muted=True), 1)
+            head.addWidget(label("달성" if item["done"] else f"{item['count']} / {item['goal']}", 16, bold=True))
+            self.title_rows.addLayout(head)
+            bar = LimitBar()
+            bar.set_ratio(item["count"] / item["goal"])
+            self.title_rows.addWidget(bar)
+        self.titles_sheet.open()
+
     def update_top_bar(self):
         customer = self.session.customer
+        self.member_name.setCursor(Qt.CursorShape.ArrowCursor if customer is None else Qt.CursorShape.PointingHandCursor)
         if customer is None:
             self.member_name.setText("비회원 주문")
             self.member_detail.setText("로그인 없이 주문 중 · 회원 혜택·적립은 없어요")
             return
         extra = customer["extra"]
         title = f"[{title_name(extra['title'])}] " if extra.get("title") else ""
-        self.member_name.setText(f"{title}{extra['nickname']} 님")
+        self.member_name.setText(f"{title}{extra['nickname']} 님 ›")
         card = {"회원카드 승인 대기 중": "카드 승인 대기"}.get(self.session.card_status(), "")
         if self.session.card_status().startswith("회원카드 발급"):
             card = "카드 수령 대기"

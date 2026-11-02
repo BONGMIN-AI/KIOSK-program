@@ -19,17 +19,17 @@ def vault():
 
 
 def test_template_rules(vault):
-    assert [t["id"] for t in coupons.templates(vault.read("settings", default={}))] == ["T001", "T002", "T003"]
+    assert [t["id"] for t in coupons.templates(vault.read("settings", default={}))] == ["T001", "T002", "T003", "T004"]
     added = coupons.add_template(vault, {"name": "주말 500원", "amount": "500", "min_order": "", "days": "7"})
-    assert added["id"] == "T004" and added["min_order"] == 0
+    assert added["id"] == "T005" and added["min_order"] == 0
     with pytest.raises(ValueError, match="이름"):
         coupons.validate_template({"name": " ", "amount": 500, "days": 7})
     with pytest.raises(ValueError, match="숫자"):
         coupons.validate_template({"name": "x", "amount": "오백", "days": 7})
     with pytest.raises(ValueError, match="10~50,000"):
         coupons.validate_template({"name": "x", "amount": 5, "days": 7})
-    assert coupons.delete_templates(vault, ["T004", "T001"]) == 2
-    assert [t["id"] for t in coupons.templates(vault.read("settings"))] == ["T002", "T003"]
+    assert coupons.delete_templates(vault, ["T005", "T001"]) == 2
+    assert [t["id"] for t in coupons.templates(vault.read("settings"))] == ["T002", "T003", "T004"]
 
 
 def test_issue_use_and_history(vault):
@@ -73,7 +73,7 @@ def test_admin_coupon_page(qtbot_free_window):
     admin.coupon_amount.setText("300")
     admin.coupon_days.setText("3")
     admin.add_coupon_kind()
-    assert admin.coupon_kind_table.rowCount() == 4 and admin.coupon_pick.count() == 4
+    assert admin.coupon_kind_table.rowCount() == 5 and admin.coupon_pick.count() == 5
 
 
 @pytest.fixture
