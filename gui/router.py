@@ -17,7 +17,7 @@ from core import audit
 from core.storage import recover_journal
 from domain.customers import face_locked, find_by_card
 from domain.kiosk_settings import load_kiosk, presence_on
-from domain.member_cards import is_lost_card
+from domain.member_cards import is_lost_card, register_first_tap, unused_card
 from domain.visits import celebrate, easter_egg, visit_greeting
 from face import FaceError
 from gui import theme
@@ -49,7 +49,6 @@ class Router(QStackedWidget):
         self.notice = None                    # KioskWindow가 넣어 준다: 위쪽 안내 띠
         self.recovering = False               # 오류 처리 중 또 오류가 나면 되풀이하지 않는다
         self.warning_shown = False            # '15초 뒤 처음 화면' 경고를 띄운 상태
-        self.card_wait = None                 # 회원 카드 연결 중이면 (카드 번호 -> None) 함수
         self.timer = QTimer(self)
         self.timer.setInterval(60_000)
         self.timer.setSingleShot(True)
@@ -100,8 +99,6 @@ class Router(QStackedWidget):
             self.stop_timer()          # 11/02: 운영자 화면은 직접 '로그아웃'할 때만 나간다 (무입력 시간 없음)
         elif name != "unlock":
             self.restart_timer()
-        if name != "admin":
-            self.card_wait = None      # 카드 기다리기는 운영자 '회원카드 발급'에서만 (다른 화면에서 찍힌 카드를 잘못 할당하지 않게)
         if hasattr(screen, "on_show"):
             screen.on_show(**options)
         self.setCurrentWidget(screen)
@@ -258,38 +255,18 @@ class Router(QStackedWidget):
 
     # 회원 카드 (RFID, 아이디어 R1)
     CARD_SCREENS = ("idle", "home", "login")
+    MEMBER_CARD_SCREENS = ("menu", "cart", "benefit")     # 로그인한 회원이 받은 카드를 처음 대는 곳 (11/03)
 
     def card_active(self):
-        """지금 카드를 받는지: 대기·시작·로그인 화면이거나 카드 연결을 기다리는 중."""
+        """지금 카드를 받는지: 대기·시작·로그인 화면이거나, 로그인한 회원의 주문 화면 (받은 카드 처음 대기)."""
+        member = self.session.customer is not None and self.current_name in self.MEMBER_CARD_SCREENS
         return self.session.vault is not None and (
-            self.card_wait is not None or self.current_name in self.CARD_SCREENS) and not self.camera_busy
-
-    def wait_card(self, on_card, seconds=15, on_timeout=None, owner=None, prompt="카드를 리더기에 대 주세요"):
-        """카드 기다리기: seconds 안에 찍힌 카드 번호를 on_card로 넘긴다. 남은 초는 위쪽 띠에서 줄어든다.
-
-        owner(기다리는 화면)가 그 사이 없어지면(큰 글자로 바꿔 화면을 새로 만들 때 등) 타이머도 함께 취소된다.
-        """
-        token = object()
-        self.card_wait = on_card
-        self._card_token = token
-        if self.notice is not None:
-            self.notice.show_countdown(lambda s: f"{prompt} · {s}초", seconds,
-                                       alive=lambda: self.card_wait is on_card and self._card_token is token)
-
-        def expire():
-            if self.card_wait is on_card and self._card_token is token:
-                self.card_wait = None
-                if on_timeout:
-                    on_timeout()
-        QTimer.singleShot(seconds * 1000, owner or self, expire)
+            self.current_name in self.CARD_SCREENS or member) and not self.camera_busy
 
     def card_scanned(self, number):
-        """카드가 찍혔다: 연결 중이면 그 화면에 넘기고, 아니면 그 회원으로 바로 얼굴 인증을 시작한다."""
-        if self.card_wait is not None:
-            on_card, self.card_wait = self.card_wait, None
-            if self.notice is not None:
-                self.notice.stop_countdown()
-            on_card(number)
+        """카드가 찍혔다: 로그인한 회원이면 받은 카드 등록, 아니면 그 회원으로 바로 얼굴 인증을 시작한다."""
+        if self.session.customer is not None and self.current_name in self.MEMBER_CARD_SCREENS:
+            self.member_card_tap(number)
             return
         try:
             customer = find_by_card(self.session.vault, number)
@@ -300,7 +277,7 @@ class Router(QStackedWidget):
             if is_lost_card(self.session.vault, number):
                 self.notify("분실 신고된 카드예요. 이 카드로는 로그인할 수 없어요.\n새 카드는 카운터에서 받아 주세요.", 8)
             else:
-                self.notify("등록되지 않은 카드예요.\n회원카드는 회원가입 때나 로그인 화면에서 신청하고, 카운터에서 받아요.", 8)
+                self.notify("처음 쓰는 카드예요.\n로그인한 뒤 카드를 대면 등록돼요.", 8)
             return
         self.audit("card_tag", customer["id"])
         login_id = customer["extra"]["login_id"]
@@ -313,6 +290,28 @@ class Router(QStackedWidget):
             self.show_screen("login", mode="password", login_id=login_id,
                              message="회원 카드 확인 · 얼굴 정보가 없어 비밀번호를 넣어 주세요")
 
+    def member_card_tap(self, number):
+        """로그인한 회원이 주문 중에 카드를 댔다: 받은 카드면 번호를 등록하고 카드 적립을 시작한다."""
+        customer = self.session.customer
+        try:
+            if unused_card(self.session.vault, customer["id"]) is None:
+                owner = find_by_card(self.session.vault, number)
+                self.notify("이미 등록된 회원카드예요." if owner and owner["id"] == customer["id"]
+                            else "로그인한 회원의 카드가 아니에요.", 5)
+                return
+            record = register_first_tap(self.session.vault, customer["id"], number)
+        except ValueError as error:
+            self.notify(str(error), 6)
+            return
+        self.audit("card_registered", customer["id"])
+        self.session.reload_customer()
+        rate = self.session.policy()["card_point_rate"]
+        self.notify(f"회원카드 등록 완료 (****{record['card_tail']})\n"
+                    f"이번 주문부터 {rate:g}% 적립 · 다음부터 카드만 대면 로그인", 8)
+        menu = self.screens.get("menu")
+        if menu is not None:
+            menu.update_top_bar()
+
     def card_refused(self, text):
         """시리얼 리더가 카드를 읽었지만 지금 화면이 받지 않거나 번호를 못 읽었을 때 (조용히 버리지 않는다)."""
         self.notify(text, 5)
@@ -323,7 +322,11 @@ class Router(QStackedWidget):
         gifts = celebrate(self.session.vault, customer["id"])          # E19 생일 · 가입 기념 쿠폰
         self.session.login(self.session.vault.read("customers", default={}).get(customer["id"], customer))
         self.show_screen("menu")
-        self.notify(f"{customer['extra']['nickname']} 님, {greeting}", 4)   # E14 방문 간격 인사
+        hello = f"{customer['extra']['nickname']} 님, {greeting}"          # E14 방문 간격 인사
+        if unused_card(self.session.vault, customer["id"]):              # 받은 카드를 아직 안 댔으면
+            self.notify(f"{hello}\n받으신 회원카드를 리더기에 대면 등록돼요", 8)
+        else:
+            self.notify(hello, 4)
         if gifts and self.popup is not None:
             self.popup.tell(" · ".join(g["title"] for g in gifts), "\n".join(g["text"] for g in gifts))
 

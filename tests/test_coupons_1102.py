@@ -19,17 +19,17 @@ def vault():
 
 
 def test_template_rules(vault):
-    assert [t["id"] for t in coupons.templates(vault.read("settings", default={}))] == ["T001", "T002", "T003", "T004"]
+    assert [t["id"] for t in coupons.templates(vault.read("settings", default={}))] == ["T001", "T002", "T003", "T004", "T005"]
     added = coupons.add_template(vault, {"name": "주말 500원", "amount": "500", "min_order": "", "days": "7"})
-    assert added["id"] == "T005" and added["min_order"] == 0
+    assert added["id"] == "T006" and added["min_order"] == 0
     with pytest.raises(ValueError, match="이름"):
         coupons.validate_template({"name": " ", "amount": 500, "days": 7})
     with pytest.raises(ValueError, match="숫자"):
         coupons.validate_template({"name": "x", "amount": "오백", "days": 7})
     with pytest.raises(ValueError, match="10~50,000"):
         coupons.validate_template({"name": "x", "amount": 5, "days": 7})
-    assert coupons.delete_templates(vault, ["T005", "T001"]) == 2
-    assert [t["id"] for t in coupons.templates(vault.read("settings"))] == ["T002", "T003", "T004"]
+    assert coupons.delete_templates(vault, ["T006", "T001"]) == 2
+    assert [t["id"] for t in coupons.templates(vault.read("settings"))] == ["T002", "T003", "T004", "T005"]
 
 
 def test_issue_use_and_history(vault):
@@ -55,6 +55,7 @@ def test_admin_coupon_page(qtbot_free_window):
     window = qtbot_free_window
     admin = window.router.screens["admin"]
     admin.show_tab("coupons")
+    before = len(coupons.history(window.router.session.vault))   # 시연 회원카드 감사 쿠폰 등
     admin.set_coupon_view("issue")
     assert not admin.coupon_issue_button.isEnabled()
     admin.coupon_member_search.setText("user01")
@@ -65,7 +66,8 @@ def test_admin_coupon_page(qtbot_free_window):
     admin.issue_coupons()
     assert "1명에게" in admin.message.text()
     admin.set_coupon_view("history")
-    assert admin.coupon_history_table.rowCount() == 1
+    assert admin.coupon_history_table.rowCount() == before + 1
+    assert admin.coupon_history_table.item(0, 2).text() == "이스터에그 100원"
     assert admin.coupon_history_table.item(0, 5).text() == "미사용"
     admin.set_coupon_view("kinds")
     assert not admin.coupon_kind_delete.isEnabled()
@@ -73,7 +75,7 @@ def test_admin_coupon_page(qtbot_free_window):
     admin.coupon_amount.setText("300")
     admin.coupon_days.setText("3")
     admin.add_coupon_kind()
-    assert admin.coupon_kind_table.rowCount() == 5 and admin.coupon_pick.count() == 5
+    assert admin.coupon_kind_table.rowCount() == 6 and admin.coupon_pick.count() == 6
 
 
 @pytest.fixture

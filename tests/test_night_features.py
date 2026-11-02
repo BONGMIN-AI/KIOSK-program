@@ -178,34 +178,30 @@ def test_card_link_rules(vault):
         link_card(vault, other["id"], "0012345678")
 
 
-def issue_card_through_admin(router, number):
-    """운영자 '회원카드 발급': 맨 위 신청을 허용하고 빈 카드를 찍는다."""
-    router.admin_id = "admin"
-    router.show_screen("admin", tab="cards")
-    admin = router.screens["admin"]
-    admin.card_table.selectRow(0)
-    admin.approve_cards()
-    admin.register_cards()
-    assert router.card_wait is not None, admin.message.text()
-    router.card_scanned(number)
-    return admin
-
-
-def test_card_request_admin_issue_then_tag_starts_face_login(window, app):
-    """11/01: 손님 신청 → 운영자 허용 → 빈 카드 찍어 할당 → 카드만 대면 로그인."""
-    router = window.router
-    member = first_member(router)
-    set_face_enrolled(router.session.vault, member["id"])
+def buy_card_and_register(router, member, number):
+    """11/03: 로그인하면서 '회원카드 신청' → 장바구니 → 음료와 함께 결제 → 다음 주문 때 처음 대면 등록."""
     router.open_action("member")
     login = router.screens["login"]
     login.set_mode("password")
     login.login_id.setText(member["extra"]["login_id"])
     login.password.setText("1234")                    # 시연 데이터 회원 비밀번호
-    login.card_check.setChecked(True)                 # 11/02: 로그인하면서 '회원카드 신청' 체크
+    login.card_check.setChecked(True)
     login.password_login()
-    assert router.current_name == "menu" and "신청했어요" in router.notice.text()
-    admin = issue_card_through_admin(router, "0099887766")
-    assert "카드 등록 완료" in admin.message.text() and "7766" in admin.message.text()
+    assert router.current_name == "menu" and "장바구니에 담았어요" in router.notice.text()
+    session = router.session
+    session.add("M001", None, 1)
+    session.insert(20000)
+    session.pay()
+    router.start_member_order(session.vault.read("customers")[member["id"]])
+    router.card_scanned(number)
+    assert "등록 완료" in router.notice.text(), router.notice.text()
+
+
+def test_card_bought_registered_then_tag_starts_face_login(window, app):
+    router = window.router
+    member = first_member(router)
+    set_face_enrolled(router.session.vault, member["id"])
+    buy_card_and_register(router, member, "0099887766")
     router.show_screen("idle")
     handle = window.windowHandle()                    # 실제 키처럼 창으로 보낸다
     for digit in "0099887766":                        # 대기 화면에서 리더기가 번호 + Enter
@@ -220,7 +216,7 @@ def test_unknown_card_tells_how_to_link(window):
     router = window.router
     router.show_screen("idle")
     router.card_scanned("5555555555")
-    assert router.current_name == "idle" and "등록되지 않은 카드" in router.notice.text()
+    assert router.current_name == "idle" and "로그인한 뒤" in router.notice.text()
 
 
 # ---------------------------------------------------------------- 상황별 점검에서 찾은 것
@@ -266,26 +262,6 @@ def test_number_keys_still_type_on_login(window, app):
         QTest.keyClick(handle, key, Qt.KeyboardModifier.NoModifier)
     app.processEvents()
     assert login.login_id.text() == "kb0608"
-
-
-def test_card_wait_is_cancelled_by_leaving_or_rebuilding(window, app):
-    """10/30: 카드를 기다리는 중 큰 글자로 바꾸면 지워진 화면에 글을 써서 오류가 났다 (11/01: 운영자 발급 화면)."""
-    from domain.member_cards import request_card
-    router = window.router
-    member = first_member(router)
-    request_card(router.session.vault, member["id"])
-    router.admin_id = "admin"
-    router.show_screen("admin", tab="cards")
-    admin = router.screens["admin"]
-    admin.card_table.selectRow(0)
-    admin.approve_cards()
-    admin.register_cards()
-    assert router.card_wait is not None and router.notice.isVisible() and "20초" in router.notice.text()
-    router.set_display(large=True)                    # 화면을 새로 만든다 (옛 운영자 화면은 지워짐)
-    assert router.current_name == "admin"
-    router.show_screen("home")                        # 운영자 화면을 떠나면 기다리기도 끝
-    assert router.card_wait is None
-    app.processEvents()
 
 
 def test_phone_number_takes_shape_while_typing(window):

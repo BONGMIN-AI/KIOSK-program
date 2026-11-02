@@ -282,24 +282,27 @@ def states(window):
         login.card_check.setChecked(True)
 
     def lost_card():
-        from domain.member_cards import approve_request, issue_card, request_card
-        request = request_card(session.vault, bomin["id"])
-        approve_request(session.vault, request["id"], "admin")
-        issue_card(session.vault, request["id"], "A1B2C3D4", "admin")
+        from domain.member_cards import purchase_card, register_first_tap
+        purchase_card(session.vault, bomin["id"], "new", "", 1000)
+        register_first_tap(session.vault, bomin["id"], "A1B2C3D4")
         password_mode()
         login = router.screens["login"]
         login.login_id.setText("bomin")
         login.password.setText("1234")
         login.report_lost_card()
 
-    def admin_card_wait():
-        from domain.member_cards import request_card
-        request_card(session.vault, bomin["id"])
+    def admin_cards():
+        from domain.member_cards import purchase_card
+        purchase_card(session.vault, bomin["id"], "new", "", 1000)
         router.admin_id = "admin"
         router.show_screen("admin", tab="cards")
         router.screens["admin"].card_table.selectRow(0)
-        router.screens["admin"].approve_cards()
-        router.screens["admin"].register_cards()
+
+    def cart_with_card():
+        session.login(session.vault.read("customers")[bomin["id"]])
+        session.add(next(iter(session.menu())), {})
+        session.add_card("new")
+        router.show_screen("cart")
 
     def signup_card():
         router.open_action("signup")
@@ -502,6 +505,7 @@ def states(window):
         ("08 완료 회원", done_member),
         ("10 회원가입 오류", signup_error),
         ("10 회원가입 카드 신청", signup_card),
+        ("05 장바구니 회원카드 줄", cart_with_card),
         ("10-B 얼굴 등록", lambda: router.show_screen("enroll", customer=bomin)),
         ("10-B 얼굴 등록 중", enroll_running),
         ("09-A 운영자 로그인 오류", admin_login_error),
@@ -509,7 +513,7 @@ def states(window):
         ("09-B 메뉴", admin("menu", "재고가 0개입니다. 재고를 먼저 채우고 저장하세요")),
         ("09-C 회원 목록", admin("members")),
         ("09-C 주문 기록", admin("orders")),
-        ("09-C2 회원카드 발급 (카드 찍기)", admin_card_wait),
+        ("09-C2 회원카드 (미사용 · 사용 중)", admin_cards),
         ("09-D 이벤트", admin("events", "적립률 · 보너스 · 스마일 할인 중 하나는 입력하세요")),
         ("09-E 포인트 조정", admin("points")),
         ("09-D2 쿠폰", admin("coupons")),

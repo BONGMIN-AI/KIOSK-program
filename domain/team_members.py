@@ -4,7 +4,7 @@
 비밀번호는 모두 1234.
 
 - withtop77  나를 기억하는 KIOSK : "2일 만이에요!" · [얼죽아] · ICE·L·샷 미리 선택 · 좋아요 · 최근 주문 다시 담기 · 카페인 알리미
-- asd1625    축하 · 혜택          : 로그인하면 생일 + 가입 1주년 팝업과 쿠폰 · 포인트 · 스마일 할인 · 개인 컵 · 잔돈 포인트 · 회원카드 승인 대기
+- asd1625    축하 · 혜택          : 로그인하면 생일 + 가입 1주년 팝업과 쿠폰 · 포인트 · 스마일 할인 · 개인 컵 · 잔돈 포인트 · 회원카드 신청(장바구니)
 - jisung0642 칭호 · 재미          : "오늘 두 번째 방문이에요!" · 단골손님 9/10 (이번 주문으로 달성) · 칭호 현황 · 로고 이스터에그
 """
 from datetime import datetime, timedelta
@@ -99,6 +99,4 @@ def add_team_members(vault, now: datetime | None = None) -> list[str]:
     customers = vault.read("customers")
     customers["C0201"]["extra"]["caffeine_limit"] = {"unit": "잔", "amount": used + 1}
     vault.write("customers", customers)
-    from .member_cards import request_card
-    request_card(vault, "C0202", now=now - timedelta(hours=1))      # 운영자 화면 '신규 신청'에 보인다
     return made

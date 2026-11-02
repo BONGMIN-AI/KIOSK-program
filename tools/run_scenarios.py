@@ -334,7 +334,8 @@ def find_account(r):
 
 
 def card_login(r):
-    """11/01 회원카드: 가입 때 신청 → 운영자 허용 → 빈 카드 찍어 할당 → 카드로 로그인 · 첫 주문 10% · 분실."""
+    """11/03 회원카드: 가입 때 신청 → 장바구니 → 음료와 함께 결제(감사 쿠폰) → 다음 주문 때 처음 대면 등록
+    → 카드로 로그인 · 3% 적립 → 분실 신고 → 재발급 카드 장바구니."""
     r.router.open_action("signup")
     signup = r.screen("signup")
     for field, text in ((signup.name, "카드손님"), (signup.login_id, "cardguest"), (signup.password, "1234"),
@@ -344,42 +345,33 @@ def card_login(r):
     signup.card_request.setChecked(True)
     r.step("10 회원가입 · 회원카드 신청 체크 (혜택 안내)", "signup", lambda: signup.card_box.isVisible())
     signup.submit()
-    r.step("가입 → My Menu · 위 줄에 '승인 대기'", "menu",
-           lambda: "승인 대기" in r.screen("menu").member_detail.text())
-    r.router.admin_id = "admin"
-    r.router.show_screen("admin", tab="cards")
-    admin = r.screen("admin")
-    r.step("09 회원카드 발급: 승인 대기 1건", "admin", lambda: "(1)" in admin.card_view_buttons["new"].text())
-    admin.card_table.selectRow(0)
-    admin.approve_cards()
-    admin.register_cards()
-    r.step("승인 → 카드 등록 → 빈 카드 기다림 (위쪽 초시계)", "admin", lambda: r.router.card_wait is not None and r.router.notice.isVisible())
+    r.step("가입 → 메뉴 · 장바구니에 회원카드", "menu", lambda: r.session.card_kind == "new")
+    r.session.add("M001", None, 1)
+    r.router.show_screen("cart")
+    r.step("05 장바구니: 음료 + 회원카드 1,000원", "cart", lambda: r.session.total() == r.session.drink_total() + 1000)
+    r.router.show_screen("cash")
+    pay_cash(r, [10000])
+    r.step("08 완료 · 카드는 음료와 함께 · 감사 쿠폰", "done",
+           lambda: r.session.last_order["card_kind"] == "new" and r.session.last_order["card_thanks"])
+    r.router.start_member_order(r.session.vault.read("customers")[r.session.last_order["customer"]["id"]])
+    r.step("다음 주문: 로그인하면 '카드를 대면 등록' 안내", "menu", lambda: "등록돼요" in r.router.notice.text())
     r.router.card_scanned("A1B2C3D4")
-    r.step("빈 카드 등록 완료 · 카운터 전달", "admin", lambda: "C3D4" in admin.message.text())
+    r.step("받은 카드를 처음 대기 → 등록 · 3% 적립 시작", "menu", lambda: "3% 적립" in r.router.notice.text())
     r.router.show_screen("idle")
     r.router.card_scanned("A1B2C3D4")
     r.step("카드 태그 → 비밀번호 화면 (아이디 자동)", "login", lambda: r.screen("login").login_id.text() == "cardguest")
     login = r.screen("login")
     login.password.setText("1234")
-    login.password_login()
-    r.session.add("M001", None, 2)
-    r.router.show_screen("benefit")
-    r.step("06 회원카드 첫 주문 10% 할인", "benefit", lambda: r.session.benefit()["card_discount"] == 600)
-    r.router.show_screen("idle")
-    r.router.open_action("member")
-    login.login_id.setText("cardguest")
-    login.set_mode("password")
-    login.password.setText("1234")
     login.report_lost_card()
     r.step("'회원카드를 잃어버렸어요' → 재발급 확인 질문 (1,000원)", "login", lambda: "1,000원" in login.message.text())
     login.password.setText("1234")
     login.report_lost_card()
-    r.step("한 번 더 → 분실 신고 · 재발급 신청", "login", lambda: "재발급을 신청했어요" in login.message.text())
-    r.router.show_screen("home")
+    r.step("한 번 더 → 예전 카드 막고 재발급 카드를 장바구니에", "menu", lambda: r.session.card_kind == "reissue")
+    r.router.show_screen("idle")
     r.router.card_scanned("A1B2C3D4")
     r.step("분실 신고된 카드 → 안내", None, lambda: "분실" in r.router.notice.text())
     r.router.card_scanned("9999999999")
-    r.step("등록 안 된 카드 → 신청 방법 안내", None, lambda: "신청" in r.router.notice.text())
+    r.step("처음 쓰는 카드 → 로그인한 뒤 대라고 안내", None, lambda: "로그인한 뒤" in r.router.notice.text())
 
 
 def signup_errors_then_face(r):
@@ -531,7 +523,7 @@ def password_login_options(r):
     login.card_check.setChecked(True)
     r.step("02-B 비밀번호 로그인 · 얼굴 등록 · 회원카드 신청 체크", "login", lambda: login.options_box.isVisible())
     login.password_login()
-    r.step("로그인 → 얼굴 등록 화면 · 카드 신청 안내", "enroll", lambda: "신청했어요" in r.router.notice.text())
+    r.step("로그인 → 얼굴 등록 화면 · 카드는 장바구니에", "enroll", lambda: "장바구니에 담았어요" in r.router.notice.text())
     r.screen("enroll").go_order()
     r.step("얼굴 등록 건너뛰고 주문 → My Menu", "menu")
 
@@ -735,7 +727,7 @@ SCENARIOS = [
     ("비밀번호 로그인 · 함께 할 일", "체크 상자로 얼굴 등록 · 회원카드 신청 → 얼굴 등록 → My Menu", password_login_options),
     ("카메라 고장", "얼굴 인증 중 카메라 오류 → 비밀번호 안내", camera_broken),
     ("아이디 찾기 · 임시 비밀번호", "02-C → 임시 비밀번호 → 로그인 → 새 비밀번호 → My Menu", find_account),
-    ("회원카드 신청 · 발급 · 분실", "가입 때 신청 → 운영자 허용 → 빈 카드 할당 → 카드 로그인 → 첫 주문 10% → 분실 재발급", card_login),
+    ("회원카드 신청 · 결제 · 첫 태그 · 분실", "가입 때 신청 → 장바구니 → 음료와 함께 결제 · 감사 쿠폰 → 다음 주문 때 처음 대면 등록 → 카드 로그인 → 분실 → 재발급 카드", card_login),
     ("회원가입 오류 → 얼굴 등록", "10 빈칸·중복·비밀번호 다름 → 10-B → My Menu", signup_errors_then_face),
     ("회원가입 (얼굴 없이)", "10 → My Menu", signup_no_face),
     ("얼굴 등록 중 카메라 고장", "10-B 카메라 오류", enroll_camera_broken),

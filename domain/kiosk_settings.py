@@ -1,6 +1,6 @@
 """키오스크 설정 · 광고 배너 (11/02 B7·B8). 운영자 화면에서 바꾸고 settings에 저장한다.
 
-settings["kiosk"]  = {idle_seconds, warn_seconds, more_order_seconds, card_wait_seconds, slide_seconds}
+settings["kiosk"]  = {idle_seconds, warn_seconds, more_order_seconds, slide_seconds, away_seconds}
 settings["ticket_sales"] = True/False   (승차권 탭 — 예전부터 쓰던 키 그대로)
 settings["presence"] = True/False       (카메라 사람 감지: 다가오면 시작 · 자리 비움 확인, 11/02 C)
 settings["slides"] = [{"file", "caption", "fit", "on"}, ...]   (시작 화면 왼쪽 광고, 위에서부터 순서)
@@ -20,7 +20,6 @@ KIOSK_FIELDS = [
     ("idle_seconds", "손님 화면 무입력 복귀", "초", 60, 20, 300),
     ("warn_seconds", "복귀 전 경고", "초", 15, 5, 60),
     ("more_order_seconds", "'더 주문하시겠어요?' 시간", "초", 15, 5, 60),
-    ("card_wait_seconds", "운영자 카드 등록 대기", "초", 20, 5, 120),
     ("slide_seconds", "시작 화면 광고 넘김", "초", 5, 2, 30),
     ("away_seconds", "자리 비움 확인까지", "초", 10, 5, 120),
 ]

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScro
 
 from domain.allergens import ALLERGENS, search
 from domain.customers import register_customer, set_face_enrolled, validate_password_pair
-from domain.member_cards import perks_text, request_card
+from domain.member_cards import perks_text
 from face import FaceError
 from gui import theme
 from gui.screens.login import nav_bar
@@ -114,8 +114,9 @@ class SignupScreen(QWidget):
         for box in (self.privacy, self.marketing, self.face_consent, self.card_request):
             box.setChecked(False)
         policy = self.router.session.policy()
-        self.card_perks.setText(f"{perks_text(policy)}\n카드만 대면 바로 로그인")
-        self.card_how.setText(f"직원 승인 뒤 카운터에서 받아요 · 분실 재발급 {policy['card_reissue_fee']:,}원")
+        self.card_perks.setText(f"{perks_text(policy, self.router.session.vault.read('settings', default={}))}\n"
+                                "카드만 대면 바로 로그인")
+        self.card_how.setText("장바구니에 담겨 음료와 함께 결제 · 음료 나올 때 받아요")
         self.checked_allergies = set()
         self.message.setText("")
         self.show_allergies()
@@ -154,15 +155,17 @@ class SignupScreen(QWidget):
         except ValueError as error:
             self.message.setText(str(error))
             return
-        if self.card_request.isChecked():            # 운영자 화면 '회원카드 발급'으로 넘어간다
-            request_card(self.router.session.vault, customer["id"], "new", self.router.session.policy())
-            self.router.audit("card_requested", customer["id"])
-            self.router.notify("회원카드를 신청했어요.\n직원이 승인하면 카운터에서 받아 가세요.", 6)
+        session = self.router.session
+        session.login(customer)
+        if self.card_request.isChecked():             # 회원카드 → 장바구니 (음료와 함께 결제)
+            session.add_card("new")
+            self.router.audit("card_in_cart", customer["id"])
         if self.face_consent.isChecked():
-            self.router.session.login(customer)
             self.router.show_screen("enroll", customer=customer)
         else:
             self.router.start_member_order(customer)
+        if session.card_kind:
+            self.router.notify("회원카드를 장바구니에 담았어요.\n음료와 함께 결제하면 음료 나올 때 드려요.", 7)
 
 
 class EnrollScreen(QWidget):

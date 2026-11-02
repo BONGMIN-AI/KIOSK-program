@@ -7,7 +7,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 import pytest
 
 from domain.customers import login_with_password
-from domain.member_cards import card_status_text
+from domain.member_cards import check_can_buy
 from domain.my_menu import week_caffeine
 from domain.titles import count_stats, customer_lines, progress
 from domain.visits import celebrate, visit_greeting
@@ -35,12 +35,12 @@ def test_withtop77_remembered_customer(vault):
     assert limit == {"unit": "잔", "amount": used + 1}      # 두 잔을 담으면 알리미가 묻는다
 
 
-def test_asd1625_birthday_anniversary_and_card_request(vault):
+def test_asd1625_birthday_anniversary_and_can_buy_card(vault):
     gifts = celebrate(vault, "C0202")
     assert [g["title"] for g in gifts] == ["생일 축하해요!", "가입 1주년이에요!"]
     customer = vault.read("customers")["C0202"]
     assert customer["extra"]["points"] == 3000
-    assert "승인 대기" in card_status_text(vault, customer)
+    check_can_buy(vault, customer, "new")          # 회원카드 신청 체크 → 장바구니 시연
 
 
 def test_jisung0642_one_order_from_regular_title(vault):

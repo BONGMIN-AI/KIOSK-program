@@ -19,7 +19,7 @@ from gui.order import CATEGORY_ORDER, MY_MENU, POPULAR, TICKET
 from gui.screens.option import OptionPopup
 from gui.screens.ticket import BusIcon, TicketCartLine, TicketPanel, clear, saved_routes_card
 from gui.widgets import (FixedWidthCard, Card, CategoryIcon, ConfirmBox, CupIcon, ElidedLabel, GearButton, LimitBar, Overlay,
-                         TapLabel, TrendBars, button, label, menu_icon,
+                         TapLabel, TrendBars, button, card_cart_line, label, menu_icon,
                          menu_photo_path, trimmed_pixmap)
 CARD_MIN_WIDTH = 200     # 화면이 넓으면 한 줄에 카드를 더 놓는다 (최소 3칸)
 GRID_GAP = 14
@@ -248,12 +248,10 @@ class MenuScreen(QWidget):
         extra = customer["extra"]
         title = f"[{title_name(extra['title'])}] " if extra.get("title") else ""
         self.member_name.setText(f"{title}{extra['nickname']} 님 ›")
-        card = {"회원카드 승인 대기 중": "카드 승인 대기"}.get(self.session.card_status(), "")
-        if self.session.card_status().startswith("회원카드 발급"):
-            card = "카드 수령 대기"
-        card = f"   ·   {card}" if card else ""
-        self.member_detail.setText(f"포인트 {extra['points']:,}P   ·   쿠폰 {len(self.session.coupons())}장"
-                                   f"   ·   방문 {extra['visits']}회{card}")
+        card = {"회원카드 등록 전": "카드 등록 전"}.get(self.session.card_status(), "")
+        card = f"  ·  {card}" if card else ""
+        self.member_detail.setText(f"포인트 {extra['points']:,}P  ·  쿠폰 {len(self.session.coupons())}장"
+                                   f"  ·  방문 {extra['visits']}회{card}")
 
     def make_banner(self):
         banner = ElidedLabel()
@@ -682,6 +680,9 @@ class MenuScreen(QWidget):
                              for ticket in self.session.tickets]
         for line in self.ticket_lines:            # 승차권 줄이 먼저, 음료 줄은 아래 (와이어프레임 T1-7)
             self.cart_list.addWidget(line)
+        if self.session.card_kind:
+            self.cart_list.addWidget(card_cart_line(self.session.card_label(), self.session.card_total(),
+                                                    self.remove_card))
         lines = self.session.lines()
         for line in lines:
             self.cart_list.addWidget(self.make_cart_line(line))
@@ -696,6 +697,10 @@ class MenuScreen(QWidget):
 
     def remove_ticket(self, hold_id):
         self.session.remove_ticket(hold_id)
+        self.refresh()
+
+    def remove_card(self):
+        self.session.remove_card()
         self.refresh()
 
     def tick_tickets(self):

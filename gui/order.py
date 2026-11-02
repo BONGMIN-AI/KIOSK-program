@@ -10,7 +10,7 @@ from domain.my_menu import (caffeine_limit, caffeine_report, caffeine_trend, lik
                             lines_caffeine, option_habit, recent_order, set_caffeine_limit, toggle_like,
                             usual_order, week_caffeine)
 from domain.options import available_options, option_price
-from domain.member_cards import card_status_text, request_card
+from domain.member_cards import KINDS as CARD_KINDS, card_price, card_status_text, check_can_buy, report_lost
 from domain.orders import complete_order, eco_cup_points
 from domain.payment import insert_cash, payment_status
 from domain.policy import display_event, load_policy, smile_amount
@@ -68,6 +68,7 @@ class OrderSession:
         self.change_to_points = False
         self.eco_cup = False          # 회원: 개인 컵(텀블러)으로 받기 → 에코 포인트
         self.smiled = False           # 카메라로 웃음 확인 → 스마일 할인 (B9)
+        self.card_kind = None         # 장바구니의 회원카드 'new' | 'reissue' (11/03, 회원만)
         self.benefit_note = ""        # 쿠폰·포인트 선택을 자동으로 풀었을 때 화면에 한 번 보여 줄 말
         self.inserted = 0
         self.last_order = None
@@ -134,10 +135,27 @@ class OrderSession:
         return ranking(sort, self.menu(), self.vault.read("customers", default={}), self.orders())
 
     # 회원카드 (11/01)
-    def request_card(self, kind="new"):
-        request = request_card(self.vault, self.customer["id"], kind, self.policy())
+    def add_card(self, kind="new"):
+        """회원카드를 장바구니에 담는다 (음료와 함께 결제 · 음료 나올 때 받기). 안 되면 ValueError."""
+        if not self.is_member():
+            raise ValueError("회원카드는 회원만 신청할 수 있어요")
+        check_can_buy(self.vault, self.customer, kind)
+        self.card_kind = kind
+
+    def report_lost_card(self):
+        """분실 신고: 예전 카드를 바로 막고 재발급 카드를 장바구니에 담는다."""
+        report_lost(self.vault, self.customer["id"])
         self.reload_customer()
-        return request
+        self.add_card("reissue")
+
+    def remove_card(self):
+        self.card_kind = None
+
+    def card_total(self):
+        return card_price(self.card_kind, self.policy()) if self.card_kind else 0
+
+    def card_label(self):
+        return f"회원카드 ({CARD_KINDS[self.card_kind]})" if self.card_kind else ""
 
     def card_status(self):
         return card_status_text(self.vault, self.customer) if self.is_member() else ""
@@ -222,7 +240,8 @@ class OrderSession:
         return cart_lines(self.cart, self.menu()) if self.cart else []
 
     def count(self):
-        return sum(line["quantity"] for line in self.lines()) + sum(t["count"] for t in self.tickets)
+        return (sum(line["quantity"] for line in self.lines()) + sum(t["count"] for t in self.tickets)
+                + (1 if self.card_kind else 0))
 
     def drink_total(self):
         return sum(line["subtotal"] for line in self.lines())
@@ -231,11 +250,11 @@ class OrderSession:
         return sum(ticket["total"] for ticket in self.tickets)
 
     def total(self):
-        """음료 + 승차권. 쿠폰·포인트는 음료 금액(drink_total)에만 쓴다."""
-        return self.drink_total() + self.ticket_total()
+        """음료 + 승차권 + 회원카드. 쿠폰·포인트는 음료 금액(drink_total)에만 쓴다."""
+        return self.drink_total() + self.ticket_total() + self.card_total()
 
     def is_empty(self):
-        return not self.cart and not self.tickets
+        return not self.cart and not self.tickets and not self.card_kind
 
     # 승차권 (승차권 탭)
     def add_ticket(self, item):
@@ -278,7 +297,8 @@ class OrderSession:
     def _apply_benefit(self):
         result = apply_benefits(self.drink_total(), self.customer, self.coupon_id, self.use_points,
                                 date.today().isoformat(), self.policy(), self.smile_discount())
-        return dict(result, final_total=result["final_total"] + self.ticket_total())   # 승차권은 할인 제외
+        extra = self.ticket_total() + self.card_total()          # 승차권 · 회원카드는 할인 제외
+        return dict(result, final_total=result["final_total"] + extra)
 
     def benefit(self):
         """지금 고른 쿠폰·포인트로 할인 계산. 비회원이면 할인 없음.
@@ -306,8 +326,7 @@ class OrderSession:
         if not self.customer:
             return 0
         benefit = self.benefit()
-        after_coupon = (self.drink_total() - benefit["card_discount"] - benefit["smile_discount"]
-                        - benefit["coupon_discount"])
+        after_coupon = self.drink_total() - benefit["smile_discount"] - benefit["coupon_discount"]
         return max_usable_points(after_coupon, self.customer["extra"]["points"], self.policy())
 
     def set_benefit(self, coupon_id, use_points):
@@ -350,6 +369,7 @@ class OrderSession:
                                coupon_id=self.coupon_id, use_points=self.use_points,
                                change_to_points=change_to_points,
                                eco_cup=self.eco_cup and self.is_member(), smiled=self.smiled,
+                               card_kind=self.card_kind if self.is_member() else None,
                                also_write={CASH_RECORD: self.cash_record(0)},   # 주문과 함께 현금 기록도 0으로
                                tickets=tickets)
         for ticket in self.tickets:                # 잡아 둔 좌석을 판 좌석으로
@@ -361,5 +381,6 @@ class OrderSession:
         self.coupon_id, self.use_points, self.change_to_points = None, 0, False
         self.eco_cup = False
         self.smiled = False
+        self.card_kind = None
         self.reload_customer()
         return order

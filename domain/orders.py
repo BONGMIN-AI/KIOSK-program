@@ -7,7 +7,7 @@ from .benefits import apply_benefits, coupons_of, make_visit_coupon
 from .cart import cart_lines
 from .options import DRINK_CATEGORIES
 from .customers import add_point_history
-from .member_cards import has_card
+from .member_cards import card_point_bonus, card_price, has_card, purchase_card, thanks_coupon
 from .payment import change_breakdown, payment_status
 from .policy import calculate_points, load_policy, smile_amount
 from .tickets import is_saved, remember_route
@@ -24,7 +24,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
                    coupon_id: str | None = None, use_points: int = 0,
                    now: datetime | None = None, change_to_points: bool = False,
                    also_write: dict | None = None, tickets: list | None = None, eco_cup: bool = False,
-                   smiled: bool = False) -> dict:
+                   smiled: bool = False, card_kind: str | None = None) -> dict:
     """현금이 충분할 때만 주문·재고·회원 카드를 한 번에 저장한다.
 
     현금이 부족하면 ValueError를 내고 아무것도 바꾸지 않는다.
@@ -34,12 +34,14 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     also_write({이름: 데이터})는 주문과 같은 묶음으로 함께 저장한다 (예: 키오스크의 투입 현금 기록을 0으로).
     eco_cup=True이면(회원만) 개인 컵으로 받은 음료 1잔마다 에코 포인트(policy["eco_points"])를 더 준다 (C-10).
     tickets(승차권 탭에서 담은 승차권 묶음 목록)는 결제 금액에만 더하고 쿠폰·포인트·적립에서는 뺀다.
+    card_kind('new' | 'reissue', 회원만)는 장바구니의 회원카드 값이다. 승차권처럼 할인·적립에서 빼고,
+    결제가 끝나면 카드 기록('미사용')을 만들고 신규 카드면 감사 쿠폰을 넣는다 (11/03).
     이동 정보에 동의한 회원(extra["travel_consent"])이면 회원 카드 trips에 기록만 남긴다.
     회원이 '저장'을 고른 노선(ticket["save_route"])이나 이미 저장한 노선은 My Menu용 saved_routes를 고친다.
     """
     now = now or datetime.now()
     tickets = tickets or []
-    if not cart and not tickets:
+    if not cart and not tickets and not card_kind:
         raise ValueError("장바구니가 비어 있습니다")
     menu = vault.read("menu", default={})
     lines = cart_lines(cart, menu)
@@ -49,6 +51,8 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     if customer_id and customer_id not in customers:
         raise ValueError("회원을 찾을 수 없습니다")
     customer = customers.get(customer_id) if customer_id else None
+    if card_kind and customer is None:
+        raise ValueError("회원카드는 회원만 살 수 있습니다")
     if change_to_points and customer is None:
         raise ValueError("잔돈 포인트 적립은 회원만 할 수 있습니다")
     settings = vault.read("settings", default=dict(schema.DEFAULT_SETTINGS))
@@ -58,7 +62,8 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
                              now.date().isoformat(), policy, smile)
 
     ticket_total = sum(ticket["total"] for ticket in tickets)
-    payment = payment_status(benefit["final_total"] + ticket_total, cash)
+    card_total = card_price(card_kind, policy) if card_kind else 0
+    payment = payment_status(benefit["final_total"] + ticket_total + card_total, cash)
     if not payment["paid"]:
         raise ValueError(f"현금이 {payment['shortage']:,}원 부족합니다")
 
@@ -72,7 +77,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         item["sold_count"] = item.get("sold_count", 0) + line["quantity"]
         item["sold_out"] = item["stock"] == 0
 
-    card_rate = policy["card_bonus_rate"] if has_card(customer) else 0.0       # 회원카드 추가 적립
+    card_rate = card_point_bonus(policy) if has_card(customer) else 0.0       # 카드 회원은 3%까지
     points = calculate_points(policy, lines, menu, benefit["final_total"], now, card_rate) if customer else None
     earned_points = points["earned"] if points else 0
     change_points = payment["change"] if change_to_points else 0
@@ -101,8 +106,6 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         if eco_points:
             extra["points"] += eco_points
             add_point_history(customer, eco_points, f"주문 {order_id} 개인 컵 에코 적립", "system")
-        if benefit["card_discount"]:
-            extra.pop("card_first_discount", None)          # 카드 첫 주문 할인은 한 번만
         extra["visits"] += 1
         every = policy["visit_coupon_every"]
         if every and extra["visits"] % every == 0:
@@ -133,13 +136,15 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
     order = {
         "id": order_id,
         "lines": lines,
-        "total": total + ticket_total,
-        "card_discount": benefit["card_discount"],
+        "total": total + ticket_total + card_total,
         "smile_discount": benefit["smile_discount"],
         "coupon_name": benefit["coupon"]["name"] if benefit["coupon"] else None,
         "coupon_discount": benefit["coupon_discount"],
         "points_used": benefit["points_used"],
-        "final_total": benefit["final_total"] + ticket_total,
+        "final_total": benefit["final_total"] + ticket_total + card_total,
+        "card_kind": card_kind,
+        "card_total": card_total,
+        "card_thanks": (thanks_coupon(settings) or {}).get("name") if card_kind == "new" else None,
         "tickets": tickets,
         "ticket_total": ticket_total,
         "cash": cash,
@@ -162,4 +167,6 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         datasets["customers"] = customers
     datasets.update(also_write or {})
     write_together(vault, datasets)
+    if card_kind:                                   # 카드 기록 '미사용' + 감사 쿠폰 (카드는 음료와 함께 받는다)
+        purchase_card(vault, customer_id, card_kind, order_id, card_total, now)
     return order

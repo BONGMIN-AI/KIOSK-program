@@ -118,12 +118,11 @@ def make_random_members(vault, count: int = 16, seed: int = 1101, now: datetime 
 
 def add_demo_cards(vault, members: list[str], rng: random.Random, now: datetime, issued: int = 10,
                    waiting: int = 3) -> None:
-    """시연용 회원카드 (11/02): 앞 10명은 카드 등록됨, 그다음 3명은 신청만 (운영자 화면 '신규 신청')."""
-    from .member_cards import approve_request, issue_card, request_card
+    """시연용 회원카드 (11/03): 앞 10명은 카드 사용 중, 그다음 3명은 결제만 하고 아직 안 댄 '미사용'."""
+    from .member_cards import purchase_card, register_first_tap
     for index, customer_id in enumerate(members[:issued + waiting]):
         when = now - timedelta(days=rng.randint(1, 40), hours=rng.randint(0, 8))
-        request = request_card(vault, customer_id, now=when)
+        purchase_card(vault, customer_id, "new", "", 1000, now=when)
         if index < issued:
-            approve_request(vault, request["id"], "admin", now=when)
             uid = "".join(rng.choice("0123456789ABCDEF") for _ in range(8))
-            issue_card(vault, request["id"], uid, "admin", now=when + timedelta(minutes=rng.randint(5, 90)))
+            register_first_tap(vault, customer_id, uid, now=when + timedelta(days=rng.randint(1, 5)))

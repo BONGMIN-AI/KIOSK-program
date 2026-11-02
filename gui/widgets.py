@@ -743,6 +743,34 @@ class LimitBar(QWidget):
             painter.drawRoundedRect(QRectF(0, 0, width, self.height()), 7, 7)
 
 
+def card_cart_line(title, price, on_remove, big=False):
+    """장바구니의 회원카드 줄 (11/03): 음료와 함께 결제하고, 카드는 음료 나올 때 받는다."""
+    box = QFrame()
+    box.setStyleSheet(f"QFrame {{ background: {theme.CARAMEL_LIGHT}; border-radius: {16 if big else 14}px; }}")
+    row = QHBoxLayout(box)
+    row.setContentsMargins(14 if big else 10, 8, 14 if big else 10, 8)
+    row.setSpacing(12 if big else 6)
+    text = QVBoxLayout()
+    text.setSpacing(0)
+    text.addWidget(label(title, 20 if big else 15, title=True))
+    text.addWidget(label("음료 나올 때 같이 드려요", 14 if big else 12, muted=True))
+    cost = label(theme.won(price), 18 if big else 14, bold=True)
+    if not big:
+        cost.setStyleSheet(f"color: {theme.CARAMEL};")
+        text.addWidget(cost)
+    row.addLayout(text, 1)
+    if big:
+        row.addWidget(cost)
+        row.addWidget(button("삭제", "outline", on_remove))
+    else:
+        remove = button("×", "outline", on_remove)
+        side = 34 if theme.SCALE == 1 else 40
+        remove.setFixedSize(side, side)
+        remove.setStyleSheet("padding: 0;")
+        row.addWidget(remove, alignment=Qt.AlignmentFlag.AlignTop)
+    return box
+
+
 class TapLabel(QLabel):
     """눌리면 on_tap()을 부르는 그림 글자 (메뉴 화면 로고 · 이스터에그)."""
 

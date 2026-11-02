@@ -9,9 +9,9 @@ settings["point_policy"] = {
     "visit_coupon_amount": 1000, # 방문 쿠폰 금액
     "visit_coupon_days": 0,      # 쿠폰 유효 일수 (0이면 그해 12월 31일까지)
     "eco_points": 100,           # 개인 컵(텀블러) 음료 1잔마다 주는 에코 포인트 (0이면 끔)
-    "card_first_discount": 10,   # 회원카드를 받은 뒤 첫 주문 음료 할인(%)
-    "card_bonus_rate": 1.0,      # 회원카드가 있으면 적립률에 더하는 %p
-    "card_reissue_fee": 1000,    # 분실 재발급 수수료(원, 카운터에서 받음)
+    "card_price": 1000,          # 회원카드 값(원, 음료와 함께 결제 · 감사 쿠폰을 준다)
+    "card_point_rate": 3.0,      # 카드를 등록한 회원의 적립률(%) — 기본 적립률 대신
+    "card_reissue_fee": 1000,    # 분실 재발급 카드 값(원)
     "events": [ {이벤트}, ... ],
 }
 
@@ -44,8 +44,8 @@ DEFAULT_POLICY = {
     "visit_coupon_amount": 1000,
     "visit_coupon_days": 0,
     "eco_points": 100,
-    "card_first_discount": 10,
-    "card_bonus_rate": 1.0,
+    "card_price": 1000,
+    "card_point_rate": 3.0,
     "card_reissue_fee": 1000,
     "events": [],
 }
@@ -83,15 +83,15 @@ def validate_policy(raw: dict) -> dict:
     eco = int(policy["eco_points"])
     if not 0 <= eco <= 1000:
         raise ValueError("에코 포인트는 0~1000P 사이로 입력하세요")
-    card_discount = int(policy["card_first_discount"])
-    card_bonus = float(policy["card_bonus_rate"])
+    card_price = int(policy["card_price"])
+    card_rate = float(policy["card_point_rate"])
     card_fee = int(policy["card_reissue_fee"])
-    if not 0 <= card_discount <= 50 or not 0 <= card_bonus <= 10 or card_fee < 0:
-        raise ValueError("회원카드 값: 첫 주문 할인 0~50%, 추가 적립 0~10%p, 재발급 수수료 0원 이상")
+    if not 0 <= card_price <= 50000 or not 0 <= card_rate <= 20 or not 0 <= card_fee <= 50000:
+        raise ValueError("회원카드 값: 카드값 · 재발급 0~50,000원, 카드 회원 적립률 0~20%")
     return {
         "base_rate": rate, "point_unit": unit, "min_use": min_use, "max_use_percent": max_percent,
         "visit_coupon_every": every, "visit_coupon_amount": amount, "visit_coupon_days": days,
-        "eco_points": eco, "card_first_discount": card_discount, "card_bonus_rate": card_bonus,
+        "eco_points": eco, "card_price": card_price, "card_point_rate": card_rate,
         "card_reissue_fee": card_fee, "events": [validate_event(e) for e in policy.get("events", [])],
     }
 

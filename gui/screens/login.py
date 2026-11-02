@@ -19,6 +19,12 @@ from gui.widgets import (Card, FixedWidthCard, TouchKeyboard, button, label, lin
                          promo_row, text_field)
 
 
+def session_unused(session, customer):
+    """결제했지만 아직 등록하지 않은 카드가 있는지 (분실 신고 대상)."""
+    from domain.member_cards import unused_card
+    return unused_card(session.vault, customer["id"]) is not None
+
+
 def nav_bar(router, back):
     """화면 맨 아래 공통 버튼: ← 뒤로 가기 · 처음으로."""
     row = QHBoxLayout()
@@ -108,9 +114,9 @@ class LoginScreen(QWidget):
         self.enroll_note = label("다음부터 카메라만 보면 바로 로그인돼요", 14, muted=True)
         self.enroll_note.setContentsMargins(28, 0, 0, 4)
         options.addWidget(self.enroll_note)
-        self.card_check = option_check("회원카드 신청 (무료)")
+        self.card_check = option_check("회원카드 신청 (장바구니에 담겨요)")
         options.addWidget(self.card_check)
-        self.card_note = label("", 14, muted=True)
+        self.card_note = label("", 14, muted=True, guide=True)
         self.card_note.setStyleSheet(f"color: {theme.CARAMEL};")
         self.card_note.setContentsMargins(28, 0, 0, 0)
         options.addWidget(self.card_note)
@@ -163,7 +169,8 @@ class LoginScreen(QWidget):
         for widget in (self.password_button, self.options_box, self.lost_card_link):
             widget.setVisible(not face)
         if not face:
-            self.card_note.setText(perks_text(self.router.session.policy()))
+            self.card_note.setText(perks_text(self.router.session.policy(),
+                                              self.vault().read("settings", default={})))
             self.reissue_armed = None
         self.fail_box.setVisible(False)
         self.face_button.setText("얼굴 인증")     # 다음 손님에게는 '재시도'가 아니라 처음 상태로
@@ -287,12 +294,12 @@ class LoginScreen(QWidget):
             return
         session = self.router.session
         note = ""
-        if self.card_check.isChecked():                    # 회원카드 신청 → 운영자 '회원카드 발급'으로
+        if self.card_check.isChecked():                    # 회원카드 → 장바구니 (음료와 함께 결제)
             session.login(customer)
             try:
-                session.request_card("new")
-                self.router.audit("card_requested", customer["id"])
-                note = "회원카드를 신청했어요.\n직원 승인 뒤 카운터에서 받아 가세요."
+                session.add_card("new")
+                self.router.audit("card_in_cart", customer["id"])
+                note = "회원카드를 장바구니에 담았어요.\n음료와 함께 결제하면 음료 나올 때 드려요."
             except ValueError as error:
                 note = str(error)
         if self.enroll_check.isChecked():                  # 얼굴 등록 화면 → 끝나면 주문으로
@@ -309,9 +316,8 @@ class LoginScreen(QWidget):
         self.message.setText(text)
 
     def report_lost_card(self):
-        """'회원카드를 잃어버렸어요' (11/02): 비밀번호로 본인 확인 → 한 번 더 누르면 예전 카드를 막고 재발급 신청.
-
-        재발급은 운영자 화면 '회원카드 발급'으로 넘어가고, 새 카드는 카운터에서 받는다(수수료).
+        """'회원카드를 잃어버렸어요': 비밀번호로 본인 확인 → 한 번 더 누르면 예전 카드를 막고
+        재발급 카드(수수료)를 장바구니에 담은 채 주문으로 간다 (11/03).
         """
         if not self.password.text():
             self.say("회원 ID와 비밀번호를 넣고 다시 눌러 주세요", ok=False)
@@ -320,30 +326,25 @@ class LoginScreen(QWidget):
         if not customer:
             return
         session = self.router.session
-        session.login(customer)
-        status = session.card_status()
-        try:
-            if status.startswith("회원카드 승인") or status.startswith("회원카드 발급"):
-                self.say(status)
-            elif status != "회원카드 사용 중":
-                self.say("발급받은 회원카드가 없어요. '회원카드 신청'을 체크하고 로그인해 주세요", ok=False)
-            elif self.reissue_armed != customer["id"]:
-                self.reissue_armed = customer["id"]
-                fee = session.policy()["card_reissue_fee"]
-                self.say(f"예전 카드를 바로 막고 새 카드를 신청할까요? (재발급 수수료 {fee:,}원)\n"
-                         "비밀번호를 넣고 한 번 더 누르면 신청돼요")
-            else:
-                self.reissue_armed = None
-                session.request_card("reissue")
-                self.router.audit("card_reissue_requested", customer["id"])
-                self.say("분실 신고 · 재발급을 신청했어요. 예전 카드는 이제 쓸 수 없어요.\n"
-                         "직원 승인 뒤 카운터에서 새 카드를 받아 가세요")
-        except ValueError as error:
-            self.say(str(error), ok=False)
-        finally:
-            session.customer = None              # 신청만 하고 로그인 상태로 두지 않는다
-            self.login_id.setText(customer["extra"]["login_id"])
-            self.password.clear()
+        extra = customer["extra"]
+        if not (extra.get("card_hash") or extra.get("lost_card_hashes") or session_unused(session, customer)):
+            self.say("발급받은 회원카드가 없어요. '회원카드 신청'을 체크하고 로그인해 주세요", ok=False)
+        elif self.reissue_armed != customer["id"]:
+            self.reissue_armed = customer["id"]
+            fee = session.policy()["card_reissue_fee"]
+            self.say(f"예전 카드를 바로 막고 새 카드를 장바구니에 담을까요? (재발급 {fee:,}원)\n"
+                     "비밀번호를 넣고 한 번 더 누르면 돼요")
+        else:
+            self.reissue_armed = None
+            session.login(customer)
+            session.report_lost_card()
+            self.router.audit("card_lost", customer["id"])
+            self.router.start_member_order(session.customer)
+            self.router.notify("예전 카드를 막았어요. 이제 그 카드로는 쓸 수 없어요.\n"
+                               "새 카드를 장바구니에 담았어요 · 음료와 함께 결제해 주세요", 8)
+            return
+        self.login_id.setText(extra["login_id"])
+        self.password.clear()
 
     def customer_exists(self, login_id):
         return find_by_login_id(self.vault(), login_id) is not None

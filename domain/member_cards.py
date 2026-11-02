@@ -1,30 +1,30 @@
-"""회원카드 신청 · 운영자 승인 · 발급 · 분실 재발급 (11/01).
+"""회원카드 (11/03 바꿈): 장바구니에 담아 음료와 함께 결제 → 음료 나올 때 카드 받기 → 다음 주문 때 처음 대면 등록.
 
-발급 방식은 **운영자 승인**으로 정했다. 키오스크에는 카드를 내보내는 기계가 없으므로
-  ① 손님이 가입할 때(또는 로그인 화면에서) 신청 → ② 운영자 화면에 '승인 대기'로 넘어감
-  → ③ 운영자가 '허용'을 누르고 빈 카드를 리더기에 대면 그 카드 번호가 회원에게 할당됨
-  → ④ 카운터에서 손님에게 카드를 건넨다.
-분실하면 손님이 재발급을 신청하는 순간 예전 카드를 바로 막고(분실 신고), 재발급 수수료(기본 1,000원)는
-카운터에서 받는다.
-
-카드 혜택(운영자 정책 값): 카드를 받은 뒤 첫 주문 음료 10% 할인 · 매 주문 적립률 +1%p · 카드만 대면 로그인.
+키오스크와 운영자 PC가 서버로 이어져 있지 않아 '운영자 승인'은 시연이 어렵다. 그래서 승인 없이 결제로 받는다.
+  ① 가입 · 비밀번호 로그인 때 '회원카드 신청' 체크 → 장바구니에 '회원카드' 한 줄 (음료와 함께 결제)
+  ② 결제하면 카드 기록이 '미사용'으로 생기고 감사 쿠폰을 넣어 준다. 카드는 음료가 나올 때 같이 받는다.
+     (이때는 카드 번호를 모른다)
+  ③ 다음 주문 때 로그인하고 카드를 리더기에 처음 대면 그 번호가 회원에게 등록되고 '사용 중'이 된다.
+     그때부터 카드 회원 적립률(기본 3%)로 쌓이고, 카드만 대면 로그인한다.
+분실 신고하면 예전 카드를 바로 막고 재발급 카드(수수료)를 장바구니에 담는다.
 카드 번호(UID)는 회원 카드에 해시로만 저장하고, 화면·기록에는 끝 4자리만 보인다.
 """
 from datetime import datetime
 
 from core import schema
+from . import coupons
 from .customers import card_hash, link_card
 
-REQUESTS = "card_requests"
-KINDS = {"new": "신규 발급", "reissue": "분실 재발급"}
-STATUS = {"waiting": "승인 대기", "approved": "승인됨 · 카드 대기", "issued": "등록됨", "rejected": "거절",
-          "revoked": "등록 해제"}
-OPEN = ("waiting", "approved")
+REQUESTS = "card_requests"          # 카드 기록 (저장 이름은 예전 그대로)
+KINDS = {"new": "신규", "reissue": "분실 재발급"}
+STATUS = {"unused": "미사용", "issued": "사용 중", "revoked": "등록 해제"}
+LIVE = ("unused", "issued")
 
-CARD_DEFAULTS = {"card_first_discount": 10, "card_bonus_rate": 1.0, "card_reissue_fee": 1000}
+CARD_DEFAULTS = {"card_price": 1000, "card_point_rate": 3.0, "card_reissue_fee": 1000}
 
 
 def has_card(customer: dict | None) -> bool:
+    """카드 번호까지 등록된 회원 (카드 적립 · 카드 로그인)."""
     return bool(customer and customer["extra"].get("card_hash"))
 
 
@@ -32,113 +32,117 @@ def requests_of(vault) -> dict:
     return vault.read(REQUESTS, default={})
 
 
-def open_request(vault, customer_id: str) -> dict | None:
-    """이 회원의 처리 중인 신청 (승인 대기·카드 찍기 대기). 없으면 None."""
+def unused_card(vault, customer_id: str) -> dict | None:
+    """결제해서 받았지만 아직 리더기에 대 보지 않은 카드."""
     return next((r for r in requests_of(vault).values()
-                 if r["customer_id"] == customer_id and r["status"] in OPEN), None)
+                 if r["customer_id"] == customer_id and r["status"] == "unused"), None)
 
 
-def _save_request(vault, request: dict) -> None:
-    requests = requests_of(vault)
-    requests[request["id"]] = request
-    vault.write(REQUESTS, requests)
-
-
-def request_card(vault, customer_id: str, kind: str = "new", policy: dict | None = None,
-                 now: datetime | None = None) -> dict:
-    """회원카드를 신청한다. kind='reissue'(분실)이면 예전 카드를 바로 막고 수수료를 붙인다."""
-    if kind not in KINDS:
-        raise ValueError(f"없는 신청 종류입니다: {kind}")
-    customers = vault.read("customers", default={})
-    if customer_id not in customers:
-        raise ValueError("회원을 찾을 수 없어요")
-    record = customers[customer_id]
-    pending = open_request(vault, customer_id)
-    if pending:
-        raise ValueError(f"이미 신청한 회원카드가 있어요 ({STATUS[pending['status']]}) · 카운터에 물어봐 주세요")
-    if kind == "new" and has_card(record):
-        raise ValueError("이미 회원카드가 있어요. 잃어버렸으면 분실 재발급을 신청해 주세요")
-    if kind == "reissue" and not (has_card(record) or record["extra"].get("card_issued_at")):
-        raise ValueError("발급받은 회원카드가 없어요. 먼저 회원카드를 신청해 주세요")
+def card_price(kind: str, policy: dict | None = None) -> int:
     policy = {**CARD_DEFAULTS, **(policy or {})}
+    return policy["card_reissue_fee"] if kind == "reissue" else policy["card_price"]
+
+
+def card_point_bonus(policy: dict) -> float:
+    """카드 회원 적립률(기본 3%)이 되도록 기본 적립률에 더할 %p."""
+    policy = {**CARD_DEFAULTS, **policy}
+    return max(0.0, float(policy["card_point_rate"]) - float(policy.get("base_rate", 1.0)))
+
+
+def check_can_buy(vault, customer: dict, kind: str) -> None:
+    """장바구니에 카드를 담아도 되는지. 안 되면 ValueError(손님에게 보일 말)."""
+    if kind not in KINDS:
+        raise ValueError(f"없는 카드 종류입니다: {kind}")
+    if unused_card(vault, customer["id"]):
+        raise ValueError("받으신 회원카드를 아직 등록하지 않았어요.\n로그인한 뒤 카드를 리더기에 대 주세요")
+    extra = customer["extra"]
+    if kind == "new" and (has_card(customer) or extra.get("lost_card_hashes")):
+        raise ValueError("이미 회원카드가 있어요. 잃어버렸으면 '회원카드를 잃어버렸어요'를 눌러 주세요")
+    if kind == "reissue" and not (has_card(customer) or extra.get("lost_card_hashes")):
+        raise ValueError("발급받은 회원카드가 없어요. '회원카드 신청'을 체크하고 로그인해 주세요")
+
+
+def report_lost(vault, customer_id: str, now: datetime | None = None) -> dict:
+    """분실 신고: 예전 카드를 지금부터 못 쓰게 막는다 (등록 전 카드면 그 기록을 닫는다)."""
+    customers = vault.read("customers", default={})
+    record = customers.get(customer_id)
+    if record is None:
+        raise ValueError("회원을 찾을 수 없어요")
     now = now or datetime.now()
-    if kind == "reissue" and has_card(record):          # 분실 신고: 예전 카드는 지금부터 못 쓴다
-        record["extra"].setdefault("lost_card_hashes", []).append(record["extra"].pop("card_hash"))
-        record["extra"]["card_lost_at"] = now.isoformat(timespec="seconds")
-        schema.touch(record)
-        vault.write("customers", customers)
+    extra = record["extra"]
+    if has_card(record):
+        extra.setdefault("lost_card_hashes", []).append(extra.pop("card_hash"))
+    extra["card_lost_at"] = now.isoformat(timespec="seconds")
+    schema.touch(record)
+    vault.write("customers", customers)
+    requests = requests_of(vault)
+    for request in requests.values():
+        if request["customer_id"] == customer_id and request["status"] in LIVE:
+            request.update(status="revoked", decided_at=now.isoformat(timespec="seconds"), by="분실 신고")
+    vault.write(REQUESTS, requests)
+    return record
+
+
+def thanks_coupon(settings: dict | None) -> dict | None:
+    """카드 결제 감사 쿠폰 종류 (운영자가 쿠폰 화면에서 지웠으면 None)."""
+    return next((t for t in coupons.templates(settings) if t["id"] == coupons.CARD_THANKS_TEMPLATE), None)
+
+
+def purchase_card(vault, customer_id: str, kind: str, order_id: str, price: int,
+                  now: datetime | None = None) -> dict:
+    """결제가 끝난 카드: '미사용' 기록을 만들고, 신규 카드면 감사 쿠폰을 넣는다."""
+    now = now or datetime.now()
     request = {
         "id": schema.next_id("R", requests_of(vault)), "customer_id": customer_id, "kind": kind,
-        "fee": policy["card_reissue_fee"] if kind == "reissue" else 0, "status": "waiting",
+        "fee": price, "status": "unused", "order_id": order_id,
         "requested_at": now.isoformat(timespec="seconds"), "decided_at": "", "issued_at": "",
         "card_tail": "", "by": "",
     }
-    _save_request(vault, request)
+    requests = requests_of(vault)
+    requests[request["id"]] = request
+    vault.write(REQUESTS, requests)
+    if kind == "new" and thanks_coupon(vault.read("settings", default={})):
+        coupons.issue(vault, [customer_id], coupons.CARD_THANKS_TEMPLATE, "자동", reason="회원카드 감사",
+                      today=now.date())
     return request
 
 
-def _get(vault, request_id: str, status: str) -> dict:
-    request = requests_of(vault).get(request_id)
+def register_first_tap(vault, customer_id: str, card_uid: str, now: datetime | None = None) -> dict:
+    """받은 카드를 처음 리더기에 댔다: 번호를 회원에게 등록하고 '사용 중'으로. 분실·남의 카드는 거절."""
+    request = unused_card(vault, customer_id)
     if request is None:
-        raise ValueError("신청을 찾을 수 없어요")
-    if request["status"] != status:
-        raise ValueError(f"지금은 할 수 없어요 · 신청 상태: {STATUS[request['status']]}")
-    return request
-
-
-def approve_request(vault, request_id: str, admin_id: str, now: datetime | None = None) -> dict:
-    """운영자 '허용'. 다음은 빈 카드를 리더기에 대서 issue_card."""
-    request = _get(vault, request_id, "waiting")
-    request.update(status="approved", decided_at=(now or datetime.now()).isoformat(timespec="seconds"),
-                   by=admin_id)
-    _save_request(vault, request)
-    return request
-
-
-def reject_request(vault, request_id: str, admin_id: str, now: datetime | None = None) -> dict:
-    request = requests_of(vault).get(request_id)
-    if request is None or request["status"] not in OPEN:
-        raise ValueError("처리 중인 신청만 거절할 수 있어요")
-    request.update(status="rejected", decided_at=(now or datetime.now()).isoformat(timespec="seconds"),
-                   by=admin_id)
-    _save_request(vault, request)
-    return request
-
-
-def issue_card(vault, request_id: str, card_uid: str, admin_id: str, now: datetime | None = None) -> dict:
-    """허용된 신청에 빈 카드를 할당한다. 이미 누가 쓰거나 분실 신고된 카드는 거절."""
-    request = _get(vault, request_id, "approved")
-    digest = card_hash(card_uid)
-    customers = vault.read("customers", default={})
-    if any(digest in record["extra"].get("lost_card_hashes", []) for record in customers.values()):
-        raise ValueError("분실 신고된 카드예요. 다른 빈 카드를 대 주세요")
-    link_card(vault, request["customer_id"], card_uid)    # 다른 회원 카드면 여기서 ValueError
+        raise ValueError("등록할 회원카드가 없어요")
+    if is_lost_card(vault, card_uid):
+        raise ValueError("분실 신고된 카드예요. 받으신 새 카드를 대 주세요")
+    link_card(vault, customer_id, card_uid)              # 다른 회원 카드면 여기서 ValueError
     now = now or datetime.now()
     customers = vault.read("customers", default={})
-    record = customers[request["customer_id"]]
+    record = customers[customer_id]
     record["extra"]["card_issued_at"] = now.isoformat(timespec="seconds")
-    if request["kind"] == "new":
-        record["extra"]["card_first_discount"] = True   # 카드 받은 뒤 첫 주문 할인
     schema.touch(record)
     vault.write("customers", customers)
-    request.update(status="issued", issued_at=now.isoformat(timespec="seconds"),
-                   card_tail=card_uid.strip().upper()[-4:], by=admin_id)
-    _save_request(vault, request)
-    return request
+    requests = requests_of(vault)
+    requests[request["id"]].update(status="issued", issued_at=now.isoformat(timespec="seconds"),
+                                   card_tail=card_uid.strip().upper()[-4:], by="첫 태그")
+    vault.write(REQUESTS, requests)
+    return requests[request["id"]]
 
 
 def unregister_card(vault, request_id: str, admin_id: str, now: datetime | None = None) -> dict:
-    """등록 해제 (11/02): 등록된 카드를 회원에게서 뗀다. 그 카드로는 더 로그인할 수 없다."""
-    request = _get(vault, request_id, "issued")
-    customers = vault.read("customers", default={})
-    record = customers.get(request["customer_id"])
-    if record is not None:
-        record["extra"].pop("card_hash", None)
-        record["extra"].pop("card_first_discount", None)
-        schema.touch(record)
-        vault.write("customers", customers)
+    """운영자 '등록 해제': 그 카드로는 더 로그인 · 적립할 수 없다 (등록 전 카드도 닫는다)."""
+    requests = requests_of(vault)
+    request = requests.get(request_id)
+    if request is None or request["status"] not in LIVE:
+        raise ValueError("미사용 · 사용 중인 카드만 등록 해제할 수 있어요")
+    if request["status"] == "issued":
+        customers = vault.read("customers", default={})
+        record = customers.get(request["customer_id"])
+        if record is not None:
+            record["extra"].pop("card_hash", None)
+            schema.touch(record)
+            vault.write("customers", customers)
     request.update(status="revoked", decided_at=(now or datetime.now()).isoformat(timespec="seconds"), by=admin_id)
-    _save_request(vault, request)
+    vault.write(REQUESTS, requests)
     return request
 
 
@@ -154,31 +158,20 @@ def is_lost_card(vault, card_uid: str) -> bool:
 
 
 def card_status_text(vault, customer: dict) -> str:
-    """회원에게 보여 줄 한 줄: 카드 없음 / 승인 대기 / 카운터에서 받기 / 사용 중."""
-    pending = open_request(vault, customer["id"])
-    if pending and pending["status"] == "waiting":
-        return "회원카드 승인 대기 중"
-    if pending:
-        return "회원카드 발급 중 · 카운터에서 받아 가세요"
+    """회원에게 보여 줄 한 줄: 카드 없음('') / 등록 전 / 사용 중."""
+    if unused_card(vault, customer["id"]):
+        return "회원카드 등록 전"
     if has_card(customer):
         return "회원카드 사용 중"
     return ""
 
 
-def perks_text(policy: dict | None = None) -> str:
-    """회원카드 혜택 한 줄 (운영자 정책 값 그대로): '첫 주문 10% 할인 · 매 주문 적립 추가 +1%p'."""
+def perks_text(policy: dict | None = None, settings: dict | None = None) -> str:
+    """회원카드 혜택 한 줄: '카드값 1,000원 · 감사 쿠폰 1,000원 · 매 주문 3% 적립'."""
     policy = {**CARD_DEFAULTS, **(policy or {})}
-    parts = []
-    if policy["card_first_discount"]:
-        parts.append(f"첫 주문 {policy['card_first_discount']}% 할인")
-    if policy["card_bonus_rate"]:
-        parts.append(f"매 주문 적립 추가 +{policy['card_bonus_rate']:g}%p")
-    return " · ".join(parts) or "카드만 대면 바로 로그인"
-
-
-def first_card_discount(customer: dict | None, total: int, policy: dict | None = None) -> int:
-    """카드 받은 뒤 첫 주문 할인 (10원 단위 버림). 해당 없으면 0."""
-    if not has_card(customer) or not customer["extra"].get("card_first_discount"):
-        return 0
-    percent = {**CARD_DEFAULTS, **(policy or {})}["card_first_discount"]
-    return total * percent // 100 // 10 * 10
+    parts = [f"카드값 {policy['card_price']:,}원" if policy["card_price"] else "카드 무료"]
+    thanks = thanks_coupon(settings)
+    if thanks:
+        parts.append(f"감사 쿠폰 {thanks['amount']:,}원")
+    parts.append(f"매 주문 {policy['card_point_rate']:g}% 적립")
+    return " · ".join(parts)

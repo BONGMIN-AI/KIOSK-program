@@ -18,7 +18,7 @@ from domain.tickets import depart_text, ticket_summary, until_text
 from domain.titles import title_name
 from gui import theme
 from gui.screens.ticket import TicketCartLine, notice_label
-from gui.widgets import FixedWidthCard, Card, button, label, menu_icon
+from gui.widgets import FixedWidthCard, Card, button, card_cart_line, label, menu_icon
 
 CASH_UNITS = (50000, 10000, 5000, 1000, 500, 100)
 
@@ -126,6 +126,9 @@ class CartScreen(QWidget):
         clear(self.lines)
         for ticket in self.session.tickets:
             self.lines.addWidget(TicketCartLine(self.session, ticket, self.remove_ticket, big=True))
+        if self.session.card_kind:
+            self.lines.addWidget(card_cart_line(self.session.card_label(), self.session.card_total(),
+                                                self.remove_card, big=True))
         lines = self.session.lines()
         for line in lines:
             self.lines.addWidget(self.make_line(line))
@@ -175,6 +178,10 @@ class CartScreen(QWidget):
 
     def remove_ticket(self, hold_id):
         self.session.remove_ticket(hold_id)
+        self.on_show()
+
+    def remove_card(self):
+        self.session.remove_card()
         self.on_show()
 
     def make_line(self, line):
@@ -609,13 +616,18 @@ class DoneScreen(QWidget):
             row.addStretch()
             row.addWidget(label(theme.won(ticket["total"]), 15, bold=True))
             self.receipt.addLayout(row)
+        if order.get("card_kind"):
+            row = QHBoxLayout()
+            row.addWidget(label(f"회원카드 ({'신규' if order['card_kind'] == 'new' else '분실 재발급'})", 15))
+            row.addStretch()
+            row.addWidget(label(theme.won(order["card_total"]), 15, bold=True))
+            self.receipt.addLayout(row)
         if order.get("tickets"):
             self.receipt.addWidget(label("  (승차권은 쿠폰·포인트 할인·적립 제외)", 13, muted=True))
         if any(p["benefit"] != "없음" for t in order.get("tickets", []) for p in t["passengers"]):
             self.receipt.addWidget(label("  할인 승차권은 승차 때 증명서 확인", 13, muted=True))
         self.receipt.addStretch()
-        discount = (order.get("card_discount", 0) + order.get("smile_discount", 0) + order.get("coupon_discount", 0)
-                    + order.get("points_used", 0))
+        discount = order.get("smile_discount", 0) + order.get("coupon_discount", 0) + order.get("points_used", 0)
         rows = [("주문 금액", theme.won(order["total"]))]
         if discount:
             rows.append(("할인", f"−{theme.won(discount)}"))
@@ -641,6 +653,10 @@ class DoneScreen(QWidget):
         lines.append(f"포인트 잔액 {member['points']:,}P · 방문 {member['visits']}회")
         if order.get("issued_coupon"):
             lines.append(f"새 쿠폰: {order['issued_coupon']}")
+        if order.get("card_kind"):
+            lines.append("회원카드는 음료와 함께 받아 가세요\n다음 주문 때 로그인하고 카드를 대면 등록돼요")
+        if order.get("card_thanks"):
+            lines.append(f"감사 쿠폰: {order['card_thanks']}")
         for text in lines:
             self.receipt.addWidget(label(text, 15))
         for title in order.get("new_titles", []):
