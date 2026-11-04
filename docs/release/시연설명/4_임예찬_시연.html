@@ -1,0 +1,30 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>4. 임예찬 시연</title><style>
+:root { --bg:#F7EEE3; --card:#FFFFFF; --brown:#3C1B03; --caramel:#B66B2E; --light:#F1DFCB; --line:#E6D6C4;
+        --text2:#7A6252; --ok:#2E7D4F; --okbg:#E6F4EA; --say:#FBF5EE; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--brown); font-family:"Noto Sans KR","Malgun Gothic",sans-serif;
+       font-size:19px; line-height:1.55; }
+main { max-width:860px; margin:0 auto; padding:24px 16px 60px; }
+header { background:var(--brown); color:#fff; border-radius:22px; padding:22px 26px; margin-bottom:18px; }
+header h1 { margin:0; font-size:30px; } header p { margin:6px 0 0; color:#F1DFCB; font-size:18px; }
+.who { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:16px 20px; margin-bottom:18px; }
+.who b { color:var(--caramel); }
+.part { font-size:24px; margin:28px 0 10px; padding-left:12px; border-left:6px solid var(--caramel); }
+.step { display:grid; grid-template-columns:64px 1fr; gap:14px; background:var(--card); border:1px solid var(--line);
+        border-radius:18px; padding:16px 18px; margin:12px 0; }
+.num { width:56px; height:56px; border-radius:50%; background:var(--caramel); color:#fff; font-size:28px; font-weight:800;
+       display:flex; align-items:center; justify-content:center; }
+.todo { font-size:22px; font-weight:800; }
+.see { margin-top:8px; background:var(--okbg); color:var(--ok); border-radius:10px; padding:8px 12px; font-weight:700; }
+.see::before { content:"화면에 나오면 성공 ▸ "; font-weight:400; }
+.say { margin-top:8px; background:var(--say); border-radius:10px; padding:8px 12px; color:var(--text2); }
+.say::before { content:"팀장 설명 ▸ "; font-weight:700; color:var(--caramel); }
+.gear { display:inline-block; margin-left:8px; background:var(--light); color:var(--brown); border-radius:999px;
+        padding:2px 10px; font-size:15px; font-weight:700; vertical-align:middle; }
+code { background:var(--light); border-radius:6px; padding:1px 8px; font-size:20px; }
+.tip { background:var(--light); border-radius:14px; padding:12px 16px; margin:14px 0; font-size:17px; }
+.toc { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.toc a { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:6px 14px; color:var(--brown);
+         text-decoration:none; font-weight:700; font-size:16px; }
+@media print { body { background:#fff; } .step { break-inside:avoid; } }
+</style></head><body><main><header><h1>4. 임예찬 시연</h1><p>예매표 출력 (이름 + 휴대폰 번호) · 비회원 주문 · 예매표 0원 · 커피와 함께 결제</p></header><div class="tip"><b>켜기</b>: 팀장 노트북에서 시연 모드 (카메라 · 카드 리더 연결). 순서대로 이어서 해요 (앞 사람이 가입한 회원 · 등록한 얼굴이 그대로 남아 있어야 해요 · 중간에 프로그램을 끄지 않기).<br>꼬였으면 <b>처음으로</b> / <b>로그아웃</b> → 그 단계부터 다시. 비밀번호는 모두 <code>1234</code>.</div><h2 class="part" id="p4">4. 임예찬</h2><div class="who"><b>로그인</b> 비회원 (아이디 없음)<br><b>보여 줄 것</b> 예매표 출력 (이름 + 휴대폰 번호) · 비회원 주문 · 예매표 0원 · 커피와 함께 결제</div><div class="step"><div class="num">1</div><div><div class="todo">대기 화면 누르기 → <b>매장에서 먹어요</b> → <b>비회원 주문</b></div><div class="see">메뉴 화면 · 위쪽 ‘비회원 주문’</div><div class="say">회원이 아니어도 바로 주문할 수 있어요.</div></div></div><div class="step"><div class="num">2</div><div><div class="todo"><b>승차권</b> 탭 → <b>예매표 출력</b></div><div class="see">예매표 출력 · 조회 (이름 + 휴대폰 번호)</div></div></div><div class="step"><div class="num">3</div><div><div class="todo">이름 <code>임예찬</code> · 휴대폰 번호 <code>01020072007</code> → <b>조회</b></div><div class="see">예매한 표 2장 · 출발까지 남은 시간</div><div class="say">인터넷이나 앱으로 예매한 표를 이름과 휴대폰 번호로 찾아요. 예매번호로도 돼요.</div></div></div><div class="step"><div class="num">4</div><div><div class="todo">뒤의 표를 눌러 체크를 빼고 → <b>장바구니에 담기</b></div><div class="see">‘장바구니에 담았어요 · ○번 승차장’ · 장바구니에 예매표 0원</div><div class="say">이미 돈을 낸 표라서 0원으로 담겨요. 결제를 마치면 출력돼요.</div></div></div><div class="step"><div class="num">5</div><div><div class="todo"><b>음료 고르기</b> → <b>커피</b>에서 하나 → <b>장바구니 담기</b></div><div class="see">장바구니에 예매표 + 음료</div><div class="say">표를 받으면서 커피도 같이 사요.</div></div></div><div class="step"><div class="num">6</div><div><div class="todo"><b>장바구니 확인</b> → <b>결제하기</b> → 돈 넣기 → <b>투입 취소 · 반환</b></div><div class="see">넣은 현금이 그대로 돌아옴</div><div class="say">잘못 넣었으면 언제든 돌려받을 수 있어요.</div></div></div><div class="step"><div class="num">7</div><div><div class="todo">다시 돈 넣기 → <b>결제 완료</b></div><div class="see">완료 화면 · 대기 번호 · 승차권 정보</div><div class="say">비회원은 대기 번호로 불러요.</div></div></div><div class="step"><div class="num">8</div><div><div class="todo"><b>아니요 · 끝내기</b> → <b>비회원 주문</b> → <b>승차권</b> → <b>예매표 출력</b> → 같은 이름 · 번호로 조회</div><div class="see">방금 받은 표는 빠지고 1장만 나옴</div><div class="say">한 번 출력한 표는 다시 출력되지 않아요.</div></div></div><div class="step"><div class="num">9</div><div><div class="todo"><b>처음으로</b></div><div class="see">처음 화면</div></div></div></main></body></html>

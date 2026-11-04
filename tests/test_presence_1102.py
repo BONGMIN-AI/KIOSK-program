@@ -45,7 +45,7 @@ def test_approach_starts_from_idle(kiosk):
     router.check_presence()
     assert router.current_name == "idle"        # 1초(2번)는 머물러야
     router.check_presence()
-    assert router.current_name == "home"
+    assert router.current_name == "idle" and router.choosing_dine()   # 다가오면 대기 화면 위에 매장 / 포장
 
 
 def test_away_asks_then_leaves_and_refunds(kiosk):
@@ -77,9 +77,9 @@ def test_away_no_and_return_close_box(kiosk):
     assert not router.away_box.isVisible() and router.current_name == "menu"
     router.last_seen = time.monotonic() - 100
     router.check_presence()
-    sensor.distance = 0.7                       # 돌아오면 저절로 닫힌다
+    sensor.distance = 0.7                       # 11/03: 돌아와도 닫히지 않는다 (다음 사람이 로그아웃을 누를 수 있게)
     router.check_presence()
-    assert not router.away_box.isVisible() and router.current_name == "menu"
+    assert router.away_box.isVisible() and router.current_name == "menu"
 
 
 def test_presence_off_in_settings_and_camera_handover(kiosk):
@@ -97,3 +97,22 @@ def test_presence_off_in_settings_and_camera_handover(kiosk):
     seen = []
     router.run_face(lambda face: seen.append(sensor.paused))
     assert seen == [True] and not sensor.paused  # 얼굴 인증 동안 카메라를 놓고, 끝나면 다시
+
+
+def test_sitting_close_does_not_restart_until_stepping_back(kiosk):
+    """11/03: 이미 앞에 앉아 있으면 대기 화면으로 돌아와도 바로 시작하지 않는다 → 1m 밖으로 한 번 물러났다가 다가오면 시작."""
+    window, sensor = kiosk
+    router = window.router
+    window.camera_status.show()
+    sensor.distance = 0.4
+    for _ in range(4):
+        router.check_presence()
+    assert router.current_name == "idle" and "물러났다가" in window.camera_status.text()
+    assert "0.40m" in window.camera_status.text()
+    sensor.distance = 1.6
+    router.check_presence()
+    assert "다가오면 시작" in window.camera_status.text()
+    sensor.distance = 0.5
+    router.check_presence()
+    router.check_presence()
+    assert router.choosing_dine()

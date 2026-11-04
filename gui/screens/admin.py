@@ -8,14 +8,16 @@
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox,
-                               QHBoxLayout, QHeaderView, QLabel, QScrollArea, QStackedWidget, QTableWidget, QTableWidgetItem,
+import numpy as np
+from PySide6.QtCore import QElapsedTimer, QPointF, Qt, QTimer
+from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QFrame,
+                               QHBoxLayout, QHeaderView, QLabel, QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
 import config
-from core import audit, auth, schema
+from core import admin_badge, audit, auth, schema
+from face import guide_view
 from core.validators import mask_phone
 from domain import member_cards as card_logic
 from domain import policy as policy_logic
@@ -39,6 +41,21 @@ SECTIONS = [
     ("기록", [("log", "운영 기록")]),
 ]
 TABS = [item for _, items in SECTIONS for item in items]
+def chevron(opened, size=14):
+    """묶음 이름 앞 화살표 그림 (펼침 ∨ · 접힘 >). 글꼴에 ▾ ▸가 없어 네모로 보여서 직접 그린다."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor(theme.TEXT2), 2)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    painter.setPen(pen)
+    s = size
+    points = ([QPointF(s * 0.2, s * 0.35), QPointF(s * 0.5, s * 0.65), QPointF(s * 0.8, s * 0.35)] if opened
+              else [QPointF(s * 0.35, s * 0.2), QPointF(s * 0.65, s * 0.5), QPointF(s * 0.35, s * 0.8)])
+    painter.drawPolyline(points)
+    painter.end()
+    return QIcon(pixmap)
 CARD_SECONDS = 20          # 허용 뒤 빈 카드를 찍을 시간 (기본값 · 운영자 '키오스크 설정'에서 바꿈)
 THEME_NAMES = policy_logic.THEMES
 
@@ -188,17 +205,73 @@ class AdminLoginScreen(QWidget):
                           "메뉴 추가·조회·수정·삭제 · 가격·품절 관리 · 회원·주문 조회 · 이벤트·포인트 · "
                           "포인트 조정·감사 로그 · KIOSK 종료\n실패 시 \"운영자 계정을 확인해 주세요\"")
         right.addWidget(box)
-        keyboard = TouchKeyboard()
+        self.keyboard = keyboard = TouchKeyboard()
         keyboard.attach(self.admin_id, self.password)
         right.addWidget(keyboard)
+        # 11/04 회의: 얼굴 확인은 큰 카메라 창 대신 이 칸 안에서 (회원 로그인처럼 라떼 얼굴 + 지금 할 일 한 줄)
+        self.face_step = label("", 20, bold=True)
+        self.face_step.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.face_step.setWordWrap(True)
+        self.face_step.hide()
+        right.addWidget(self.face_step)
+        self.face_picture = QLabel()
+        self.face_picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.face_picture.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.face_picture.setStyleSheet("background: rgb(250, 250, 250); border-radius: 16px;")
+        self.face_picture.hide()
+        right.addWidget(self.face_picture, 1)
+        self.cancel_face_button = button("얼굴 확인 취소", "outline", self.cancel_face)
+        self.cancel_face_button.hide()
+        right.addWidget(self.cancel_face_button)
+        self.face_cancelled = False
         right.addStretch()
         body.addWidget(right_card)
         layout.addLayout(body, 1)
         layout.addLayout(nav_bar(router, lambda: router.show_screen("home")))
 
-    def on_show(self):
+    def on_show(self, badge=False):
+        """badge=True: 관리자 카드를 대고 들어왔다 (11/04) → 바로 이 화면 안에서 운영자 얼굴 확인."""
         self.password.clear()
         self.message.setText("")
+        if badge:
+            self.admin_id.setText(admin_badge.ADMIN_ID)
+            QTimer.singleShot(0, self, lambda: self.face_login(badge=True))
+
+    # 화면 안 얼굴 확인 (회원 로그인 화면과 같은 방식)
+    def begin_face(self, text):
+        self.face_cancelled = False
+        self.keyboard.hide()
+        self.face_step.setText(text)
+        for widget in (self.face_step, self.face_picture, self.cancel_face_button):
+            widget.show()
+        self.repaint()
+
+    def end_face(self):
+        for widget in (self.face_step, self.face_picture, self.cancel_face_button):
+            widget.hide()
+        self.face_picture.clear()
+        self.keyboard.show()
+
+    def cancel_face(self):
+        self.face_cancelled = True
+
+    def show_step(self, text):
+        self.face_step.setText(text)
+
+    def show_face(self, image, wait_ms=1):
+        """얼굴 공급자가 프레임마다 부른다: 안내 그림에서 라떼 얼굴 둘레만 잘라 이 칸에 그린다."""
+        cx, cy = guide_view.ROI_CENTER
+        part = np.ascontiguousarray(image[cy - 190:cy + 190, cx - 190:cx + 190])
+        height, width = part.shape[:2]
+        frame = QImage(part.data, width, height, part.strides[0], QImage.Format.Format_BGR888).copy()
+        self.face_picture.setPixmap(QPixmap.fromImage(frame).scaled(
+            self.face_picture.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        clock = QElapsedTimer()
+        clock.start()
+        while True:
+            QApplication.processEvents()
+            if self.face_cancelled or clock.elapsed() >= wait_ms:
+                return self.face_cancelled
 
     def password_login(self):
         admin_id = self.admin_id.text().strip().lower()
@@ -214,22 +287,29 @@ class AdminLoginScreen(QWidget):
             self.password.clear()
         self.enter(admin_id, "비밀번호")
 
-    def face_login(self):
-        admin_id = self.admin_id.text().strip().lower()
-        key = auth.admin_face_key(admin_id)
+    def face_login(self, badge=False):
+        """운영자 얼굴 확인. badge=True면 관리자 카드에 같이 저장한 얼굴(data/admin_badge.bin)과 비교한다."""
+        admin_id = admin_badge.ADMIN_ID if badge else self.admin_id.text().strip().lower()
+        key = admin_badge.ADMIN_KEY if badge else auth.admin_face_key(admin_id)
         scores = []
+        self.message.setText("")
+        self.begin_face("관리자 카드 확인 · 카메라를 켜는 중이에요…" if badge else "카메라를 켜는 중이에요…")
         try:
-            matched = self.router.face().identify_face(key, scores.append)
+            matched = self.router.run_face(lambda provider: provider.identify_face(key, scores.append),
+                                           viewer=self.show_face, on_step=self.show_step,
+                                           vault=admin_badge.BadgeVault() if badge else None)
         except (FaceError, ValueError) as error:
+            self.end_face()
             self.message.setText(f"{error} · 비밀번호 로그인을 사용하세요")
             return
+        self.end_face()
         score = next((text for text in reversed(scores) if text.startswith("얼굴 유사도")), "")
         if matched != key:
             self.message.setText(f"얼굴이 일치하지 않습니다. 비밀번호 로그인을 사용하세요 · {score}")
             return
         if score:
-            print(f"[운영자 얼굴 로그인] {admin_id} · {score}")
-        self.enter(admin_id, "얼굴")
+            print(f"[운영자 얼굴 로그인] {admin_id} · {score}", flush=True)
+        self.enter(admin_id, "관리자 카드 + 얼굴" if badge else "얼굴")
 
     def enter(self, admin_id, how):
         self.router.admin_id = admin_id
@@ -268,22 +348,34 @@ class AdminScreen(QWidget):
         nav_scroll.setWidget(nav_inner)
         nav_box.addWidget(nav_scroll)
         tree = QVBoxLayout(nav_inner)
-        tree.setContentsMargins(8, 10, 8, 10)
-        tree.setSpacing(2)
+        tree.setContentsMargins(8, 8, 8, 8)
+        tree.setSpacing(1)
         self.tab_group = QButtonGroup(self)
+        # 11/04 회의 2: 색 칸 대신 굵은 묶음 이름 + 들여쓴 하위 목차. 묶음 이름을 누르면 접히고 다시 누르면 펼쳐진다
+        self.section_heads, self.section_tabs = {}, {}
         for section, items in SECTIONS:
-            head_label = label(section, 14, bold=True, muted=True)
-            head_label.setContentsMargins(8, 6, 0, 0)
-            tree.addWidget(head_label)
+            head = QPushButton(f" {section}")
+            head.setIcon(chevron(True))
+            head.setObjectName("section_head")
+            head.setCursor(Qt.CursorShape.PointingHandCursor)
+            head.setFont(theme.font(16, bold=True))
+            head.setMinimumHeight(34)
+            head.setStyleSheet(f"QPushButton#section_head {{ text-align: left; padding-left: 6px; border: none;"
+                               f" background: transparent; color: {theme.BROWN}; }}")
+            head.clicked.connect(lambda checked=False, s=section: self.toggle_section(s))
+            tree.addWidget(head)
+            self.section_heads[section] = head
+            self.section_tabs[section] = []
             for key, name in items:
                 tab = button(name, "category", lambda checked=False, k=key: self.show_tab(k))
                 tab.setCheckable(True)
                 tab.setObjectName(f"tab_{key}")
-                tab.setStyleSheet("text-align: left; padding-left: 12px;")
-                tab.setFont(theme.font(15, bold=True))
-                tab.setMinimumHeight(38)
+                tab.setStyleSheet("text-align: left; padding-left: 26px;")      # 들여쓰기
+                tab.setFont(theme.font(15))
+                tab.setMinimumHeight(34)          # 큰 글자에서도 글자가 눌리지 않는 높이
                 self.tab_group.addButton(tab)
                 tree.addWidget(tab)
+                self.section_tabs[section].append(tab)
         tree.addStretch()
         body.addWidget(nav)
         self.pages = QStackedWidget()
@@ -312,7 +404,19 @@ class AdminScreen(QWidget):
         self.who.setText(f"{self.router.admin_id} · 로그인됨")
         self.show_tab(tab)
 
+    def toggle_section(self, section, opened=None):
+        """묶음 이름을 누르면 하위 목차를 접고 펼친다 (11/04 회의 2)."""
+        tabs = self.section_tabs[section]
+        if opened is None:
+            opened = not tabs[0].isVisibleTo(self)
+        for tab in tabs:
+            tab.setVisible(opened)
+        self.section_heads[section].setIcon(chevron(opened))
+
     def show_tab(self, key):
+        for section, items in SECTIONS:              # 고른 목차가 접힌 묶음 안이면 펼친다
+            if any(k == key for k, _ in items) and not self.section_tabs[section][0].isVisibleTo(self):
+                self.toggle_section(section, True)
         self.pending_delete = None
         self.message.setText("")
         for tab in self.tab_group.buttons():
@@ -936,11 +1040,11 @@ class AdminScreen(QWidget):
         column = QVBoxLayout(page)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(10)
-        self.card_table = table(["", "회원 (아이디)", "종류", "카드값", "상태", "카드 번호", "결제 시각"])
+        self.card_table = table(["", "아이디", "이름", "칭호", "종류", "카드값", "상태", "카드 번호", "결제 시각"])
         header = self.card_table.horizontalHeader()
         for index in range(self.card_table.columnCount()):          # 글자 길이만큼 (회원 칸만 남는 폭을 채운다)
             header.setSectionResizeMode(index, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.card_table.itemChanged.connect(lambda _item: self.update_card_buttons())
         self.card_table.itemSelectionChanged.connect(self.update_card_buttons)
         column.addWidget(self.card_table, 1)
@@ -948,15 +1052,19 @@ class AdminScreen(QWidget):
         self.card_count = label("", 15, bold=True)
         actions.addWidget(self.card_count)
         actions.addStretch()
+        self.card_lost_button = button("분실 처리", "outline", self.mark_cards_lost)
         self.card_unregister_button = button("등록 해제", "outline", self.unregister_cards)
+        actions.addWidget(self.card_lost_button)
         actions.addWidget(self.card_unregister_button)
         column.addLayout(actions)
         return page
 
     # ---- 혜택 설정 (11/02): 회원카드 혜택 · 개인 컵 에코 포인트
     PERKS = (("card_price", "회원카드 값", "원", "1000"),
+             ("card_first_discount", "카드 등록한 주문 할인", "%", "10"),
              ("card_point_rate", "카드 회원 적립률", "%", "3"),
-             ("card_reissue_fee", "분실 재발급 카드 값", "원", "1000"),
+             ("card_stamp_goal", "스탬프 모으면 음료 무료", "개", "10"),
+             ("card_reissue_fee", "분실 재발급 카드 값", "원", "500"),
              ("eco_points", "개인 컵 에코 포인트", "P/잔", "100"))
 
     def make_perks_page(self):
@@ -981,7 +1089,12 @@ class AdminScreen(QWidget):
             row.addWidget(label(unit, 16, bold=True))
             row.addStretch(1)
             rows.addLayout(row)
-        column.addWidget(form)
+        scroll = QScrollArea()          # 혜택 칸이 많아 큰 글자 · 낮은 화면이면 위아래로 밀어 본다
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(form)
+        column.addWidget(scroll, 1)
         save = QHBoxLayout()
         save.addStretch()
         save.addWidget(button("혜택 저장", "primary", self.save_perks))
@@ -1021,9 +1134,9 @@ class AdminScreen(QWidget):
             return
         self.router.audit("card_perks_save", " ".join(f"{k}={policy[k]}" for k in self.perk_fields))
         self.load_perks()
-        self.done(f"혜택을 저장했어요 · {card_logic.perks_text(policy, self.vault().read('settings', default={}))}"
-                  f" · 재발급 {policy['card_reissue_fee']:,}원 · 개인 컵 {policy['eco_points']}P/잔\n"
-                  "감사 쿠폰 금액은 '쿠폰'에서 바꿔요")
+        self.done(f"혜택을 저장했어요 · {card_logic.perks_text(policy)}\n"
+                  f"재발급 {policy['card_reissue_fee']:,}원 · 개인 컵 {policy['eco_points']}P/잔 · "
+                  "무료 음료 쿠폰 금액은 '쿠폰'에서 바꿔요")
 
     def load_cards(self, keep=None):
         """카드 기록: 미사용(받았지만 아직 안 댐) · 사용 중 · 등록 해제. keep: 다시 그린 뒤 체크해 둘 기록들."""
@@ -1034,8 +1147,10 @@ class AdminScreen(QWidget):
                        key=lambda r: (order[r["status"]], r["requested_at"]))
         rows, keys = [], []
         for request in items:
-            extra = customers.get(request["customer_id"], {}).get("extra", {})
-            rows.append(["", f"{extra.get('nickname', '?')} ({extra.get('login_id', '')})",
+            record = customers.get(request["customer_id"], {})
+            extra = record.get("extra", {})
+            title = title_name(extra["title"]) if extra.get("title") else ""
+            rows.append(["", extra.get("login_id", ""), record.get("name", "?"), title,
                          card_logic.KINDS[request["kind"]], f"{request['fee']:,}원" if request["fee"] else "무료",
                          card_logic.STATUS[request["status"]], card_logic.masked_card(request["card_tail"]),
                          request["requested_at"][5:16].replace("T", " ")])
@@ -1052,9 +1167,22 @@ class AdminScreen(QWidget):
         return [requests[key] for key in checked_keys(self.card_table) if key in requests]
 
     def update_card_buttons(self):
-        """등록 해제는 미사용 · 사용 중 카드를 골랐을 때만."""
+        """분실 처리 · 등록 해제는 미사용 · 사용 중 카드를 골랐을 때만."""
         statuses = {request["status"] for request in self.checked_card_requests()}
-        self.card_unregister_button.setEnabled(bool(statuses & set(card_logic.LIVE)))
+        live = bool(statuses & set(card_logic.LIVE))
+        self.card_lost_button.setEnabled(live)
+        self.card_unregister_button.setEnabled(live)
+
+    def mark_cards_lost(self):
+        """손님이 카운터에서 분실을 알렸을 때: 예전 카드를 막는다. 손님은 My Menu에서 재발급 카드를 장바구니에 담는다."""
+        targets = {r["customer_id"] for r in self.checked_card_requests() if r["status"] in card_logic.LIVE}
+        for customer_id in targets:
+            card_logic.report_lost(self.vault(), customer_id)
+            self.router.audit("card_lost", customer_id)
+        self.load_cards()
+        fee = self.policy()["card_reissue_fee"]
+        self.done(f"{len(targets)}명 분실 처리했어요 · 예전 카드는 이제 못 써요\n"
+                  f"새 카드는 손님이 My Menu에서 재발급({fee:,}원)을 장바구니에 담아 결제해요")
 
     def unregister_cards(self):
         targets = [r["id"] for r in self.checked_card_requests() if r["status"] in card_logic.LIVE]
@@ -1389,7 +1517,7 @@ class AdminScreen(QWidget):
 
     def add_banner(self):
         file = self.banner_file.currentText()
-        fit = "contain" if file.startswith("promo_") else "cover"
+        fit = "contain"                  # 11/03: 메뉴 사진도 확대해 자르지 않고 전체가 보이게
         slides = self.banners() + [{"file": file, "caption": self.banner_caption.text().strip(), "fit": fit, "on": True}]
         self.banner_caption.clear()
         self.save_banners(slides, keep=[len(slides) - 1], note="광고를 맨 뒤에 추가했어요")

@@ -69,6 +69,7 @@ class OrderSession:
         self.eco_cup = False          # 회원: 개인 컵(텀블러)으로 받기 → 에코 포인트
         self.smiled = False           # 카메라로 웃음 확인 → 스마일 할인 (B9)
         self.card_kind = None         # 장바구니의 회원카드 'new' | 'reissue' (11/03, 회원만)
+        self.takeout = None           # 00-B에서 고른 값: True 포장 · False 매장 · None 아직 (11/03)
         self.benefit_note = ""        # 쿠폰·포인트 선택을 자동으로 풀었을 때 화면에 한 번 보여 줄 말
         self.inserted = 0
         self.last_order = None
@@ -143,7 +144,7 @@ class OrderSession:
         self.card_kind = kind
 
     def report_lost_card(self):
-        """분실 신고: 예전 카드를 바로 막고 재발급 카드를 장바구니에 담는다."""
+        """My Menu 분실 신고: 예전 카드를 바로 막고 재발급 카드를 장바구니에 담는다."""
         report_lost(self.vault, self.customer["id"])
         self.reload_customer()
         self.add_card("reissue")
@@ -316,8 +317,10 @@ class OrderSession:
             return self._apply_benefit()
 
     def smile_offer(self):
-        """지금 받을 수 있는 스마일 할인 금액 (행사 없거나 음료가 없으면 0)."""
-        return smile_amount(self.policy()) if self.cart else 0
+        """지금 받을 수 있는 스마일 할인 금액 (행사 없거나 음료가 없으면 0). 회원은 계정당 한 번 (11/03)."""
+        if not self.cart or (self.customer and self.customer["extra"].get("smile_used")):
+            return 0
+        return smile_amount(self.policy())
 
     def smile_discount(self):
         return self.smile_offer() if self.smiled else 0
@@ -326,7 +329,9 @@ class OrderSession:
         if not self.customer:
             return 0
         benefit = self.benefit()
-        after_coupon = self.drink_total() - benefit["smile_discount"] - benefit["coupon_discount"]
+        # 11/04 회의: 회원카드 첫 주문 할인을 빼지 않아 '전액 사용'이 결제 금액보다 많아지던 것 → 할인을 모두 뺀 금액까지만
+        after_coupon = (self.drink_total() - benefit["card_discount"] - benefit["smile_discount"]
+                        - benefit["coupon_discount"])
         return max_usable_points(after_coupon, self.customer["extra"]["points"], self.policy())
 
     def set_benefit(self, coupon_id, use_points):
@@ -369,7 +374,7 @@ class OrderSession:
                                coupon_id=self.coupon_id, use_points=self.use_points,
                                change_to_points=change_to_points,
                                eco_cup=self.eco_cup and self.is_member(), smiled=self.smiled,
-                               card_kind=self.card_kind if self.is_member() else None,
+                               card_kind=self.card_kind if self.is_member() else None, takeout=self.takeout,
                                also_write={CASH_RECORD: self.cash_record(0)},   # 주문과 함께 현금 기록도 0으로
                                tickets=tickets)
         for ticket in self.tickets:                # 잡아 둔 좌석을 판 좌석으로

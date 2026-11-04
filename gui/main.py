@@ -13,9 +13,9 @@ import sys
 import traceback
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
-from PySide6.QtWidgets import QApplication, QLayout, QMainWindow
+from PySide6.QtWidgets import QApplication, QLabel, QLayout, QMainWindow
 
 import config
 from core import auth, schema
@@ -32,6 +32,7 @@ from gui.router import Router
 from gui.screens.admin import AdminLoginScreen, AdminScreen
 from gui.screens.benefit import BenefitScreen
 from gui.screens.checkout import CartScreen, CashScreen, DoneScreen
+from gui.screens.dine import DineScreen
 from gui.screens.find_account import FindAccountScreen
 from gui.screens.home import HomeScreen
 from gui.screens.idle import IdleScreen
@@ -50,7 +51,7 @@ def demo_vault(random_members=False):
     """시연·테스트용: 메모리에만 있는 금고에 샘플 데이터를 채운다.
 
     random_members=True(시연 모드 실행)이면 주문 습관이 다른 무작위 회원 16명(user01~user16 / 1234)과
-    팀원 시연 계정 3명(withtop77 · asd1625 · jisung0642 / 1234)도 더한다.
+    팀원 시연 계정 2명(withtop77 김휘원 · jisung0642 김지성 / 1234)도 더한다.
     자동 테스트는 정해진 4명만 쓴다.
     """
     vault = MemoryVault()
@@ -59,7 +60,7 @@ def demo_vault(random_members=False):
     seed.add_demo_events(vault)
     if random_members:
         make_random_members(vault)
-        add_team_members(vault)          # 팀원 시연 계정 withtop77 · asd1625 · jisung0642 / 1234
+        add_team_members(vault)          # 팀원 시연 계정 withtop77 · jisung0642 / 1234
     return vault
 
 
@@ -80,7 +81,7 @@ def demo_admin_check(admin_id, password):
 
 class KioskWindow(QMainWindow):
     def __init__(self, event=theme.FROM_POLICY, vault=None, face_factory=real_face, admin_check=None,
-                 presence=None):
+                 presence=None, test_mode=False, web=False):
         super().__init__()
         theme.load_fonts()
         theme.set_display()          # 새 창은 기본 색·글자 크기로
@@ -102,13 +103,34 @@ class KioskWindow(QMainWindow):
         self.router.away_box = CountdownBox(self)       # 자리 비움 '로그아웃할까요? (10)' (11/02 C)
         self.router.popup = ConfirmBox(self)            # 축하 · 이스터에그 팝업 (11/03 E)
         self.router.presence = presence                 # 카메라 사람 감지 (None이면 터치로만)
+        # 테스트 모드(--test): 왼쪽 아래 카메라 상태 줄. F2로 언제든 켜고 끈다.
+        self.camera_status = QLabel(self)
+        self.camera_status.setObjectName("camera_status")
+        self.camera_status.setStyleSheet("QLabel#camera_status { background: rgba(20, 10, 4, 200); color: white;"
+                                         " border-radius: 10px; padding: 6px 12px; font-size: 14px; }")
+        self.camera_status.setVisible(test_mode)
+        self.router.camera_status = self.camera_status
+        self.status_shortcut = QShortcut(QKeySequence("F2"), self)
+        self.status_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        self.status_shortcut.activated.connect(lambda: self.camera_status.setVisible(not self.camera_status.isVisible()))
         self.card_reader = CardReader(self.router.card_active, self)   # USB RFID 리더 (키보드처럼 입력)
         self.card_reader.scanned.connect(self.router.card_scanned)
         QApplication.instance().installEventFilter(self.card_reader)
         # RC522 + 아두이노처럼 시리얼로 번호를 보내는 리더 (꽂혀 있지 않으면 None)
-        self.serial_card = start_serial_reader(self.router.card_active, self.router.card_scanned, parent=self)
+        self.serial_card = start_serial_reader(self.router.card_active, self.router.card_scanned, parent=self,
+                                               on_status=lambda text: print(text, flush=True),
+                                               screen=lambda: self.router.current_name)
         if self.serial_card is not None:
             self.serial_card.notice.connect(self.router.card_refused)
+            self.serial_card.status.connect(self.router.card_status_line)   # 테스트 모드: 리더 연결 상태
+            self.serial_card.seen.connect(self.router.card_status_line)     # 테스트 모드: 카드가 올 때마다
+        # QR 회원 페이지 (--web, 11/04): 휴대폰으로 가입 · 내 정보 고치기. 키오스크와 같은 금고를 쓴다 (잠금 해제 전이면 None)
+        self.member_site = None
+        if web:
+            from gui.member_site import start_member_site
+            self.member_site = start_member_site(lambda: self.router.session.vault)
+            print(f"QR 회원 페이지: {self.member_site.url}" if self.member_site else "QR 회원 페이지를 열지 못했어요 (포트 8080)",
+                  flush=True)
         self.build_screens()
         self.router.show_screen("idle" if vault is not None else "unlock")
         if vault is not None:
@@ -117,9 +139,19 @@ class KioskWindow(QMainWindow):
         self.quit_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         self.quit_shortcut.activated.connect(self.close)
 
-    def build_screens(self):
-        """모든 화면을 지금 색·글자 크기(theme)로 만든다. 고대비·큰 글자를 바꾸면 다시 부른다."""
-        for screen in list(self.router.screens.values()):
+    STAFF_SCREENS = ("unlock", "admin_login", "admin", "placeholder")
+
+    def build_screens(self, keep=()):
+        """화면을 지금 색·글자 크기(theme)로 만든다. 고대비·큰 글자를 바꾸면 다시 부른다.
+
+        keep: 다시 만들지 않고 그대로 둘 화면 (11/03: 손님 화면만 다시 만들어 버튼 반응을 빠르게).
+        """
+        app = QApplication.instance()
+        app.removeEventFilter(self.router)        # 수백 개 위젯을 만드는 동안 무입력 감시를 쉬게 한다
+        kept = {name: screen for name, screen in self.router.screens.items() if name in keep}
+        for name, screen in list(self.router.screens.items()):
+            if name in kept:
+                continue
             self.router.removeWidget(screen)
             screen.setParent(None)
             screen.deleteLater()
@@ -128,16 +160,25 @@ class KioskWindow(QMainWindow):
         self.setPalette(theme.palette())
         self.setStyleSheet(theme.stylesheet())
         screens = {
-            "unlock": UnlockScreen, "home": HomeScreen,
+            "unlock": UnlockScreen, "dine": DineScreen, "home": HomeScreen,
             "login": LoginScreen, "find": FindAccountScreen, "signup": SignupScreen, "enroll": EnrollScreen,
             "menu": MenuScreen, "cart": CartScreen, "benefit": BenefitScreen,
             "cash": CashScreen, "done": DoneScreen,
             "admin_login": AdminLoginScreen, "admin": AdminScreen,
             "placeholder": PlaceholderScreen,
         }
-        self.router.add_screen("idle", IdleScreen(self.router, self.event))
+        screens = {"idle": lambda router: IdleScreen(router, self.event), **screens}
+        lazy = bool(keep)                         # 화면 설정을 바꿀 때만: 지금 화면 먼저, 나머지는 쉬는 틈에
         for name, screen in screens.items():
-            self.router.add_screen(name, screen(self.router))
+            if name in kept:
+                dict.__setitem__(self.router.screens, name, kept[name])
+            elif lazy:
+                self.router.screens.factories[name] = lambda screen=screen: screen(self.router)
+            else:
+                self.router.add_screen(name, screen(self.router))
+        if lazy:
+            QTimer.singleShot(0, self.router, self.router.screens.build_next)
+        app.installEventFilter(self.router)
 
     def closeEvent(self, event):
         self.router.stop_timer()
@@ -149,6 +190,8 @@ class KioskWindow(QMainWindow):
         QApplication.instance().removeEventFilter(self.card_reader)
         if self.serial_card is not None:
             self.serial_card.stop()
+        if self.member_site is not None:
+            self.member_site.stop()
         super().closeEvent(event)
 
 
@@ -183,10 +226,14 @@ def main():
     parser = argparse.ArgumentParser(description="COFFEE & SPOON KIOSK")
     parser.add_argument("--fullscreen", action="store_true")
     parser.add_argument("--demo", action="store_true", help="메모리 샘플 데이터로 실행(저장 안 됨)")
+    parser.add_argument("--test", action="store_true", help="시연 데이터 + 왼쪽 아래 카메라 상태 줄 (직접 시험해 보기)")
+    parser.add_argument("--web", action="store_true", help="QR 회원 페이지(가입 · 내 정보)를 같은 와이파이에 연다 (11/04)")
     args = parser.parse_args()
     app = QApplication(sys.argv[:1])
     presence = CameraPresence(config.CAMERA_INDEX) if presence_wanted() else None
-    window = KioskWindow(vault=demo_vault(random_members=True) if args.demo else None, presence=presence)
+    demo = args.demo or args.test
+    window = KioskWindow(vault=demo_vault(random_members=True) if demo else None, presence=presence,
+                         test_mode=args.test, web=args.web)
     install_error_handler(window)
     if args.fullscreen:
         window.showFullScreen()

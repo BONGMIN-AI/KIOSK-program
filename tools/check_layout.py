@@ -285,11 +285,9 @@ def states(window):
         from domain.member_cards import purchase_card, register_first_tap
         purchase_card(session.vault, bomin["id"], "new", "", 1000)
         register_first_tap(session.vault, bomin["id"], "A1B2C3D4")
-        password_mode()
-        login = router.screens["login"]
-        login.login_id.setText("bomin")
-        login.password.setText("1234")
-        login.report_lost_card()
+        router.start_member_order(session.vault.read("customers")[bomin["id"]])
+        router.notice.hide()
+        router.screens["menu"].ask_lost_card()
 
     def admin_cards():
         from domain.member_cards import purchase_card
@@ -360,15 +358,15 @@ def states(window):
     def ticket_lookup_error():
         panel = ticket_tab()
         panel.open_lookup()
-        panel.name_field.setText("홍길동")
-        panel.birth_field.setText("9001")
+        panel.name_field.setText("임예찬")
+        panel.phone_field.setText("0102007")
         panel.lookup()
 
     def ticket_printed():
         panel = ticket_tab(bomin)
         panel.open_lookup()
-        panel.name_field.setText("홍길동")
-        panel.birth_field.setText("900101")
+        panel.name_field.setText("임예찬")
+        panel.phone_field.setText("01020072007")
         panel.lookup()
         panel.print_selected()
 
@@ -453,6 +451,8 @@ def states(window):
 
     return [
         ("00 대기", lambda: router.show_screen("idle")),
+        ("00-B 매장 / 포장 (시작 화면에서)", lambda: router.show_screen("dine")),
+        ("00 대기 · 매장 / 포장 버튼", lambda: (router.show_screen("idle"), router.ask_dine())),
         ("01 시작", lambda: router.show_screen("home")),
         ("02 로그인", lambda: router.open_action("member")),
         ("02 얼굴 인증 중", face_running),
@@ -460,7 +460,7 @@ def states(window):
         ("02 로그인 실패(긴 문구)", login_fail_long),
         ("02-B 비밀번호", password_mode),
         ("02-B 얼굴 등록 · 회원카드 신청 체크", card_request),
-        ("02-B 회원카드 분실 (확인 질문)", lost_card),
+        ("03 My Menu 회원카드 분실 (확인 질문)", lost_card),
         ("02-C 아이디 찾기", find_id),
         ("02-C 임시 비밀번호 발급", find_reset),
         ("02-C 새 비밀번호 정하기 (오류)", find_change),

@@ -81,39 +81,63 @@ def draw_camera(view, roi_color):
     return out
 
 
-def draw_face_id(progress: float, face_found: bool, done: bool = False):
-    """로그인용 얼굴 모양 화면 (아이폰 Face ID처럼). 카메라 영상은 보여 주지 않는다.
+# 11/04 회의: 얼굴 기호가 너무 커서 절반쯤으로 줄이고, 커피 가게에 맞게 귀여운 라떼 얼굴로 바꿨다 (BGR)
+LATTE, CREAM, BROWN, BLUSH, LIGHT = (120, 170, 214), (222, 238, 250), (25, 45, 75), (170, 160, 245), (215, 215, 215)
 
-    가운데 얼굴 기호(모서리 괄호·눈·코·입)와 둘레의 눈금 고리. 진행한 만큼 눈금이 초록으로 켜진다.
-    얼굴을 못 찾으면 회색, 찾으면 진하게, 끝나면 전체 초록 + 체크.
+
+def draw_face_id(progress: float, face_found: bool, done: bool = False):
+    """로그인 · 등록용 얼굴 화면 (아이폰 Face ID처럼). 카메라 영상은 보여 주지 않는다.
+
+    가운데 라떼 얼굴(동그란 얼굴 · 라떼 거품 · 볼터치)과 둘레의 눈금 고리. 진행한 만큼 눈금이 초록으로 켜진다.
+    얼굴을 못 찾으면 흐리게(눈 감음), 찾으면 또렷하게(눈 뜨고 웃음), 끝나면 전체 초록 + 체크.
     """
     out = np.full((HEIGHT, PANEL_W, 3), 250, dtype=np.uint8)
     cx, cy = ROI_CENTER
-    base = (60, 60, 60) if face_found or done else (190, 190, 190)
     green = (90, 190, 70)
-    color = green if done else base
+    awake = face_found or done
+    ink = BROWN if awake else (170, 170, 170)
     ticks, lit = 60, int(ticks_fraction(progress, done) * 60)
     for i in range(ticks):
         angle = 2 * np.pi * i / ticks - np.pi / 2
-        r1, r2 = 205, 235
+        r1, r2 = 112, 128
         p1 = (int(cx + r1 * np.cos(angle)), int(cy + r1 * np.sin(angle)))
         p2 = (int(cx + r2 * np.cos(angle)), int(cy + r2 * np.sin(angle)))
-        cv2.line(out, p1, p2, green if i < lit else (215, 215, 215), 6, cv2.LINE_AA)
-    s = 120   # 얼굴 기호 크기 (반)
-    for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):   # 네 모서리 괄호
-        corner = (cx + sx * s, cy + sy * s)
-        cv2.line(out, corner, (corner[0] - sx * 50, corner[1]), color, 8, cv2.LINE_AA)
-        cv2.line(out, corner, (corner[0], corner[1] - sy * 50), color, 8, cv2.LINE_AA)
+        cv2.line(out, p1, p2, green if i < lit else LIGHT, 4, cv2.LINE_AA)
+    r = 78                                                    # 얼굴 반지름 (예전 기호의 절반쯤)
+    cv2.circle(out, (cx, cy), r, LATTE if awake else (225, 225, 225), -1, cv2.LINE_AA)
+    cv2.circle(out, (cx, cy + 6), r - 14, CREAM, -1, cv2.LINE_AA)   # 라떼 거품
+    cv2.circle(out, (cx, cy), r, ink, 4, cv2.LINE_AA)
     if done:
-        cv2.polylines(out, [np.array([(cx - 50, cy), (cx - 12, cy + 40), (cx + 60, cy - 45)])], False,
-                      green, 14, cv2.LINE_AA)
+        cv2.polylines(out, [np.array([(cx - 30, cy + 4), (cx - 8, cy + 26), (cx + 34, cy - 22)])], False,
+                      green, 10, cv2.LINE_AA)
+        return out
+    if awake:
+        for ex in (-26, 26):                                  # 동그란 눈 + 반짝
+            cv2.circle(out, (cx + ex, cy - 8), 8, ink, -1, cv2.LINE_AA)
+            cv2.circle(out, (cx + ex + 3, cy - 11), 3, (255, 255, 255), -1, cv2.LINE_AA)
+        cv2.ellipse(out, (cx, cy + 14), (16, 12), 0, 15, 165, ink, 4, cv2.LINE_AA)   # 웃는 입
+        for bx in (-46, 46):                                  # 볼터치
+            cv2.ellipse(out, (cx + bx, cy + 14), (11, 7), 0, 0, 360, BLUSH, -1, cv2.LINE_AA)
     else:
-        for ex in (-40, 40):
-            cv2.line(out, (cx + ex, cy - 40), (cx + ex, cy - 15), color, 8, cv2.LINE_AA)
-        cv2.polylines(out, [np.array([(cx, cy - 20), (cx, cy + 15), (cx - 12, cy + 15)])], False, color, 6,
-                      cv2.LINE_AA)
-        cv2.ellipse(out, (cx, cy + 30), (40, 22), 0, 20, 160, color, 7, cv2.LINE_AA)
+        for ex in (-26, 26):                                  # 감은 눈 (아직 얼굴을 못 찾음)
+            cv2.ellipse(out, (cx + ex, cy - 6), (9, 6), 0, 200, 340, ink, 4, cv2.LINE_AA)
+        cv2.line(out, (cx - 8, cy + 20), (cx + 8, cy + 20), ink, 4, cv2.LINE_AA)
     return out
+
+
+def waiting_screen(purpose: str = "LOGIN"):
+    """카메라를 켜는 동안 (11/04 회의: 눈에 잘 띄게). 카메라가 켜지는 데 1~3초 걸린다."""
+    from PIL import Image, ImageDraw
+    left = draw_face_id(0.0, False)
+    img = Image.new("RGB", (PANEL_W, HEIGHT), (255, 255, 255))
+    d = ImageDraw.Draw(img)
+    d.text((40, 32), PURPOSE_TITLES.get(purpose, purpose), font=_font(40, True), fill=(20, 20, 20))
+    d.rounded_rectangle((32, 250, PANEL_W - 32, 470), 24, fill=(75, 45, 25))
+    d.text((PANEL_W // 2, 320), "카메라를 켜는 중이에요", font=_font(40, True), fill=(255, 255, 255), anchor="mm")
+    d.text((PANEL_W // 2, 395), "잠시만 기다려 주세요…", font=_font(34, True), fill=(250, 220, 170), anchor="mm")
+    d.text((40, HEIGHT - 62), FOOTER, font=_font(20), fill=(120, 120, 120))
+    right = np.asarray(img)[:, :, ::-1].copy()
+    return np.hstack([left, right])
 
 
 def ticks_fraction(progress: float, done: bool) -> float:

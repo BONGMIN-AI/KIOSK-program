@@ -4,7 +4,7 @@
 언어는 00 대기·01 시작 화면 문구를 바꾼다 (다음 화면들은 아직 한국어).
 """
 
-from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, Qt
+from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, Qt, QTimer
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (QGraphicsOpacityEffect, QHBoxLayout, QLabel, QMenu, QSizePolicy, QVBoxLayout,
                                QWidget)
@@ -55,9 +55,10 @@ class FitLogo(QWidget):
 
     MAX_WIDTH = 0.42     # 너무 크면 촌스럽다 (10/29 의견) → 화면 너비의 절반 아래로
 
-    def __init__(self, filename, min_height):
+    def __init__(self, filename, min_height, plate=True):
         super().__init__()
         self.image = trimmed_pixmap(filename)
+        self.plate = plate                   # 크림 글자 로고(고대비)는 받침 없이 검은 바탕에 바로
         self.setMinimumHeight(min_height)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -71,7 +72,7 @@ class FitLogo(QWidget):
                                         box.height(), Qt.AspectRatioMode.KeepAspectRatio)
         x = box.x() + (box.width() - size.width()) // 2
         y = box.y() + (box.height() - size.height()) // 2
-        if theme.LOGO_PLATE != "transparent":           # 고대비: 어두운 바탕에서도 로고가 보이게 밝은 받침
+        if self.plate and theme.LOGO_PLATE != "transparent":   # 고대비: 어두운 바탕에서도 로고가 보이게 밝은 받침
             painter.setBrush(QColor(theme.LOGO_PLATE))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(x - 16, y - 8, size.width() + 32, size.height() + 16, 16, 16)
@@ -98,20 +99,31 @@ class HomeScreen(QWidget):
         body.setSpacing(28)
         settings = self.router.session.vault.read("settings", default={}) if self.router.session.vault else {}
         self.slideshow = Slideshow(shown_slides(settings))     # 광고는 운영자 '광고 배너'에서 고친다
-        body.addWidget(self.slideshow, 3)
+        big = theme.SCALE > 1
+        if big:                                  # 11/03: 큰 글자에서는 광고 대신 큰 버튼 (변화가 확 보이게)
+            self.slideshow.hide()
+        else:
+            body.addWidget(self.slideshow, 3)
         right = QVBoxLayout()
         right.setSpacing(10)
-        heading = self.text(label("", 28 if theme.SCALE == 1 else 22, title=True, guide=True), "heading")
+        heading = self.text(label("", 34 if big else 28, title=True, guide=True), "heading")
         right.addWidget(heading)
         intro = self.text(label("", muted=True, guide=True), "intro")
-        intro.setVisible(theme.SCALE == 1)       # 큰 글자에서는 줄여서 버튼이 눌리지 않게
+        intro.setFont(theme.font(20 if big else theme.BODY_SIZE))
         right.addWidget(intro)
         right.addSpacing(6)
-        right.addWidget(self.make_order_card(True), 1)
-        right.addWidget(self.make_order_card(False), 1)
+        if big:                                  # 11/03: 큰 글자는 매장/포장 화면처럼 좌우 두 칸 (버튼이 잘리지 않게)
+            cards = QHBoxLayout()
+            cards.setSpacing(24)
+            cards.addWidget(self.make_order_card(True), 1)
+            cards.addWidget(self.make_order_card(False), 1)
+            right.addLayout(cards, 1)
+        else:
+            right.addWidget(self.make_order_card(True), 1)
+            right.addWidget(self.make_order_card(False), 1)
         self.signup_button = self.text(self.action_button("", "signup"), "signup")
         right.addWidget(self.signup_button)
-        body.addLayout(right, 2)
+        body.addLayout(right, 2 if not big else 1)
         layout.addLayout(body, 7)
         layout.addSpacing(6)
         layout.addLayout(self.make_footer())
@@ -181,7 +193,9 @@ class HomeScreen(QWidget):
         spacer = QWidget()                       # 왼쪽도 같은 폭을 비워 로고가 정가운데
         spacer.setFixedWidth(self.admin_button.sizeHint().width() + 40)
         row.addWidget(spacer)
-        self.logo = FitLogo("logo_main.png", 76 if theme.SCALE == 1 else 56)   # 최소 높이 (창이 크면 더 커짐)
+        contrast = theme.BG == "#000000"                 # 고대비: 크림 글자 로고 (받침 없이)
+        self.logo = FitLogo("logo_contrast.png" if contrast else "logo_main.png", 76 if theme.SCALE == 1 else 70,
+                            plate=not contrast)            # 최소 높이 (창이 크면 더 커짐)
         row.addWidget(self.logo, 1)
         row.addWidget(self.admin_button, alignment=Qt.AlignmentFlag.AlignTop)
         return row
@@ -194,9 +208,9 @@ class HomeScreen(QWidget):
         layout.addStretch()                      # 카드가 커져도 글자는 가운데쯤, 버튼은 아래
         kind = "member" if member else "guest"
         # 글자는 가운데 정렬로 크게
-        lines = [(kind, 30, True, False), (f"{kind}_detail", 18, False, True)]
-        if theme.SCALE == 1:                     # 큰 글자에서는 혜택 줄을 빼서 한 화면에
-            lines.append((f"{kind}_benefit", 18, False, True))
+        big = theme.SCALE > 1                    # 큰 글자: 광고 자리까지 넓게 쓰고 글자를 확 키운다
+        lines = [(kind, 40 if big else 30, True, False), (f"{kind}_detail", 22 if big else 18, False, True),
+                 (f"{kind}_benefit", 22 if big else 18, False, True)]
         for key, size, title_font, muted in lines:
             line = self.text(label("", size, title=title_font, muted=muted, guide=True), key)
             line.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -206,8 +220,8 @@ class HomeScreen(QWidget):
         start = self.text(self.action_button("", action, "primary" if member else "secondary"),
                           kind, "start")
         start.setObjectName(f"{action}_button")
-        start.setMinimumHeight(54)
-        start.setFont(theme.font(22, bold=True))
+        start.setMinimumHeight(64 if big else 54)
+        start.setFont(theme.font(26 if big else 22, bold=True))
         layout.addWidget(start)
         return card
 
@@ -226,7 +240,8 @@ class HomeScreen(QWidget):
         return row
 
     def toggle(self, key):
-        item = button("", "chip", lambda: self.router.set_display(**{key: not self.router.display[key]}))
+        item = button("", "chip", lambda: QTimer.singleShot(
+            30, self, lambda: self.router.set_display(**{key: not self.router.display[key]})))
         item.setCheckable(True)
         item.setChecked(self.router.display[key])
         item.setFont(theme.font(theme.BODY_SIZE))

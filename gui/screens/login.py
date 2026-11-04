@@ -6,7 +6,7 @@
 """
 
 import numpy as np
-from PySide6.QtCore import QElapsedTimer, Qt
+from PySide6.QtCore import QElapsedTimer, Qt, QTimer
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
                                QVBoxLayout, QWidget)
@@ -19,17 +19,15 @@ from gui.widgets import (Card, FixedWidthCard, TouchKeyboard, button, label, lin
                          promo_row, text_field)
 
 
-def session_unused(session, customer):
-    """결제했지만 아직 등록하지 않은 카드가 있는지 (분실 신고 대상)."""
-    from domain.member_cards import unused_card
-    return unused_card(session.vault, customer["id"]) is not None
-
-
-def nav_bar(router, back):
-    """화면 맨 아래 공통 버튼: ← 뒤로 가기 · 처음으로."""
+def nav_bar(router, back, menu=False):
+    """화면 맨 아래 공통 버튼: ← 뒤로 가기 · (메뉴로) · 처음으로 / 로그아웃 (회원이면, 한 번 묻는다)."""
     row = QHBoxLayout()
     row.addWidget(button("← 뒤로 가기", "outline", back))
-    row.addWidget(button("처음으로", "outline", lambda: router.show_screen("idle")))
+    if menu:
+        row.addWidget(button("메뉴로", "outline", lambda: router.show_screen("menu")))
+    leave = button("처음으로", "outline", router.ask_leave)
+    leave.setObjectName("leave_button")
+    row.addWidget(leave)
     row.addStretch()
     return row
 
@@ -71,6 +69,7 @@ class LoginScreen(QWidget):
         left.setSpacing(10)
         left.addWidget(label("회원 ID를 입력해 주세요.", 22, bold=True))
         self.login_id = text_field("회원 ID")
+        self.login_id.textChanged.connect(lambda _text: getattr(self, "mode", "face") != "face" and self.update_options())
         left.addWidget(self.login_id)
         self.password = text_field("비밀번호 (화면에 보이지 않아요)", password=True)
         left.addWidget(self.password)
@@ -130,21 +129,19 @@ class LoginScreen(QWidget):
         self.password_button = button("로그인 →", "primary", self.password_login)
         for widget in (self.face_button, self.password_mode_button, self.password_button):
             right.addWidget(widget)
-        # 작은 밑줄 링크: 회원가입 · 아이디/비밀번호 찾기 · 회원카드 분실
+        # 작은 밑줄 링크: 회원가입 · 아이디/비밀번호 찾기 (회원카드 분실은 My Menu · 운영자 화면)
         links = QVBoxLayout()                    # 한 줄에 하나씩, 오른쪽에 붙여 (큰 글자에서도 겹치지 않게)
         links.setSpacing(0)
         self.signup_link = link_button("처음 오셨나요? 회원가입", lambda: self.router.open_action("signup"),
                                        strong=True)
         self.signup_link.setObjectName("signup_link")
         self.find_button = link_button("아이디·비밀번호를 잊었어요", self.find_account)
-        self.lost_card_link = link_button("회원카드를 잃어버렸어요", self.report_lost_card)
-        for widget in (self.signup_link, self.lost_card_link, self.find_button):
+        for widget in (self.signup_link, self.find_button):
             links.addWidget(widget, alignment=Qt.AlignmentFlag.AlignRight)
         right.addLayout(links)
         body.addWidget(right_card)
         layout.addLayout(body, 1)
         layout.addLayout(nav_bar(router, self.go_back))
-        self.reissue_armed = None
         self.set_mode("face")      # 처음부터 02 모양으로 (02-B 버튼은 숨김)
 
     def on_show(self, mode="face", message="", keep_id=False, login_id=""):
@@ -166,16 +163,19 @@ class LoginScreen(QWidget):
         self.signup_link.setVisible(face)
         self.face_button.setVisible(face)
         self.password_mode_button.setVisible(face)
-        for widget in (self.password_button, self.options_box, self.lost_card_link):
+        for widget in (self.password_button, self.options_box):
             widget.setVisible(not face)
         if not face:
-            self.card_note.setText(perks_text(self.router.session.policy(),
-                                              self.vault().read("settings", default={})))
-            self.reissue_armed = None
+            self.card_note.setText(perks_text(self.router.session.policy()))
+            self.update_options()
         self.fail_box.setVisible(False)
         self.face_button.setText("얼굴 인증")     # 다음 손님에게는 '재시도'가 아니라 처음 상태로
         self.say(message, ok=False)
         self.keyboard.target = self.login_id if face or not self.login_id.text() else self.password
+        # 11/04: 아이디를 넣고 '비밀번호로 로그인'을 누르면 바로 비밀번호 칸에 커서 (한 번 더 누르지 않게).
+        # 화면이 막 바뀌는 중이면 아직 안 보여서 포커스가 안 들어가니 한 박자 뒤에 넣는다.
+        target = self.keyboard.target
+        QTimer.singleShot(0, target, lambda: target.setFocus(Qt.FocusReason.OtherFocusReason))
         self.right_card.updateGeometry()        # 버튼이 바뀐 오른쪽 칸 높이를 다시 재게 (큰 글자에서 창이 커지던 문제)
 
     def find_account(self):
@@ -310,41 +310,35 @@ class LoginScreen(QWidget):
         if note:
             self.router.notify(note, 7)
 
+    def update_options(self):
+        """입력한 아이디의 회원을 보고 '함께 할 일' 중 필요한 것만 보여 준다 (11/03)."""
+        from domain.member_cards import check_can_buy
+        customer = None
+        try:
+            customer = find_by_login_id(self.vault(), self.login_id.text().strip())
+        except ValueError:
+            pass
+        need_face = customer is None or not customer["extra"].get("face_enrolled")
+        need_card = True
+        if customer is not None:
+            try:
+                check_can_buy(self.vault(), customer, "new")
+            except ValueError:
+                need_card = False
+        for widget in (self.enroll_check, self.enroll_note):
+            widget.setVisible(need_face)
+        for widget in (self.card_check, self.card_note):
+            widget.setVisible(need_card)
+        if not need_face:
+            self.enroll_check.setChecked(False)
+        if not need_card:
+            self.card_check.setChecked(False)
+        self.options_box.setVisible(self.mode != "face" and (need_face or need_card))
+
     def say(self, text, ok=True):
         """오른쪽 안내 한 줄: ok면 갈색(안내), 아니면 빨강(오류)."""
         self.message.setStyleSheet(f"color: {theme.BROWN if ok else theme.ERROR};")
         self.message.setText(text)
-
-    def report_lost_card(self):
-        """'회원카드를 잃어버렸어요': 비밀번호로 본인 확인 → 한 번 더 누르면 예전 카드를 막고
-        재발급 카드(수수료)를 장바구니에 담은 채 주문으로 간다 (11/03).
-        """
-        if not self.password.text():
-            self.say("회원 ID와 비밀번호를 넣고 다시 눌러 주세요", ok=False)
-            return
-        customer = self.check_password()
-        if not customer:
-            return
-        session = self.router.session
-        extra = customer["extra"]
-        if not (extra.get("card_hash") or extra.get("lost_card_hashes") or session_unused(session, customer)):
-            self.say("발급받은 회원카드가 없어요. '회원카드 신청'을 체크하고 로그인해 주세요", ok=False)
-        elif self.reissue_armed != customer["id"]:
-            self.reissue_armed = customer["id"]
-            fee = session.policy()["card_reissue_fee"]
-            self.say(f"예전 카드를 바로 막고 새 카드를 장바구니에 담을까요? (재발급 {fee:,}원)\n"
-                     "비밀번호를 넣고 한 번 더 누르면 돼요")
-        else:
-            self.reissue_armed = None
-            session.login(customer)
-            session.report_lost_card()
-            self.router.audit("card_lost", customer["id"])
-            self.router.start_member_order(session.customer)
-            self.router.notify("예전 카드를 막았어요. 이제 그 카드로는 쓸 수 없어요.\n"
-                               "새 카드를 장바구니에 담았어요 · 음료와 함께 결제해 주세요", 8)
-            return
-        self.login_id.setText(extra["login_id"])
-        self.password.clear()
 
     def customer_exists(self, login_id):
         return find_by_login_id(self.vault(), login_id) is not None

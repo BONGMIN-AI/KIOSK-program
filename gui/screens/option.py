@@ -249,7 +249,12 @@ class OptionPopup(QWidget):
         self.add_button.setText(f"장바구니 담기 · {theme.won(total)}")
 
     def toggle_like(self):
-        self.session.toggle_like(self.menu_id)
+        try:
+            self.session.toggle_like(self.menu_id)
+        except ValueError as error:                 # 즐겨찾기는 최대 6잔
+            self.parent().router.notify(str(error), 4)
+            self.update_like()
+            return
         self.update_like()
         self.on_added()          # 뒤의 My Menu 좋아요 목록도 다시 그린다
 

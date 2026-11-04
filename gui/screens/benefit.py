@@ -38,6 +38,7 @@ class BenefitScreen(QWidget):
         point_row = QHBoxLayout()
         self.points_field = text_field("0")
         self.points_field.setFixedWidth(200)
+        self.points_field.textChanged.connect(lambda _text: self.apply())   # 치는 대로 금액이 바뀐다
         point_row.addWidget(self.points_field)
         point_row.addWidget(label("P", 20, bold=True))
         self.all_points_button = button("전액 사용", "outline", self.use_all_points)
@@ -59,6 +60,9 @@ class BenefitScreen(QWidget):
         right.addWidget(label("적용된 금액", 22, title=True))
         row, self.before_value = money_row("할인 전", theme.won(0))
         right.addLayout(row)
+        row, self.card_value = money_row("회원카드 첫 주문", theme.won(0))
+        self.card_row = row
+        right.addLayout(row)
         row, self.smile_value = money_row("스마일 할인", theme.won(0))
         self.smile_row = row
         right.addLayout(row)
@@ -69,13 +73,12 @@ class BenefitScreen(QWidget):
         row, self.final_value = money_row("할인 후 결제액", theme.won(0), big=True)
         right.addLayout(row)
         right.addStretch()
-        right.addWidget(button("혜택 적용 · 금액 갱신", "outline", self.apply))
         self.pay_button = button("결제로 이동 →", "primary", self.go_cash)
         right.addWidget(self.pay_button)
         right.addWidget(button("혜택 없이 결제", "outline", self.pay_without_benefit))
         body.addWidget(summary)
         layout.addLayout(body, 1)
-        layout.addLayout(nav_bar(router, lambda: router.show_screen("cart")))
+        layout.addLayout(nav_bar(router, lambda: router.show_screen("cart"), menu=True))
 
     def on_show(self):
         self.message.setText("")
@@ -145,6 +148,11 @@ class BenefitScreen(QWidget):
         benefit = self.session.benefit()
         self.before_value.setText(theme.won(self.session.total()))
         self.coupon_value.setText(f"−{theme.won(benefit['coupon_discount'])}")
+        self.card_value.setText(f"−{theme.won(benefit['card_discount'])}")
+        for index in range(self.card_row.count()):           # 할인이 있을 때만 줄을 보인다
+            item = self.card_row.itemAt(index).widget()
+            if item is not None:
+                item.setVisible(benefit["card_discount"] > 0)
         self.smile_value.setText(f"−{theme.won(benefit['smile_discount'])}")
         for index in range(self.smile_row.count()):
             item = self.smile_row.itemAt(index).widget()

@@ -11,15 +11,17 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QSizePolicy,
                                QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
+from domain.member_cards import lost as card_lost
 from domain.my_menu import LIMIT_UNITS, TREND_VIEWS
 from domain.popular import SORTS as POPULAR_SORTS
 from domain.titles import title_name
+from domain.customers import call_name
 from gui import theme
 from gui.order import CATEGORY_ORDER, MY_MENU, POPULAR, TICKET
 from gui.screens.option import OptionPopup
 from gui.screens.ticket import BusIcon, TicketCartLine, TicketPanel, clear, saved_routes_card
 from gui.widgets import (FixedWidthCard, Card, CategoryIcon, ConfirmBox, CupIcon, ElidedLabel, GearButton, LimitBar, Overlay,
-                         TapLabel, TrendBars, button, card_cart_line, label, menu_icon,
+                         TapLabel, TrendBars, button, card_cart_line, label, link_button, menu_icon,
                          menu_photo_path, trimmed_pixmap)
 CARD_MIN_WIDTH = 200     # 화면이 넓으면 한 줄에 카드를 더 놓는다 (최소 3칸)
 GRID_GAP = 14
@@ -133,6 +135,7 @@ class MenuScreen(QWidget):
         self.grid_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.ticket_panel = TicketPanel(self.session, on_drinks=lambda: self.show_category(CATEGORY_ORDER[0]),
                                         on_pay=lambda: self.router.show_screen("cart"))
+        self.ticket_panel.on_cart = self.refresh
         self.middle_stack = QStackedWidget()      # 메뉴 카드 칸 | 승차권 탭 화면
         self.middle_stack.addWidget(self.grid_area)
         self.middle_stack.addWidget(self.ticket_panel)
@@ -247,7 +250,7 @@ class MenuScreen(QWidget):
             return
         extra = customer["extra"]
         title = f"[{title_name(extra['title'])}] " if extra.get("title") else ""
-        self.member_name.setText(f"{title}{extra['nickname']} 님 ›")
+        self.member_name.setText(f"{title}{call_name(customer)} 님 ›")      # 11/04: 닉네임보다 이름
         card = {"회원카드 등록 전": "카드 등록 전"}.get(self.session.card_status(), "")
         card = f"  ·  {card}" if card else ""
         self.member_detail.setText(f"포인트 {extra['points']:,}P  ·  쿠폰 {len(self.session.coupons())}장"
@@ -299,7 +302,9 @@ class MenuScreen(QWidget):
         self.check_button = button("장바구니 확인 →", "accent",    # 템플릿처럼 주문 버튼은 코랄
                                    lambda: self.router.show_screen("cart"))
         column.addWidget(self.check_button)
-        column.addWidget(button("← 처음으로", "outline", lambda: self.router.show_screen("idle")))
+        leave = button("처음으로", "outline", self.router.ask_leave)     # 회원이면 '로그아웃' (11/04)
+        leave.setObjectName("leave_button")
+        column.addWidget(leave)
         return panel
 
     # 화면 갱신
@@ -408,13 +413,82 @@ class MenuScreen(QWidget):
         column.setContentsMargins(4, 4, 4, 4)
         column.setSpacing(14)
         # Quick Order / 좋아요한 음료 / 카페인 리포트 — 세 구간을 각각 카드 블록으로 나눈다
+        if self.session.card_status() == "회원카드 등록 전":     # 11/03: 산 카드를 손님이 직접 등록
+            column.addWidget(self.make_card_register())
         column.addWidget(self.make_quick_order())
         if self.session.ticket_sales_on():       # 승차권을 살 때 저장한 노선 (회원)
             column.addWidget(saved_routes_card(self.session, self.open_saved_route, self.forget_route))
         column.addWidget(self.make_likes_card())
         column.addWidget(self.make_caffeine_card())
+        card_link = self.make_card_link()
+        if card_link is not None:
+            column.addWidget(card_link, alignment=Qt.AlignmentFlag.AlignRight)
         column.addStretch()
         return page
+
+    def make_card_register(self):
+        """My Menu 맨 위: 결제한 회원카드를 등록하는 줄 (산 바로 그 자리에서도 된다)."""
+        card = Card()
+        card.setObjectName("card_register")       # 바탕색이 안쪽 버튼까지 번지지 않게 이 상자에만
+        card.setStyleSheet(f"#card_register {{ background: {theme.CARAMEL_LIGHT}; border-radius: 18px; }}")
+        row = QHBoxLayout(card)
+        row.setContentsMargins(20, 12, 16, 12)
+        text = QVBoxLayout()
+        text.addWidget(label("받으신 회원카드를 등록해 주세요", 18, bold=True))
+        policy = self.session.policy()
+        text.addWidget(label(f"등록하는 이번 주문 {policy['card_first_discount']}% 할인 · "
+                             f"매 주문 {policy['card_point_rate']:g}% 적립", 14, muted=True))
+        row.addLayout(text, 1)
+        self.card_register_button = button("카드 등록", "primary", self.wait_card_register)
+        self.card_register_button.setMinimumHeight(56)
+        row.addWidget(self.card_register_button)
+        return card
+
+    def wait_card_register(self):
+        """'카드 등록' → 위쪽 띠에 남은 초. 그 사이 리더기에 카드를 대면 router.member_card_tap이 등록한다."""
+        customer_id = self.session.customer["id"]
+        from domain.member_cards import unused_card
+        alive = lambda: (self.isVisible() and self.session.customer is not None
+                         and unused_card(self.session.vault, customer_id) is not None)
+        self.router.notice.show_countdown(lambda s: f"받으신 회원카드를 리더기에 대 주세요 · {s}초", 20, alive)
+
+    def make_card_link(self):
+        """회원카드 분실 신고 (카드 있음) / 재발급 신청 (분실 처리됨) — 작은 밑줄 글자."""
+        customer = self.session.customer
+        status = self.session.card_status()
+        if status:
+            return link_button("회원카드를 잃어버렸어요", self.ask_lost_card)
+        if customer is not None and card_lost(customer) and self.session.card_kind != "reissue":
+            fee = self.session.policy()["card_reissue_fee"]
+            return link_button(f"회원카드 재발급 ({fee:,}원) 장바구니에 담기", self.add_reissue_card)
+        return None
+
+    def ask_lost_card(self):
+        fee = self.session.policy()["card_reissue_fee"]
+        self.confirm_box.ask("회원카드 분실 신고", f"예전 카드는 바로 쓸 수 없게 막아요.\n"
+                             f"새 카드({fee:,}원)를 장바구니에 담을까요?", "예, 분실 신고", self.report_lost_card)
+
+    def report_lost_card(self):
+        self.session.report_lost_card()
+        self.router.audit("card_lost", self.session.customer["id"])
+        self.router.notify("예전 카드를 막았어요.\n새 카드를 장바구니에 담았어요 · 음료와 함께 결제해 주세요", 7)
+        self.after_card_change()
+
+    def add_reissue_card(self):
+        try:
+            self.session.add_card("reissue")
+        except ValueError as error:
+            self.router.notify(str(error), 5)
+            return
+        self.router.notify("재발급 카드를 장바구니에 담았어요", 4)
+        self.after_card_change()
+
+    def after_card_change(self):
+        self.update_top_bar()
+        self.refresh()
+        if self.category == MY_MENU:              # 그 사이 처음 화면으로 갔으면(회원 없음) 다시 그리지 않는다
+            QTimer.singleShot(0, lambda: self.category == MY_MENU and self.session.customer is not None
+                              and self.show_category(MY_MENU))
 
     def open_saved_route(self, origin, destination):
         self.show_category(TICKET)

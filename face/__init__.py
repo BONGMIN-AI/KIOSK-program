@@ -28,8 +28,10 @@ class FakeFace:
         on_status("[TEST] 가짜 얼굴 식별 통과")
         return claimed_customer_id
 
-    def detect_smile(self, on_status=print) -> bool:
+    def detect_smile(self, on_status=print, on_state=None) -> bool:
         on_status("[TEST] 가짜 웃음 확인")
+        if on_state is not None:
+            on_state(True, True, 1.0, "좋아요!")
         return True
 
 

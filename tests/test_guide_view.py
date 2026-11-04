@@ -55,7 +55,7 @@ class GuideViewTest(unittest.TestCase):
         done = guide_view.compose(bright, face_at(320, 250, 160), 1, ["DEPTH CHECK"], True, 1, "LOGIN",
                                   1.0, True, done=True)
         cx, cy = guide_view.ROI_CENTER
-        self.assertEqual(tuple(int(v) for v in done[cy - 220, cx]), (90, 190, 70))   # 눈금 고리 전부 초록
+        self.assertEqual(tuple(int(v) for v in done[cy - 120, cx]), (90, 190, 70))   # 눈금 고리 전부 초록 (11/04: 고리를 절반 크기로)
         self.assertEqual(guide_view.step_labels(["DEPTH CHECK"], "LOGIN")[0], "카메라 앞에 서기")
 
 

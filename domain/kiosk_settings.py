@@ -8,16 +8,17 @@ settings["slides"] = [{"file", "caption", "fit", "on"}, ...]   (시작 화면 �
 
 DEFAULT_SLIDES = [
     {"file": "promo_photo.webp", "caption": "", "fit": "contain", "on": True},
-    {"file": "menu/M006_카라멜마키아토.png", "caption": "시그니처 · 카라멜마키아토", "fit": "cover", "on": True},
+    {"file": "menu/M006_카라멜마키아토.png", "caption": "시그니처 · 카라멜마키아토", "fit": "contain", "on": True},
     {"file": "promo_smile.webp", "caption": "", "fit": "contain", "on": True},
-    {"file": "menu/M012_딸기라떼.png", "caption": "계절 메뉴 · 딸기라떼", "fit": "cover", "on": True},
-    {"file": "menu/M031_레몬에이드.png", "caption": "상큼하게 · 레몬에이드", "fit": "cover", "on": True},
-    {"file": "menu/M044_치즈케이크.png", "caption": "커피와 함께 · 치즈케이크", "fit": "cover", "on": True},
+    {"file": "menu/M012_딸기라떼.png", "caption": "계절 메뉴 · 딸기라떼", "fit": "contain", "on": True},
+    {"file": "menu/M031_레몬에이드.png", "caption": "상큼하게 · 레몬에이드", "fit": "contain", "on": True},
+    {"file": "menu/M044_치즈케이크.png", "caption": "커피와 함께 · 치즈케이크", "fit": "contain", "on": True},
 ]
 
 # (키, 화면 이름, 단위, 기본값, 가장 작은 값, 가장 큰 값)
 KIOSK_FIELDS = [
     ("idle_seconds", "손님 화면 무입력 복귀", "초", 60, 20, 300),
+    ("present_idle_seconds", "사람이 앞에 있으면 최대", "초", 120, 20, 600),
     ("warn_seconds", "복귀 전 경고", "초", 15, 5, 60),
     ("more_order_seconds", "'더 주문하시겠어요?' 시간", "초", 15, 5, 60),
     ("slide_seconds", "시작 화면 광고 넘김", "초", 5, 2, 30),
@@ -42,6 +43,8 @@ def validate_kiosk(raw: dict) -> dict:
         result[key] = value
     if result["warn_seconds"] >= result["idle_seconds"]:
         raise ValueError("복귀 전 경고는 무입력 복귀 시간보다 짧아야 해요")
+    if result["present_idle_seconds"] < result["idle_seconds"]:
+        raise ValueError("사람이 앞에 있을 때 시간은 무입력 복귀 시간보다 같거나 길어야 해요")
     return result
 
 

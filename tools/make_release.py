@@ -7,6 +7,7 @@ r"""배포용 실행 폴더를 만든다. 사용: python tools/make_release.py [
 
     COFFEE_SPOON_KIOSK_v1.0\
       0_실행방법.html                                              ← 먼저 여는 한 장 (압축 풀기 → Python → 1 → 2)
+      시연목차  0_전체_진행표 · 1_김지성 … 4_임예찬                  ← 발표 시연 따라 하기 (tools/build_demo_guides.py)
       1_처음설치.bat · 2_시연모드_실행.bat · 3_실제모드_실행.bat   ← program\ 안의 같은 이름 파일을 부르는 짧은 실행 파일
       문서\   사용설명서 · 최종보고서 · 추가 구현 아이디어 · 시나리오 점검 결과(그림 포함)
       program\   실제 프로그램 (코드 · 그림 · 작은 얼굴 모델 · 원래 실행 파일 · 도구 · RFID 아두이노 코드)
@@ -36,6 +37,7 @@ FILES = [
     "1_처음설치.bat",
     "2_시연모드_실행.bat",
     "3_실제모드_실행.bat",
+    "4_카드리더_시험.bat",
     "config.py",
     "requirements.txt",
     "models/README.md",
@@ -107,6 +109,13 @@ def build_docs(target: Path) -> None:
     copy_page(DOCS / "최종보고서.html", docs / "최종보고서.html",
               [("<code>문서\\시나리오_점검결과.html</code>", '<a href="시나리오_점검결과.html">시나리오_점검결과.html</a>')])
     copy_page(DOCS / "추가_구현_아이디어.html", docs / "추가_구현_아이디어.html")
+    copy_page(DOCS / "시연_테스트_체크리스트.html", docs / "시연_테스트_체크리스트.html")
+    for old in target.glob("*_시연설명.html"):                        # 예전 배포판 맨 위의 시연설명 (그림 있던 것)
+        remove(old)
+    remove(target / "시연목차")
+    (target / "시연목차").mkdir()
+    for guide in sorted((DOCS / "시연설명").glob("*.html")):          # 11/04 회의 2: 글자만 있는 시연 목차 5개
+        copy_page(guide, target / "시연목차" / guide.name)
     if (SCENARIO_RESULT / "점검결과.html").exists():
         remove(docs / "시나리오_화면")
         shutil.copytree(SCENARIO_RESULT / "화면", docs / "시나리오_화면")
@@ -122,7 +131,8 @@ def build(target: Path, make_zip: bool = False) -> None:
         raise SystemExit("저장소 폴더 안에는 만들 수 없습니다. 다른 위치를 고르세요.")
     target.mkdir(parents=True, exist_ok=True)
     build_program(target / "program")
-    for number, name in ((1, "1_처음설치.bat"), (2, "2_시연모드_실행.bat"), (3, "3_실제모드_실행.bat")):
+    for number, name in ((1, "1_처음설치.bat"), (2, "2_시연모드_실행.bat"), (3, "3_실제모드_실행.bat"),
+                         (4, "4_카드리더_시험.bat")):
         write_text(target / name, LAUNCHER.format(number=number))
     build_docs(target)
     print(f"배포 폴더를 만들었습니다: {target}")

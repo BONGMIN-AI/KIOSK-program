@@ -152,11 +152,13 @@ def click(widget):
     QTest.mouseClick(widget, Qt.MouseButton.LeftButton)
 
 
-def touch_idle(r):
+def touch_idle(r, takeout=False):
     r.router.show_screen("idle")
     r.step("00 대기 화면", "idle")
-    r.router.show_screen("home")
-    r.step("01 시작 화면 (화면 터치)", "home")
+    r.router.ask_dine()
+    r.step("00 화면 터치 → 매장 / 포장 버튼이 떠오름", "idle", lambda: r.router.choosing_dine())
+    r.router.choose_dine(takeout)
+    r.step("01 시작 화면 · " + ("포장" if takeout else "매장"), "home", lambda: r.session.takeout is takeout)
 
 
 def login_password(r, login_id="bomin", password="1234"):
@@ -203,7 +205,7 @@ def member(r, login_id="bomin"):
 
 # ---------------------------------------------------------------- 시나리오 (플로차트 갈래)
 def guest_basic(r):
-    touch_idle(r)
+    touch_idle(r, takeout=True)
     click(r.screen("home").findChild(QPushButton, "guest_button"))
     r.step("03 비회원 메뉴 (My Menu 없음)", "menu", lambda: "My Menu" not in r.session.categories())
     before = stock(r, "M003")
@@ -214,8 +216,9 @@ def guest_basic(r):
     r.screen("cart").pay_button.click()
     r.step("07 현금 (비회원은 쿠폰 단계 없음)", "cash")
     pay_cash(r, [10000])
-    r.step("08 완료 · 거스름돈 1,000원", "done",
-           lambda: r.session.last_order["change"] == 1000 and stock(r, "M003") == before - 2)
+    r.step("08 완료 · 거스름돈 1,000원 · 포장", "done",
+           lambda: r.session.last_order["change"] == 1000 and stock(r, "M003") == before - 2
+           and r.session.last_order["takeout"] is True)
     r.screen("done").finish_visit()
     r.step("08 아니요 → 대기 화면", "idle", lambda: r.session.cart == {} and r.session.customer is None)
 
@@ -334,8 +337,8 @@ def find_account(r):
 
 
 def card_login(r):
-    """11/03 회원카드: 가입 때 신청 → 장바구니 → 음료와 함께 결제(감사 쿠폰) → 다음 주문 때 처음 대면 등록
-    → 카드로 로그인 · 3% 적립 → 분실 신고 → 재발급 카드 장바구니."""
+    """11/03 회원카드: 가입 때 신청 → 장바구니 → 음료와 함께 결제 → 다음 주문 때 처음 대면 등록(그 주문 10% 할인)
+    → 3% 적립 · 스탬프 → 카드로 로그인 → My Menu 분실 신고 → 재발급 카드(500원) 장바구니."""
     r.router.open_action("signup")
     signup = r.screen("signup")
     for field, text in ((signup.name, "카드손님"), (signup.login_id, "cardguest"), (signup.password, "1234"),
@@ -351,22 +354,33 @@ def card_login(r):
     r.step("05 장바구니: 음료 + 회원카드 1,000원", "cart", lambda: r.session.total() == r.session.drink_total() + 1000)
     r.router.show_screen("cash")
     pay_cash(r, [10000])
-    r.step("08 완료 · 카드는 음료와 함께 · 감사 쿠폰", "done",
-           lambda: r.session.last_order["card_kind"] == "new" and r.session.last_order["card_thanks"])
+    r.step("08 완료 · 카드는 음료와 함께 받기", "done", lambda: r.session.last_order["card_kind"] == "new")
     r.router.start_member_order(r.session.vault.read("customers")[r.session.last_order["customer"]["id"]])
     r.step("다음 주문: 로그인하면 '카드를 대면 등록' 안내", "menu", lambda: "등록돼요" in r.router.notice.text())
     r.router.card_scanned("A1B2C3D4")
-    r.step("받은 카드를 처음 대기 → 등록 · 3% 적립 시작", "menu", lambda: "3% 적립" in r.router.notice.text())
+    r.step("받은 카드를 처음 대기 → 등록 · 이번 주문 10% · 3% 적립", "menu",
+           lambda: "10% 할인" in r.router.popup.text.text() and "3% 적립" in r.router.popup.text.text())
+    r.session.add("M001", None, 2)
+    r.router.show_screen("benefit")
+    r.step("06 카드 등록한 주문 10% 할인", "benefit", lambda: r.session.benefit()["card_discount"] == 600)
+    r.router.show_screen("cash")
+    pay_cash(r, [10000])
+    r.step("08 완료 · 스탬프 1 / 10", "done", lambda: r.session.last_order["card_stamp"]["stamps"] == 1)
     r.router.show_screen("idle")
     r.router.card_scanned("A1B2C3D4")
-    r.step("카드 태그 → 비밀번호 화면 (아이디 자동)", "login", lambda: r.screen("login").login_id.text() == "cardguest")
+    r.step("대기 화면에서 카드 태그 → 매장 / 포장 버튼 먼저", "idle", lambda: r.router.choosing_dine())
+    r.router.choose_dine(False)
+    r.step("매장 → 비밀번호 화면 (아이디 자동)", "login", lambda: r.screen("login").login_id.text() == "cardguest")
     login = r.screen("login")
     login.password.setText("1234")
-    login.report_lost_card()
-    r.step("'회원카드를 잃어버렸어요' → 재발급 확인 질문 (1,000원)", "login", lambda: "1,000원" in login.message.text())
-    login.password.setText("1234")
-    login.report_lost_card()
-    r.step("한 번 더 → 예전 카드 막고 재발급 카드를 장바구니에", "menu", lambda: r.session.card_kind == "reissue")
+    login.password_login()
+    menu = r.screen("menu")
+    menu.ask_lost_card()
+    r.step("My Menu '회원카드를 잃어버렸어요' → 확인 질문 (재발급 500원)", "menu",
+           lambda: menu.confirm_box.isVisible() and "500원" in menu.confirm_box.text.text())
+    menu.confirm_box.yes()
+    r.step("예 → 예전 카드 막고 재발급 카드를 장바구니에", "menu",
+           lambda: r.session.card_kind == "reissue" and r.session.card_total() == 500)
     r.router.show_screen("idle")
     r.router.card_scanned("A1B2C3D4")
     r.step("분실 신고된 카드 → 안내", None, lambda: "분실" in r.router.notice.text())
@@ -592,14 +606,20 @@ def ticket_lookup(r):
     panel = menu.ticket_panel
     r.step("T1-0 승차권 탭", "menu")
     panel.open_lookup()
-    panel.name_field.setText("홍길동")
-    panel.birth_field.setText("9001")
+    panel.name_field.setText("임예찬")
+    panel.phone_field.setText("0102007")
     panel.lookup()
     r.step("T1-1 생년월일 틀림 → 안내", "menu")
-    panel.birth_field.setText("900101")
+    panel.phone_field.setText("01020072007")
     panel.lookup()
     panel.print_selected()
-    r.step("T1-2 예매표 출력", "menu")
+    r.step("T1-2 예매표 → 장바구니 0원", "menu",
+           lambda: r.session.tickets and r.session.tickets[0]["total"] == 0 and r.session.total() == 0)
+    r.router.show_screen("cash")
+    r.step("07 0원 결제 (예매표만)", "cash", lambda: r.screen("cash").pay_button.isEnabled())
+    r.screen("cash").pay_button.click()
+    r.step("08 완료 · 예매표 출력", "done",
+           lambda: r.session.office.reservations[r.session.last_order["tickets"][0]["reservation"]]["printed"])
 
 
 def ticket_purchase(r, with_drink=True):
@@ -727,7 +747,7 @@ SCENARIOS = [
     ("비밀번호 로그인 · 함께 할 일", "체크 상자로 얼굴 등록 · 회원카드 신청 → 얼굴 등록 → My Menu", password_login_options),
     ("카메라 고장", "얼굴 인증 중 카메라 오류 → 비밀번호 안내", camera_broken),
     ("아이디 찾기 · 임시 비밀번호", "02-C → 임시 비밀번호 → 로그인 → 새 비밀번호 → My Menu", find_account),
-    ("회원카드 신청 · 결제 · 첫 태그 · 분실", "가입 때 신청 → 장바구니 → 음료와 함께 결제 · 감사 쿠폰 → 다음 주문 때 처음 대면 등록 → 카드 로그인 → 분실 → 재발급 카드", card_login),
+    ("회원카드 신청 · 결제 · 첫 태그 · 분실", "가입 때 신청 → 장바구니 → 음료와 함께 결제 → 다음 주문 때 처음 대면 등록 · 10% 할인 · 스탬프 → 카드 로그인 → My Menu 분실 → 재발급 카드 500원", card_login),
     ("회원가입 오류 → 얼굴 등록", "10 빈칸·중복·비밀번호 다름 → 10-B → My Menu", signup_errors_then_face),
     ("회원가입 (얼굴 없이)", "10 → My Menu", signup_no_face),
     ("얼굴 등록 중 카메라 고장", "10-B 카메라 오류", enroll_camera_broken),

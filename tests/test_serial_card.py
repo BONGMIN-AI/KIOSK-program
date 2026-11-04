@@ -87,7 +87,7 @@ def test_card_from_serial_starts_member_login(window, monkeypatch):
     reader.status.connect(notes.append)
     router.show_screen("home")
     assert reader.start()
-    assert wait_for(lambda: router.current_name in ("login", "menu"))   # 카드 회원으로 얼굴 인증 시작
+    assert wait_for(lambda: router.current_name in ("dine", "login", "menu"))   # 매장/포장 → 카드 회원 로그인
     reader.stop()
     assert any("READY" in note for note in notes)
 
@@ -103,3 +103,52 @@ def test_card_ignored_when_screen_does_not_take_cards(window):
     router.show_screen("home")
     reader.deliver("84E3D237")
     assert got == ["84E3D237"]
+
+
+def test_removed_card_is_taken_again_right_away(window, monkeypatch):
+    """11/04: 리더(tap 판)가 REMOVED를 보내면 같은 카드를 떼었다 다시 대도 바로 받는다."""
+    import gui.serial_card as serial_card
+    router = window.router
+    got = []
+    reader = SerialCardReader(router.card_active, port="COM_TEST", parent=window, screen=lambda: "idle")
+    reader.scanned.connect(got.append)
+    router.show_screen("idle")
+    reader.deliver("84E3D237")
+    monkeypatch.setattr(serial_card, "QUIET_SECONDS", 0.0)
+    reader.deliver("84E3D237")                            # 대고 있는 중 → 한 번만
+    assert got == ["84E3D237"]
+    reader.card_removed()
+    reader.deliver("84E3D237")                            # 뗐다가 다시 대면 바로
+    assert got == ["84E3D237", "84E3D237"]
+
+
+def test_misread_notice_shows_once_in_a_while(window):
+    """11/04: '못 읽음'이 따다닥 와도 안내는 한 번만."""
+    notes = []
+    reader = SerialCardReader(window.router.card_active, port="COM_TEST", parent=window)
+    reader.notice.connect(notes.append)
+    for _ in range(5):
+        reader.misread()
+    assert len(notes) == 1
+
+
+class SilentLink(FakeLink):
+    """ALIVE를 한 번 보내고 멈춘 리더."""
+
+    opened = 0
+
+    def __init__(self, *args, **kwargs):
+        SilentLink.opened += 1
+        self.lines = [b"READY RC522 v0x18 gain max tap\r\n", b"ALIVE\r\n"]
+
+
+def test_silent_reader_is_reopened(window, monkeypatch):
+    """11/04: ALIVE를 보내던 리더가 조용해지면 포트를 다시 연다 (우노는 이때 리셋된다)."""
+    import gui.serial_card as serial_card
+    monkeypatch.setattr(serial_card, "SILENT_SECONDS", 0.2)
+    monkeypatch.setattr(serial, "serial_for_url", SilentLink)
+    SilentLink.opened = 0
+    reader = SerialCardReader(window.router.card_active, port="COM_TEST", parent=window)
+    assert reader.start()
+    assert wait_for(lambda: SilentLink.opened >= 2)
+    reader.stop()

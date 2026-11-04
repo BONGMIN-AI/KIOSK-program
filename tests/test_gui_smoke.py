@@ -41,7 +41,9 @@ def test_initial_window(window):
 def test_idle_home_back(window):
     router = window.router
     QTest.mouseClick(router.screens["idle"], Qt.MouseButton.LeftButton, pos=QPoint(600, 400))
-    assert router.current_name == "home"
+    assert router.current_name == "idle" and router.choosing_dine()   # 11/03: 대기 화면 위에 매장 / 포장 버튼
+    router.screens["idle"].dine_choice.findChild(QPushButton, "togo_button").click()
+    assert router.current_name == "home" and router.session.takeout is True
     QTest.mouseClick(router.screens["home"].back_button, Qt.MouseButton.LeftButton)
     assert router.current_name == "idle"
 
@@ -176,8 +178,8 @@ def test_inactivity_returns_to_idle(window):
     assert router.timer.interval() == 60_000
     router.show_screen("home")
     QTest.qWait(50)                      # 시작 화면 첫 그림(사진·페이드)이 느려도 시간에 걸리지 않게 먼저 그린다
-    router.timer.setInterval(400)
-    router.timer.start()
+    router.idle_ms, router.warn_ms = 400, 10_000          # 11/03: 화면을 누르면 이 값으로 다시 잰다
+    router.timer.start(400)
     QTest.qWait(200)
     QTest.keyClick(router.screens["home"], Qt.Key.Key_Space)
     QTest.qWait(250)

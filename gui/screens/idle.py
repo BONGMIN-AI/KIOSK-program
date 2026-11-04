@@ -6,13 +6,14 @@
 
 import math
 
-from PySide6.QtCore import QElapsedTimer, QPointF, QRectF, QTimer, Qt
+from PySide6.QtCore import (QEasingCurve, QElapsedTimer, QParallelAnimationGroup, QPoint, QPointF,
+                            QPropertyAnimation, QRectF, QTimer, Qt)
 from PySide6.QtGui import (QBitmap, QColor, QFontMetrics, QLinearGradient, QPainter, QPen, QPixmap,
                            QPolygonF, QRegion)
-from PySide6.QtWidgets import QButtonGroup, QWidget
+from PySide6.QtWidgets import QButtonGroup, QGraphicsOpacityEffect, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
 from gui import theme
-from gui.widgets import EventBanner, chip, gear_path
+from gui.widgets import EventBanner, chip, gear_path, label
 
 IMAGE_SIZE = (1672, 941)
 LOGO_BOX = (475, 30, 765, 214)            # 원래 로고 자리 (x, y, 너비, 높이)
@@ -42,6 +43,153 @@ APPROACH_TEXT = {
 }
 
 
+CHOICE_SECONDS = 20               # 매장 / 포장 버튼이 떠 있는 시간 (아무것도 안 고르면 다시 대기 화면)
+
+
+class DineChoice(QWidget):
+    """11/03: 대기 화면 가운데에 '스윽' 떠오르는 매장 / 포장 버튼 두 개 (화면 전체를 바꾸지 않는다)."""
+
+    def __init__(self, idle):
+        super().__init__(idle)
+        from gui.screens.dine import TEXT, MugIcon, PaperCupIcon
+        self.idle = idle
+        self.then = None
+        self.texts = TEXT
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(16)
+        self.title = label("", 30, title=True)
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title.setStyleSheet(f"background: rgba(255, 250, 244, 225); border-radius: 18px; padding: 8px 24px;")
+        column.addWidget(self.title, alignment=Qt.AlignmentFlag.AlignCenter)
+        row = QHBoxLayout()
+        row.setSpacing(28)                  # 두 칸 사이를 확실히 띄운다
+        self.buttons, self.tile_texts = {}, {}
+        tiles = ((False, "here", MugIcon(118), theme.CARD, theme.BROWN, theme.CARAMEL, theme.TEXT2),
+                 (True, "togo", PaperCupIcon(118, ink="#FFFFFF", sleeve=theme.CARAMEL), theme.BROWN, "#FFFFFF",
+                  theme.BROWN, "#EBD9C6"))
+        for takeout, key, icon, fill, ink, edge, sub in tiles:
+            tile = QPushButton()
+            tile.setObjectName(f"{key}_button")
+            tile.setCursor(Qt.CursorShape.PointingHandCursor)
+            tile.setMinimumSize(300, 270)
+            tile.setStyleSheet(f"QPushButton#{key}_button {{ background: {fill}; border: 4px solid {edge};"
+                               f" border-radius: 26px; }} QPushButton#{key}_button:pressed {{ background: {theme.CARAMEL_LIGHT}; }}")
+            tile.clicked.connect(lambda checked=False, t=takeout: self.choose(t))
+            inner = QVBoxLayout(tile)
+            inner.setContentsMargins(18, 22, 18, 20)
+            inner.setSpacing(8)
+            inner.addWidget(icon, alignment=Qt.AlignmentFlag.AlignCenter)
+            name = label("", 30, bold=True)
+            name.setStyleSheet(f"color: {ink}; background: transparent;")
+            detail = label("", 16)
+            detail.setStyleSheet(f"color: {sub}; background: transparent;")
+            for part in (icon, name, detail):
+                part.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            for part in (name, detail):
+                part.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                inner.addWidget(part)
+            self.buttons[key] = tile
+            self.tile_texts[key] = (name, detail)
+            row.addWidget(tile, 1)
+        column.addLayout(row)
+        self.opacity = None                 # 움직이는 동안만 흐림 효과를 단다 (카드 그림자와 겹치면 안 그려진다)
+        self.fade = QPropertyAnimation(self)
+        self.fade.setPropertyName(b"opacity")
+        self.slide = QPropertyAnimation(self, b"pos", self)
+        for animation in (self.fade, self.slide):
+            animation.setDuration(380)
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.group = QParallelAnimationGroup(self)
+        self.group.addAnimation(self.fade)
+        self.group.addAnimation(self.slide)
+        self.group.finished.connect(self.after_animation)
+        self.closing = False
+        self.timeout = QTimer(self)
+        self.timeout.setSingleShot(True)
+        self.timeout.timeout.connect(self.close_choice)
+        self.hide()
+
+    def place(self):
+        width = min(720, self.idle.width() - 80)
+        self.resize(width, self.sizeHint().height())
+        return QPoint((self.idle.width() - width) // 2, int(self.idle.height() * 0.52) - self.height() // 2)
+
+    def open_choice(self, then=None):
+        """대기 화면 터치 · 다가옴 · 카드: 버튼이 아래에서 살짝 올라오며 나타난다. 이미 떠 있으면 그대로."""
+        if then is not None:
+            self.then = then
+        from gui.screens.home import LANGUAGES
+        index = LANGUAGES.index(self.idle.router.language)
+        self.title.setText(self.texts["heading"][index])
+        for key in ("here", "togo"):
+            name, detail = self.tile_texts[key]
+            name.setText(self.texts[key][index])
+            detail.setText(self.texts[f"{key}_detail"][index])
+        self.timeout.start(CHOICE_SECONDS * 1000)
+        if self.isVisible() and not self.closing:
+            return
+        end = self.place()
+        self.closing = False
+        self.group.stop()
+        self.use_fade_effect()
+        self.fade.setStartValue(0.0)
+        self.fade.setEndValue(1.0)
+        self.slide.setStartValue(end + QPoint(0, 40))
+        self.slide.setEndValue(end)
+        self.move(end + QPoint(0, 40))
+        self.show()
+        self.raise_()
+        self.group.start()
+        self.idle.update()
+
+    def close_choice(self):
+        """아무것도 안 고르면 다시 흐려지며 들어간다."""
+        if not self.isVisible():
+            return
+        self.then = None
+        self.closing = True
+        self.group.stop()
+        self.use_fade_effect()
+        self.fade.setStartValue(1.0)
+        self.fade.setEndValue(0.0)
+        self.slide.setStartValue(self.pos())
+        self.slide.setEndValue(self.pos() + QPoint(0, 30))
+        self.group.start()
+
+    def use_fade_effect(self):
+        self.opacity = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity)
+        self.fade.setTargetObject(self.opacity)
+
+    def after_animation(self):
+        self.setGraphicsEffect(None)        # 다 나타났으면(또는 사라졌으면) 효과를 뗀다
+        self.opacity = None
+        if self.closing:
+            self.hide()
+            self.closing = False
+            self.idle.update()
+
+    def reset(self):
+        self.group.stop()
+        self.setGraphicsEffect(None)
+        self.opacity = None
+        self.timeout.stop()
+        self.closing = False
+        self.then = None
+        self.hide()
+
+    def choose(self, takeout):
+        router = self.idle.router
+        router.session.takeout = takeout
+        then = self.then
+        self.reset()
+        if then is not None:
+            then()
+        else:
+            router.show_screen("home")
+
+
 class IdleScreen(QWidget):
     def __init__(self, router, event=theme.FROM_POLICY):
         super().__init__()
@@ -69,6 +217,7 @@ class IdleScreen(QWidget):
             item.clicked.connect(lambda checked, name=name: self.set_language(name))
         self.fixed_event = event          # FROM_POLICY면 화면에 올 때마다 운영자 이벤트를 읽는다
         self.banner = EventBanner(None if event == theme.FROM_POLICY else event, self)
+        self.dine_choice = DineChoice(self)   # 11/03: 매장 / 포장은 이 화면 위에서 고른다
 
     @staticmethod
     def logo_layers():
@@ -96,6 +245,7 @@ class IdleScreen(QWidget):
         return self.router.language        # 01 시작 화면과 같이 쓴다
 
     def on_show(self):
+        self.dine_choice.reset()                # 새 손님: 떠 있던 버튼은 내린다
         for item in self.languages.buttons():   # 새 손님이면 한국어로 돌아와 있다
             item.setChecked(item.text() == self.language)
         self.set_approach_hint(self.show_approach_hint)
@@ -105,6 +255,8 @@ class IdleScreen(QWidget):
     def set_language(self, name):
         self.router.language = name
         self.set_approach_hint(self.show_approach_hint)
+        if self.dine_choice.isVisible():
+            self.dine_choice.open_choice()           # 버튼 글자도 고른 언어로
         self.update()
 
     def set_approach_hint(self, on):
@@ -133,6 +285,8 @@ class IdleScreen(QWidget):
             self.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation)
         self.shadow_layer = self.make_shadow_layer()
+        if self.dine_choice.isVisible() and not self.dine_choice.closing:
+            self.dine_choice.move(self.dine_choice.place())
         super().resizeEvent(event)
 
     def make_shadow_layer(self):
@@ -165,8 +319,17 @@ class IdleScreen(QWidget):
                                (self.height() - picture.height()) // 2, picture)
         self.draw_shadow(painter)
         self.draw_logo(painter)
-        self.draw_fitted_text(painter, self.start_text(), self.to_screen(START_BOX),
-                              theme.BROWN, 40, bold=True)
+        if self.dine_choice.isVisible():          # 매장 / 포장 버튼이 떠 있으면 아래 '터치하세요' 줄을 덮는다
+            top = self.to_screen(START_BOX).top() - self.height() * 0.07
+            bottom = self.height() - theme.EVENT_HEIGHT
+            cover = QLinearGradient(0, top, 0, top + 40)
+            base = QColor(theme.BG)
+            cover.setColorAt(0, QColor(base.red(), base.green(), base.blue(), 0))
+            cover.setColorAt(1, QColor(base.red(), base.green(), base.blue(), 255))
+            painter.fillRect(QRectF(0, top, self.width(), bottom - top), cover)
+        else:
+            self.draw_fitted_text(painter, self.start_text(), self.to_screen(START_BOX),
+                                  theme.BROWN, 40, bold=True)
 
     def draw_logo(self, painter):
         if self.logo.isNull():               # 그림 파일이 없어도 멈추지 않는다
@@ -249,5 +412,5 @@ class IdleScreen(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.router.show_screen("home")
+            self.router.ask_dine()                   # 11/03: 이 화면 위에 매장 / 포장 버튼이 떠오른다
         super().mousePressEvent(event)

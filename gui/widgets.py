@@ -6,7 +6,7 @@ import re
 from PySide6.QtCore import QElapsedTimer, QEvent, QPointF, QRectF, QTimer, QVariantAnimation, Qt
 from PySide6.QtGui import (QBitmap, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap,
                            QPolygonF, QRadialGradient, QRegion)
-from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 from core.validators import format_phone_typing
@@ -585,7 +585,7 @@ def option_check(text):
 
 def message_label():
     """오류·안내 글 (빨간 글자, 읽기 좋은 줄바꿈)."""
-    result = label("", 15, bold=True, guide=True)
+    result = label("", 19, bold=True, guide=True)          # 11/04 회의: 15는 너무 작아서 안 보였다
     result.setStyleSheet(f"color: {theme.ERROR};")
     result.setWordWrap(True)
     return result
@@ -769,6 +769,152 @@ def card_cart_line(title, price, on_remove, big=False):
         remove.setStyleSheet("padding: 0;")
         row.addWidget(remove, alignment=Qt.AlignmentFlag.AlignTop)
     return box
+
+
+class StampCard(QWidget):
+    """회원카드 스탬프 쿠폰 (11/03): 동그라미 10칸에 받은 만큼 도장이 찍혀 있다. 이번 도장은 코랄색."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.stamps, self.goal, self.new = 0, 10, 0
+        self.setMinimumHeight(round(64 * theme.SCALE))
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def set_stamps(self, stamps, goal, new=1):
+        self.stamps, self.goal, self.new = stamps, goal, new
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        painter.setPen(QPen(QColor(theme.CARAMEL), 2, Qt.PenStyle.DashLine))
+        painter.setBrush(QColor(theme.CREAM))
+        painter.drawRoundedRect(rect, 14, 14)                   # 쿠폰처럼 점선 테두리
+        goal = max(1, self.goal)
+        gap = rect.width() / goal
+        size = min(gap * 0.74, rect.height() * 0.62)
+        painter.setFont(theme.font(13, bold=True))
+        for index in range(goal):
+            center = QPointF(rect.x() + gap * (index + 0.5), rect.center().y())
+            box = QRectF(center.x() - size / 2, center.y() - size / 2, size, size)
+            filled = index < self.stamps
+            fresh = filled and index >= self.stamps - self.new
+            painter.setPen(QPen(QColor(theme.CARAMEL), 2))
+            painter.setBrush(QColor(theme.ACCENT if fresh else theme.CARAMEL) if filled else QColor(theme.CARD))
+            painter.drawEllipse(box)
+            painter.setPen(QColor("#FFFFFF") if filled else QColor(theme.TEXT2))
+            painter.drawText(box, int(Qt.AlignmentFlag.AlignCenter), "★" if filled else str(index + 1))
+
+
+class SmileCup(QWidget):
+    """라떼 위 얼굴 (광고 배너 '웃는 순간, 할인 한 잔'의 커피잔): 웃으면 웃는 얼굴, 아니면 -_-."""
+
+    def __init__(self, size=96):
+        super().__init__()
+        self.smiling, self.found, self.progress = False, False, 0.0
+        self.setFixedSize(size, size)
+
+    def set_state(self, found, smiling, progress):
+        self.found, self.smiling, self.progress = found, smiling, progress
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        d = self.width()
+        ring = QRectF(d * 0.04, d * 0.04, d * 0.92, d * 0.92)
+        painter.setPen(QPen(QColor(theme.LINE), d * 0.05))
+        painter.drawEllipse(ring)
+        if self.progress > 0:                                   # 3초 진행 고리 (초록)
+            pen = QPen(QColor("#4CAF50"), d * 0.05)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(pen)
+            painter.drawArc(ring, 90 * 16, -int(360 * 16 * self.progress))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#E9D7C3"))
+        painter.drawEllipse(QRectF(d * 0.14, d * 0.14, d * 0.72, d * 0.72))      # 잔
+        painter.setBrush(QColor("#C89664"))
+        painter.drawEllipse(QRectF(d * 0.2, d * 0.2, d * 0.6, d * 0.6))          # 커피
+        painter.setBrush(QColor("#F6E7D3"))
+        painter.drawEllipse(QRectF(d * 0.3, d * 0.28, d * 0.4, d * 0.44))        # 라떼 거품
+        ink = QColor(60, 30, 10) if self.found else QColor(60, 30, 10, 110)
+        pen = QPen(ink, d * 0.035)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        if self.smiling:
+            painter.setBrush(ink)
+            for x in (0.41, 0.59):
+                painter.drawEllipse(QPointF(d * x, d * 0.44), d * 0.025, d * 0.035)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawArc(QRectF(d * 0.38, d * 0.42, d * 0.24, d * 0.16), -20 * 16, -140 * 16)
+        else:                                                    # -_-
+            for x in (0.41, 0.59):
+                painter.drawLine(QPointF(d * (x - 0.04), d * 0.45), QPointF(d * (x + 0.04), d * 0.45))
+            painter.drawLine(QPointF(d * 0.45, d * 0.56), QPointF(d * 0.55, d * 0.56))
+
+
+class SmileMission(QWidget):
+    """미소 미션 (11/03): 화면 가운데 작은 카드 하나. 카메라 영상 없이 커피잔 표정 · 3초 고리 · 짧은 글만."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.cancelled = False
+        outer = QVBoxLayout(self)
+        outer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        card = Card()
+        card.setFixedWidth(320)
+        outer.addWidget(card, alignment=Qt.AlignmentFlag.AlignCenter)
+        column = QVBoxLayout(card)
+        column.setContentsMargins(22, 18, 22, 16)
+        column.setSpacing(8)
+        column.addWidget(label("미소 미션", 14, muted=True), alignment=Qt.AlignmentFlag.AlignCenter)
+        # 11/04 회의: 카메라가 켜지는 동안 눈에 띄게 (진한 띠 · 큰 글자)
+        self.wait_banner = label("카메라를 켜는 중이에요\n잠시만 기다려 주세요…", 20, bold=True)
+        self.wait_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.wait_banner.setStyleSheet(f"background: {theme.BROWN}; color: #FFFFFF; border-radius: 14px; padding: 14px;")
+        column.addWidget(self.wait_banner)
+        self.cup = SmileCup(96)
+        column.addWidget(self.cup, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.text = label("", 16, bold=True)
+        self.text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.text.setWordWrap(True)
+        column.addWidget(self.text)
+        self.timer = label("", 13, muted=True)
+        self.timer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        column.addWidget(self.timer)
+        cancel = button("취소", "outline", self.cancel)
+        cancel.setMinimumHeight(40)
+        column.addWidget(cancel)
+        self.hide()
+
+    def open(self):
+        self.cancelled = False
+        self.update_state(False, False, 0.0)
+        self.setGeometry(self.parentWidget().rect())
+        self.show()
+        self.raise_()
+
+    def cancel(self):
+        self.cancelled = True
+
+    def update_state(self, found, smiling, progress, hint=""):
+        """얼굴 공급자가 카메라 한 장마다 부른다. 취소했으면 True. 웃은 시간은 쌓인다 (3초가 되면 성공)."""
+        self.cup.set_state(found, smiling, progress)
+        waiting = "잠시만" in (hint or "")
+        self.wait_banner.setVisible(waiting)
+        self.text.setVisible(not waiting)
+        self.text.setText(hint or ("좋아요! 그대로 웃어 주세요" if smiling else "웃어 주세요"))
+        self.timer.setText(f"웃은 시간 {progress * 3:.1f} / 3초")
+        QApplication.processEvents()
+        return self.cancelled
+
+    def paintEvent(self, event):
+        QPainter(self).fillRect(self.rect(), QColor(40, 20, 5, 90))
+
+    def mousePressEvent(self, event):
+        event.accept()
 
 
 class TapLabel(QLabel):
@@ -1174,9 +1320,17 @@ class Notice(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFont(theme.font(19, bold=True))
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        # 11/03: 뜰 때는 살짝 밝아지며(같은 글이 다시 와도 눈에 띄게), 사라질 때는 천천히 흐려진다
+        self.opacity = QGraphicsOpacityEffect(self)
+        self.opacity.setOpacity(1.0)
+        self.setGraphicsEffect(self.opacity)
+        self.fade = QVariantAnimation(self)
+        self.fade.valueChanged.connect(lambda value: self.opacity.setOpacity(float(value)))
+        self.fade.finished.connect(self.after_fade)
+        self.fading_out = False
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self.hide)
+        self.timer.timeout.connect(self.fade_out)
         self.tick = QTimer(self)                 # 초시계 안내: 1초마다 남은 초를 줄인다
         self.tick.setInterval(1000)
         self.tick.timeout.connect(self.count_down)
@@ -1203,7 +1357,32 @@ class Notice(QLabel):
     def stop_countdown(self):
         if self.tick.isActive():
             self.tick.stop()
-            self.hide()
+            self.fade_out()
+
+    def run_fade(self, start, end, ms, out):
+        self.fade.stop()
+        self.fading_out = out
+        self.fade.setStartValue(start)
+        self.fade.setEndValue(end)
+        self.fade.setDuration(ms)
+        self.fade.start()
+
+    def fade_out(self):
+        if self.isVisible():
+            self.run_fade(self.opacity.opacity(), 0.0, 450, True)
+
+    def after_fade(self):
+        if self.fading_out:
+            QLabel.hide(self)
+            self.opacity.setOpacity(1.0)
+
+    def hide(self):
+        """바로 내린다 (처음 화면으로 갈 때 · 화면을 눌렀을 때)."""
+        self.fade.stop()
+        self.timer.stop()
+        self.tick.stop()
+        QLabel.hide(self)
+        self.opacity.setOpacity(1.0)
 
     def show_message(self, text, seconds=6):
         self.tick.stop()
@@ -1216,4 +1395,5 @@ class Notice(QLabel):
         self.move((self.parentWidget().width() - width) // 2, 24)
         self.show()
         self.raise_()
+        self.run_fade(0.35, 1.0, 180, False)      # 같은 글이 다시 와도 '반응했다'는 게 보이게
         self.timer.start(seconds * 1000)

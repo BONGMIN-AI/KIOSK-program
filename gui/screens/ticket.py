@@ -1,7 +1,7 @@
 """승차권 탭(T1): 03 메뉴 가운데 칸 안에서만 바뀌는 승차권 화면들 (와이어프레임 T1-0 ~ T1-8).
 
 T1-0 첫 화면: 예매표 출력 | 승차권 구매 (지역을 메뉴 카드처럼 늘어놓지 않는다)
-예매표 출력: T1-1 조회(예매번호 / 이름 + 생년월일) → T1-2 내 예매 확인 → 바로 출력 (장바구니에 안 담김)
+예매표 출력: T1-1 조회(예매번호 / 이름 + 생년월일) → T1-2 내 예매 확인 → 장바구니에 0원으로 담기 → 결제하면 출력 (11/03)
 승차권 구매: ① 노선 → ② 시간표 → ③ 인원·좌석 → ④ 혜택·확인 → 장바구니에 승차권 줄 → 음료와 함께 05~08
 계산·시연 데이터는 domain/tickets.py, 한글 키보드 조합은 domain/hangul.py.
 """
@@ -20,7 +20,8 @@ from gui.widgets import Card, CategoryIcon, button, label, message_label, text_f
 NOTICE = "승차권은 키오스크 아래 출력구에서 나와요. 잊지 말고 꼭 챙겨 주세요!"
 STEPS = ["① 노선", "② 시간", "③ 인원·좌석", "④ 혜택·확인"]
 TIME_COLUMNS = (("출발", 2), ("등급", 2), ("회사", 2), ("남은 좌석", 3), ("요금(어른)", 3))
-SEAT_WIDTH, SEAT_HEIGHT = 46, 34
+# 11/04 회의: 좌석 버튼을 조금 더 크게 (예전 46 × 34). 일반 45석은 줄이 11개라 높이만 조금 낮춘다.
+SEAT_SIZES = {"우등": (56, 40), "일반": (54, 34)}
 
 
 def clear(layout):
@@ -217,6 +218,9 @@ class TicketCartLine(QFrame):
         self.update_time()
 
     def update_time(self):
+        if self.ticket.get("reservation"):            # 예매표: 이미 결제한 표 · 결제하면 출력
+            self.time_label.setText("예매표 · 0원 · 결제하면 출력")
+            return
         self.time_label.setText(f"좌석 유지 {seconds_text(self.session.ticket_seconds(self.ticket))}")
 
 
@@ -269,6 +273,7 @@ class TicketPanel(QStackedWidget):
         self.office = session.office
         self.on_drinks = on_drinks       # 장바구니에 담고 음료 고르기 (메뉴의 커피 탭으로)
         self.on_pay = on_pay             # 바로 결제 (05 장바구니로)
+        self.on_cart = None              # 장바구니가 바뀌면 (메뉴 화면 오른쪽 장바구니 다시 그리기)
         self.destination = None
         self.day = None
         self.bus = None
@@ -333,7 +338,7 @@ class TicketPanel(QStackedWidget):
         self.release_hold()
         self.destination = self.day = self.bus = None
         self.picked = []
-        for field in (self.name_field, self.birth_field, self.number_field, self.dest_field):
+        for field in (self.name_field, self.phone_field, self.number_field, self.dest_field):
             field.clear()
         self.origin_field.setText(tickets.ORIGIN)
         self.origin = tickets.ORIGIN
@@ -405,7 +410,7 @@ class TicketPanel(QStackedWidget):
         modes = QHBoxLayout()
         self.mode_group = QButtonGroup(self)
         self.mode_buttons = {}
-        for key, text in (("person", "이름 + 생년월일"), ("number", "예매번호")):
+        for key, text in (("person", "이름 + 휴대폰 번호"), ("number", "예매번호")):
             chip = button(text, "pill", lambda checked=False, k=key: self.set_lookup_mode(k))
             chip.setCheckable(True)
             chip.setFont(theme.font(17, bold=True))
@@ -417,22 +422,23 @@ class TicketPanel(QStackedWidget):
         fields = QHBoxLayout()
         self.name_field = text_field("이름")
         self.name_field.setMaxLength(10)
-        self.birth_field = text_field("생년월일 6자리")
-        self.birth_field.setMaxLength(6)
+        self.phone_field = text_field("휴대폰 번호 (숫자만)")
+        self.phone_field.setMaxLength(13)
         self.number_field = text_field("예매번호 8자리")
         self.number_field.setMaxLength(8)
-        for field in (self.birth_field, self.number_field):
+        for field in (self.phone_field, self.number_field):
             field.setProperty("digits", True)
-        for field in (self.name_field, self.birth_field, self.number_field):
+        for field in (self.name_field, self.phone_field, self.number_field):
             field.returnPressed.connect(self.lookup)
             fields.addWidget(field)
         column.addLayout(fields)
         column.addWidget(button("조회", "primary", self.lookup))
         self.lookup_message = message_label()
         column.addWidget(self.lookup_message)
-        column.addWidget(wrapped("시연용 예매: 홍길동 · 900101  /  예매번호 12345678", 14, muted=True))
+        column.addWidget(wrapped(f"시연용 예매: {tickets.BOOKER_NAME} · {tickets.BOOKER_PHONE}  /  예매번호 12345678",
+                                 14, muted=True))
         self.lookup_keyboard = HangulKeyboard()
-        self.lookup_keyboard.attach(self.name_field, self.birth_field, self.number_field)
+        self.lookup_keyboard.attach(self.name_field, self.phone_field, self.number_field)
         column.addWidget(self.lookup_keyboard)
         column.addLayout(self.back_row("← 승차권", self.reset))
         column.addStretch()
@@ -446,7 +452,7 @@ class TicketPanel(QStackedWidget):
         self.lookup_mode = mode
         self.mode_buttons[mode].setChecked(True)
         self.name_field.setVisible(mode == "person")
-        self.birth_field.setVisible(mode == "person")
+        self.phone_field.setVisible(mode == "person")
         self.number_field.setVisible(mode == "number")
         self.lookup_keyboard.target = self.name_field if mode == "person" else self.number_field
         self.lookup_message.setText("")
@@ -456,7 +462,7 @@ class TicketPanel(QStackedWidget):
             if self.lookup_mode == "number":
                 found = self.office.lookup(number=self.number_field.text())
             else:
-                found = self.office.lookup(name=self.name_field.text(), birth=self.birth_field.text())
+                found = self.office.lookup(name=self.name_field.text(), phone=self.phone_field.text())
         except ValueError as error:
             self.lookup_message.setText(str(error))     # 못 찾음·출발 지남·이미 출력: 알리고 다시 입력
             return
@@ -469,7 +475,7 @@ class TicketPanel(QStackedWidget):
         self.reservation_list = QVBoxLayout()
         self.reservation_list.setSpacing(10)
         column.addLayout(self.reservation_list)
-        self.print_button = button("선택한 표 출력", "accent", self.print_selected)
+        self.print_button = button("장바구니에 담기", "accent", self.print_selected)
         column.addWidget(self.print_button)
         self.print_message = message_label()
         column.addWidget(self.print_message)
@@ -479,11 +485,11 @@ class TicketPanel(QStackedWidget):
         inner.setSpacing(10)
         self.printed_title = wrapped("", 18, bold=True)
         inner.addWidget(self.printed_title)
-        inner.addWidget(notice_label())
+        inner.addWidget(wrapped("결제를 마치면 키오스크 아래 출력구에서 나와요", 15, muted=True))
         inner.addWidget(wrapped("음료도 고르시겠어요? 왼쪽 탭에서 바로 고를 수 있어요", 15, muted=True))
         after = QHBoxLayout()
         after.addWidget(button("음료 고르기 →", "secondary", lambda: (self.reset(), self.on_drinks())))
-        after.addWidget(button("승차권 처음으로", "outline", self.reset))
+        after.addWidget(button("바로 결제 →", "primary", lambda: (self.reset(), self.on_pay())))
         inner.addLayout(after)
         column.addWidget(self.printed_box)
         column.addLayout(self.back_row("← 다시 조회", lambda: self.go(self.lookup_page)))
@@ -530,21 +536,30 @@ class TicketPanel(QStackedWidget):
 
     def update_print_button(self):
         count = sum(len(self.office.reservations[number]["seats"]) for number in self.selected_reservations())
-        self.print_button.setText(f"선택한 표 출력 ({count}매)")
+        self.print_button.setText(f"장바구니에 담기 ({count}매 · 0원)")
         self.print_button.setEnabled(count > 0)
 
     def print_selected(self):
+        """고른 예매표를 장바구니에 0원으로 담는다 (같은 표를 두 번 담지 않는다). 출력은 결제를 마칠 때."""
+        numbers = self.selected_reservations()
         try:
-            printed = self.office.print_reservations(self.selected_reservations())
+            for number in numbers:
+                self.office.lookup(number=number)              # 그 사이 마감 · 출력됐으면 여기서 멈춘다
         except ValueError as error:
             self.print_message.setText(str(error))
             return
+        have = {t.get("reservation") for t in self.session.tickets}
+        for number in numbers:
+            if number not in have:
+                self.session.add_ticket(self.office.reservation_item(number))
         for item in self.reservation_buttons:
             item.setEnabled(False)
-        first = printed[0]
+        first = self.office.reservations[numbers[0]]
         depart = datetime.fromisoformat(first["depart"])
-        self.printed_title.setText(f"출력됐어요 · {first['platform']}번 승차장 · {depart:%H:%M} 출발 "
+        self.printed_title.setText(f"장바구니에 담았어요 · {first['platform']}번 승차장 · {depart:%H:%M} 출발 "
                                    f"({tickets.until_text(depart, datetime.now())})")
+        if self.on_cart is not None:
+            self.on_cart()
         self.print_button.hide()
         self.printed_box.show()
 
@@ -556,7 +571,7 @@ class TicketPanel(QStackedWidget):
         fields.setSpacing(14)
         self.origin_field = text_field("출발지", text=tickets.ORIGIN)
         self.dest_field = text_field("글자나 초성 (예: ㄷㅈ)")
-        for title, field in (("출발지 (기본: 이 터미널)", self.origin_field), ("도착지", self.dest_field)):
+        for title, field in (("출발지 · 눌러서 바꾸기 (기본: 이 터미널)", self.origin_field), ("도착지", self.dest_field)):
             part = QVBoxLayout()
             part.addWidget(label(title, 14, bold=True, muted=True))
             part.addWidget(field)
@@ -633,7 +648,13 @@ class TicketPanel(QStackedWidget):
         field = self.active_field
         text = field.text().strip()
         other = (self.dest_field if field is self.origin_field else self.origin_field).text().strip()
-        names = tickets.search_terminals(text, exclude=other)[:8]
+        # 11/04 회의: 이미 고른 터미널(기본 출발지 서울경부 등)이면 그 하나만 보여서 못 바꾸는 줄 알았다 → 전체를 보여 준다
+        query = "" if text in tickets.TERMINAL_NAMES else text
+        names = tickets.search_terminals(query, exclude=other)
+        if query == "" and text in names:                  # 고른 것을 맨 앞에
+            names.remove(text)
+            names.insert(0, text)
+        names = names[:8]
         self.candidate_title.setText("출발지 고르기" if field is self.origin_field else "도착지 고르기")
         columns = 4 if theme.SCALE == 1 else 3
         for index, name in enumerate(names):
@@ -716,7 +737,7 @@ class TicketPanel(QStackedWidget):
         self.time_title.setText(f"{self.origin} → {self.destination} · {when}")
         buses = self.office.timetable(self.destination, self.day, origin=self.origin)
         for bus in buses:
-            seats = {"ok": f"{bus['seats_left']} / {bus['seats_total']}", "sold_out": "매진",
+            seats = {"ok": f"{bus['seats_left']}석 남음", "sold_out": "매진",      # 11/04: '41 / 45'가 헷갈려서
                      "closed": "마감"}[bus["status"]]
             values = [bus["depart"][11:], bus["grade"], bus["company"], seats, theme.won(bus["fare"])]
             item = row_button([(value, stretch, 16, False) for value, (_, stretch) in zip(values, TIME_COLUMNS)])
@@ -792,8 +813,8 @@ class TicketPanel(QStackedWidget):
                                       " border-radius: 16px; }")
         self.seat_grid = QGridLayout(self.seat_frame)
         self.seat_grid.setContentsMargins(14, 10, 14, 14)
-        self.seat_grid.setHorizontalSpacing(6)
-        self.seat_grid.setVerticalSpacing(5)
+        self.seat_grid.setHorizontalSpacing(7)
+        self.seat_grid.setVerticalSpacing(6)
         body.addWidget(self.seat_frame, alignment=Qt.AlignmentFlag.AlignTop)
         column.addLayout(body)
         column.addStretch()
@@ -843,8 +864,8 @@ class TicketPanel(QStackedWidget):
                     continue
                 item = button("×" if seat in taken else str(seat), "option")
                 item.setCheckable(True)
-                item.setFixedSize(SEAT_WIDTH, SEAT_HEIGHT)
-                item.setFont(theme.font(14, bold=True))
+                item.setFixedSize(*SEAT_SIZES.get(bus["grade"], (54, 34)))
+                item.setFont(theme.font(17, bold=True))
                 item.setStyleSheet(f"QPushButton {{ padding: 0; border-radius: 8px; }}"
                                    f" QPushButton:checked {{ background: {theme.ACCENT}; color: {theme.CARD};"
                                    " border: none; }")

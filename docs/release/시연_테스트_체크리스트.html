@@ -1,0 +1,109 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>시연 테스트 체크리스트</title><style>
+:root { --bg:#F7EEE3; --card:#FFFFFF; --brown:#3C1B03; --text2:#7A6252; --caramel:#B66B2E; --cream:#FBF6EF;
+        --accent:#D4573C; --line:#E8D9C6; --ok:#2E7D4F; --okbg:#E3F3E8; --bad:#C0392B; --badbg:#FBE3DF; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#1E1712; --card:#2A211A; --brown:#F3E6D8;
+        --text2:#C9B5A2; --cream:#33281F; --line:#4A3B2E; --okbg:#1F3A2A; --badbg:#3E2320; } }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--brown); font:17px/1.75 "Malgun Gothic","Apple SD Gothic Neo",sans-serif; }
+header { background:#3C1B03; color:#fff; padding:34px 16px 30px; text-align:center; }
+header h1 { margin:0 0 6px; font-size:30px; }
+header p { margin:0; opacity:.85; }
+main { max-width:1000px; margin:0 auto; padding:22px 16px 60px; }
+nav, section { background:var(--card); border-radius:18px; padding:20px 24px; margin-bottom:20px;
+               box-shadow:0 4px 18px rgba(60,27,3,.06); }
+nav ol { margin:6px 0 0; padding-left:22px; columns:2; }
+nav a { color:var(--caramel); text-decoration:none; }
+h2 { margin:0 0 12px; font-size:24px; }
+h3 { margin:22px 0 8px; font-size:19px; }
+p { margin:8px 0; }
+ul, ol { padding-left:22px; margin:8px 0; }
+li { margin:4px 0; }
+.steps { counter-reset:s; list-style:none; padding:0; }
+.steps > li { counter-increment:s; position:relative; padding:2px 0 10px 46px; }
+.steps > li::before { content:counter(s); position:absolute; left:0; top:2px; width:32px; height:32px; border-radius:50%;
+                      background:var(--caramel); color:#fff; font-weight:700; text-align:center; line-height:32px; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+figure { margin:10px 0 14px; }
+figure img { width:100%; border-radius:12px; border:1px solid var(--line); display:block; }
+figcaption { color:var(--text2); font-size:14px; margin-top:6px; }
+.tip { background:var(--cream); border-left:5px solid var(--caramel); padding:10px 16px; border-radius:10px; margin:12px 0; }
+.warn { background:var(--badbg); border-left:5px solid var(--accent); padding:10px 16px; border-radius:10px; margin:12px 0; }
+table { width:100%; border-collapse:collapse; margin:10px 0; }
+th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+th { background:var(--cream); }
+code, kbd { background:var(--cream); border:1px solid var(--line); border-radius:6px; padding:1px 6px;
+            font-family:Consolas,monospace; font-size:15px; }
+.flow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.flow span { background:var(--cream); border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:15px; }
+.flow b { color:var(--caramel); }
+@media (max-width:700px) { nav ol { columns:1; } .grid { grid-template-columns:1fr; } }
+
+.top { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; }
+#summary { font-weight:700; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 4px; }
+.chip, .btns button, .act { border:1px solid var(--line); background:var(--card); color:var(--brown); border-radius:999px;
+  padding:6px 14px; font:inherit; font-size:15px; cursor:pointer; }
+.chip.on { background:var(--caramel); color:#fff; border-color:var(--caramel); }
+.item { border:1px solid var(--line); border-radius:14px; padding:12px 16px; margin:10px 0; background:var(--card); }
+.item.pass { background:var(--okbg); } .item.fail { background:var(--badbg); }
+.head { display:flex; gap:8px; align-items:center; font-size:14px; color:var(--text2); }
+.no { font-weight:700; color:var(--caramel); } .tag { background:var(--cream); border-radius:6px; padding:0 8px; }
+.acct { font-family:Consolas,monospace; }
+.todo { font-weight:700; margin-top:4px; } .expect { color:var(--text2); }
+.btns { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; align-items:center; }
+.btns button[data-r="pass"].on { background:var(--ok); color:#fff; border-color:var(--ok); }
+.btns button[data-r="fail"].on { background:var(--bad); color:#fff; border-color:var(--bad); }
+.btns input { flex:1; min-width:200px; border:1px solid var(--line); border-radius:10px; padding:6px 10px; font:inherit;
+  font-size:15px; background:var(--card); color:var(--brown); }
+#copybox { display:none; width:100%; height:140px; margin-top:10px; font:14px/1.5 Consolas,monospace; }
+</style></head><body><header><h1>시연 테스트 체크리스트</h1><p>실물 카메라 · 카드 리더 · 얼굴 · 눈으로 봐야 하는 것만 남겼어요 · 나머지는 자동으로 확인했어요</p></header><main><section><div class="top"><span id="summary"></span><span><button class="act" onclick="copyProblems()">문제 목록 복사</button> <button class="act" onclick="resetAll()">처음부터</button></span></div><div class="chips" id="chips"></div><textarea id="copybox" readonly></textarea><p class="tip">‘문제’를 누르고 메모를 남긴 뒤 <b>문제 목록 복사</b>를 누르면, 그대로 붙여 넣어 보낼 수 있어요.<br>카메라 항목은 키오스크에서 <b>F2</b>를 눌러 왼쪽 아래 상태 줄을 켜고 해 보세요. 체크는 이 브라우저에만 저장돼요.</p></section><section><h2>직접 해 볼 것 (3개)</h2><div id="list"></div></section><section><details><summary><b>자동으로 확인한 것 47개 · 통과 47</b> <span style="color:var(--text2)">(2026-11-04 17:48 · 가짜 카메라 · 카드 번호로 직접 해 봄)</span></summary><table><tr><th>결과</th><th>묶음</th><th>계정</th><th>해 본 것</th><th>확인한 내용</th></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>시작</td><td><code>-</code></td><td>대기 화면을 누르기</td><td>대기 화면 위에 매장 / 포장 버튼이 떠오름 (화면은 그대로)</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>시작</td><td><code>-</code></td><td>‘포장해 갈게요’ → 비회원 주문 → 음료 1잔 → 결제</td><td>장바구니 · 완료 · 영수증 모두 &#x27;포장&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>시작</td><td><code>-</code></td><td>시작 화면 아래 언어 · 고대비 · 큰 글자 바꾸기 → 처음으로</td><td>처음 화면으로 가면 글자 · 색 · 언어가 기본으로</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>카메라</td><td><code>비회원</code></td><td>현금 1,000원 넣고 자리 비워 0초까지 기다리기</td><td>0초 → 처음 화면 · &#x27;넣은 현금 1,000원을 반환했어요&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>로그인</td><td><code>-</code></td><td>없는 아이디 또는 틀린 비밀번호로 로그인</td><td>틀린 비밀번호 → 로그인 안 되고 아이디부터 다시</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>로그인</td><td><code>user01</code></td><td>아이디 user01 → 비밀번호로 로그인 화면</td><td>user01 (카드 있음) → &#x27;회원카드 신청&#x27; 칸 없음</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>로그인</td><td><code>bomin</code></td><td>얼굴 등록 뒤 로그아웃 → 예 → bomin → 비밀번호로 로그인 화면</td><td>얼굴 등록된 bomin → &#x27;얼굴도 등록할게요&#x27; 칸 없음</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>로그인</td><td><code>-</code></td><td>‘아이디·비밀번호를 잊었어요’ → 전화번호 010-1000-0001로 아이디 찾기</td><td>결과 &#x27;회원 ID: bo***&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>인사 · 칭호</td><td><code>withtop77</code></td><td>로그인</td><td>&#x27;[얼죽아] 김휘원 님, 2일 만이에요!&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>인사 · 칭호</td><td><code>jisung0642</code></td><td>로그인</td><td>&#x27;김지성 님, 오늘 두 번째 방문이에요!&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>인사 · 칭호</td><td><code>bomin</code></td><td>위쪽 이름 ‘[디카페인 지킴이] 김보민 님 ›’ 누르기</td><td>칭호 7개 진행 막대</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>인사 · 칭호</td><td><code>jisung0642</code></td><td>처음 먹는 음료 1잔 주문 끝내기</td><td>★ 새 칭호 획득! [신메뉴 헌터] · [단골손님]</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>인사 · 칭호</td><td><code>bomin</code></td><td>메뉴 화면 왼쪽 위 로고를 빠르게 5번</td><td>첫 번째 100원 쿠폰 · 두 번째 &#x27;이미 찾으셨네요!&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>My Menu</td><td><code>withtop77</code></td><td>My Menu ‘최근 주문 다시 담기 ▶’</td><td>다시 담기 → &#x27;그래도 담을까요?&#x27; → 예 → 2잔</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>My Menu</td><td><code>withtop77</code></td><td>카페인 블록 톱니바퀴 → 잔 / mg · 제한 바꾸기</td><td>제한 → 450mg</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>My Menu</td><td><code>withtop77</code></td><td>그래프 위 이번 주 · 주별 · 월별 누르기</td><td>이번 주 · 주별 · 월별</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>My Menu</td><td><code>withtop77</code></td><td>커피 → 아메리카노</td><td>ICE · L · 샷 추가가 미리 골라짐</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>My Menu</td><td><code>아무 회원</code></td><td>옵션 창 ♡ 좋아요 → My Menu</td><td>♡ → My Menu 좋아요한 음료</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>My Menu</td><td><code>아무 회원</code></td><td>좋아요를 7번째 음료에 누르기</td><td>&#x27;즐겨찾기는 최대 6잔만 가능해요&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>알레르기</td><td><code>bomin</code></td><td>커피 → 카페라떼 → 담기</td><td>&#x27;알레르기 주의 · 우유&#x27; → 취소 / 그래도 담기</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>버스표</td><td><code>withtop77</code></td><td>My Menu ★ 저장한 노선 ‘서울경부 → 대전복합’</td><td>저장한 노선 → 바로 시간표</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>버스표</td><td><code>jisung0642</code></td><td>승차권 구매 → 도착지 · 날짜 · 시간 · 인원 · 좌석 → 할인 ‘경로’</td><td>경로 할인 적용 · 9,500원</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>버스표</td><td><code>jisung0642</code></td><td>장바구니 담고 음료 고르기 → 음료 담기 → 결제</td><td>승차권 + 음료 한 번에 결제 · 완료 화면 승차장</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>버스표</td><td><code>비회원</code></td><td>예매표 출력 → 임예찬 · 010-2007-2007 → 장바구니에 담기</td><td>예매표 2장 · 0원</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>버스표</td><td><code>비회원</code></td><td>예매표만 담고 결제</td><td>0원 결제 → 출력</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>버스표</td><td><code>-</code></td><td>예매표 출력 → 예매번호 34567890 조회 (이미 출력한 표)</td><td>&#x27;이미 출력한 표예요&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>버스표</td><td><code>-</code></td><td>좌석을 고르고 5분 넘게 두기</td><td>5분 뒤 장바구니에서 빠짐</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>회원카드</td><td><code>user12</code></td><td>로그인</td><td>&#x27;받으신 회원카드를 리더기에 대면 등록돼요&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>회원카드</td><td><code>user12</code></td><td>My Menu 맨 위 ‘카드 등록’ 누르기</td><td>&#x27;받으신 회원카드를 리더기에 대 주세요 · 20초&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>회원카드</td><td><code>user12</code></td><td>음료를 담고 결제</td><td>할인 450원 · 스탬프 1 / 10</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>시작</td><td><code>-</code></td><td>안내 띠가 뜬 뒤 기다리기 · 안내가 떠 있을 때 처음으로</td><td>흐려지며 사라짐 · 처음 화면에서 바로 사라짐</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>회원카드</td><td><code>user01</code></td><td>My Menu 맨 아래 ‘회원카드를 잃어버렸어요’ → 예</td><td>예전 카드 정지 · 재발급 500원 장바구니</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>회원카드</td><td><code>아무 회원</code></td><td>비밀번호 로그인 때 ‘회원카드 신청’ 체크</td><td>장바구니 1,000원 · 완료 &#x27;음료와 함께 받아 가세요&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>혜택</td><td><code>jisung0642</code></td><td>미소 미션으로 결제한 뒤 ‘예 · 더 주문하기’ → 음료 담고 장바구니</td><td>한 번 쓰면 다음부터 안 보임</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>혜택</td><td><code>jisung0642</code></td><td>현금 넉넉히 넣고 ‘거스름돈을 포인트로’ 체크 → 결제</td><td>잔돈 포인트 +6,500P</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>혜택</td><td><code>bomin</code></td><td>쿠폰 · 포인트 화면에서 쿠폰 고르기 · 포인트 쓰기</td><td>10,500원 → 10,000원</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>혜택</td><td><code>아무 회원</code></td><td>장바구니 ‘개인 컵’ 체크 → 결제</td><td>에코 포인트 +100P</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>혜택</td><td><code>비회원</code></td><td>4,500원 음료 → 현금 화면</td><td>&#x27;500원을 동전으로 같이 넣으면 거스름돈에 동전이 없어요&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>결제</td><td><code>비회원</code></td><td>돈을 덜 넣기 → 반환</td><td>부족 금액 안내 → 반환</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>결제</td><td><code>bomin</code></td><td>포인트로 전액 → 0원 결제</td><td>포인트 전액 → 0원 결제</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>운영자</td><td><code>admin / demo</code></td><td>매출 요약 기간 바꾸기</td><td>30일 매출 874,500원</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>운영자</td><td><code>admin / demo</code></td><td>메뉴 · 재고: 아메리카노 체크 → 품절로 → 손님 화면</td><td>아메리카노 → 품절</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>운영자</td><td><code>admin / demo</code></td><td>회원카드 표 보기</td><td>아이디 · 이름 · 칭호</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>운영자</td><td><code>admin / demo</code></td><td>회원카드: 사용 중 카드 체크 → 분실 처리</td><td>user08 분실 처리</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>운영자</td><td><code>admin / demo</code></td><td>쿠폰: 회원 체크 → 발급 → 발급 내역</td><td>발급 → 내역 &#x27;미사용&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>운영자</td><td><code>admin / demo</code></td><td>혜택 설정: 카드 회원 적립률 5 → 저장 → 가입 화면</td><td>가입 화면 &#x27;매 주문 5% 적립&#x27;</td></tr><tr><td><b style="color:var(--ok)">통과</b></td><td>운영자</td><td><code>admin / demo</code></td><td>키오스크 설정: 사람 감지 끄기 → 저장</td><td>끄면 안내도 사라지고 다가와도 시작 안 함</td></tr></table></details></section></main><script>
+const TESTS = [{"group": "회원카드", "account": "user12", "todo": "로그인 → My Menu 맨 위 ‘카드 등록’ → 실물 카드를 리더기에 대기", "expect": "팝업 하나 ‘회원카드 등록 완료!’ (10% 할인 · 3% 적립) · ‘카드 등록’ 줄이 사라짐"}, {"group": "회원카드", "account": "user12", "todo": "위에서 등록한 카드로: 로그아웃 → 예 → 대기 화면에서 카드 대기", "expect": "매장 / 포장 → 아이디가 채워진 로그인"}, {"group": "회원카드", "account": "-", "todo": "등록 안 된 카드를 대기 → 떼었다가 다시 대기", "expect": "두 번 다 안내가 다시 반짝이며 뜸 (반응 없음 X)"}];
+const GROUPS = ["회원카드"];
+const KEY = "coffee-spoon-test-1104-card";
+let state = {};
+try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { state = {}; }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+let filter = "전체";
+function render() {
+  const chips = document.getElementById("chips");
+  chips.innerHTML = "";
+  ["전체", ...GROUPS].forEach(g => {
+    const b = document.createElement("button");
+    b.textContent = g; b.className = "chip" + (g === filter ? " on" : "");
+    b.onclick = () => { filter = g; render(); };
+    chips.appendChild(b);
+  });
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  TESTS.forEach((t, i) => {
+    if (filter !== "전체" && t.group !== filter) return;
+    const s = state[i] || {};
+    const row = document.createElement("div");
+    row.className = "item " + (s.result || "");
+    row.innerHTML = `<div class="head"><span class="no">${i + 1}</span><span class="tag">${t.group}</span>`
+      + `<span class="acct">${t.account}</span></div>`
+      + `<div class="todo">${t.todo}</div><div class="expect">→ ${t.expect}</div>`
+      + `<div class="btns"><button data-r="pass">통과</button><button data-r="fail">문제</button>`
+      + `<input placeholder="문제였다면 어떻게 됐는지 메모" value="${(s.note || "").replace(/"/g, "&quot;")}"></div>`;
+    row.querySelectorAll("button").forEach(b => {
+      if (s.result === b.dataset.r) b.classList.add("on");
+      b.onclick = () => { state[i] = {...s, result: s.result === b.dataset.r ? "" : b.dataset.r}; save(); render(); };
+    });
+    row.querySelector("input").onchange = e => { state[i] = {...(state[i] || {}), note: e.target.value}; save(); };
+    list.appendChild(row);
+  });
+  const pass = Object.values(state).filter(s => s.result === "pass").length;
+  const fail = Object.values(state).filter(s => s.result === "fail").length;
+  document.getElementById("summary").textContent = `통과 ${pass} · 문제 ${fail} · 남음 ${TESTS.length - pass - fail} / 전체 ${TESTS.length}`;
+}
+function copyProblems() {
+  const lines = TESTS.map((t, i) => [t, state[i] || {}, i]).filter(([, s]) => s.result === "fail")
+    .map(([t, s, i]) => `${i + 1}. [${t.group}] ${t.todo} → 기대: ${t.expect}${s.note ? " / 실제: " + s.note : ""}`);
+  const text = lines.length ? "시연 테스트 문제 목록\n" + lines.join("\n") : "문제로 표시한 항목이 없어요";
+  const box = document.getElementById("copybox");
+  box.value = text; box.style.display = "block"; box.select();
+  try { navigator.clipboard.writeText(text); } catch (e) {}
+}
+function resetAll() { if (confirm("체크를 모두 지울까요?")) { state = {}; save(); render(); } }
+render();
+</script></body></html>

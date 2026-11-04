@@ -18,7 +18,7 @@ from domain.tickets import depart_text, ticket_summary, until_text
 from domain.titles import title_name
 from gui import theme
 from gui.screens.ticket import TicketCartLine, notice_label
-from gui.widgets import FixedWidthCard, Card, button, card_cart_line, label, menu_icon
+from gui.widgets import FixedWidthCard, Card, SmileMission, StampCard, button, card_cart_line, label, menu_icon
 
 CASH_UNITS = (50000, 10000, 5000, 1000, 500, 100)
 
@@ -91,7 +91,8 @@ class CartScreen(QWidget):
         column = QVBoxLayout(summary)
         column.setContentsMargins(22, 22, 22, 22)
         column.setSpacing(12)
-        column.addWidget(label("주문 합계", 22, title=True))
+        self.summary_title = label("주문 합계", 22, title=True)
+        column.addWidget(self.summary_title)
         row, self.count_value = money_row("총 수량", "0개")
         column.addLayout(row)
         row, self.total_value = money_row("합계", theme.won(0), big=True)
@@ -111,9 +112,22 @@ class CartScreen(QWidget):
         self.eco_note = label("", 14, muted=True, guide=True)
         eco.addWidget(self.eco_note)
         column.addWidget(self.eco_box)
-        # B9 스마일 할인: 진행 중인 행사가 있을 때만. 누르면 카메라로 웃음을 확인한다 (비회원도)
-        self.smile_button = button("", "outline", self.try_smile)
-        column.addWidget(self.smile_button)
+        # B9 미소 미션 (11/03: 개인 컵처럼 체크 상자): 진행 중인 행사가 있을 때만. 체크하면 카메라로 웃음 확인
+        self.smile_box = QFrame()
+        self.smile_box.setObjectName("smile_box")
+        self.smile_box.setStyleSheet(f"QFrame#smile_box {{ background: {theme.CARD}; border: 3px solid {theme.CARAMEL};"
+                                     " border-radius: 16px; }")
+        smile = QVBoxLayout(self.smile_box)
+        smile.setContentsMargins(14, 10, 14, 10)
+        self.smile_check = QCheckBox("미소 미션")
+        self.smile_check.setFont(theme.font(18, bold=True))
+        self.smile_check.toggled.connect(self.toggle_smile)
+        smile.addWidget(self.smile_check)
+        self.smile_note = label("", 14, muted=True, guide=True)
+        smile.addWidget(self.smile_note)
+        column.addWidget(self.smile_box)
+        self.smile_button = self.smile_check            # 예전 이름 (시험 · 점검 도구가 쓴다)
+        self.smile_mission = SmileMission(self)
         self.pay_button = button("결제하기 →", "primary", self.go_pay)
         column.addWidget(self.pay_button)
         column.addWidget(button("← 메뉴 더 담기", "outline", lambda: self.router.show_screen("menu")))
@@ -136,6 +150,8 @@ class CartScreen(QWidget):
             self.lines.addWidget(label("장바구니가 비어 있어요", 18, muted=True))
         self.lines.addStretch()
         self.count_value.setText(f"{self.session.count()}개")
+        where = {True: " · 포장", False: " · 매장"}.get(self.session.takeout, "")
+        self.summary_title.setText(f"주문 합계{where}")
         self.total_value.setText(theme.won(self.session.total() - self.session.smile_discount()))
         self.pay_button.setEnabled(not self.session.is_empty())
         self.update_eco()
@@ -143,20 +159,33 @@ class CartScreen(QWidget):
 
     def update_smile(self):
         amount = self.session.smile_offer()
-        self.smile_button.setVisible(amount > 0)
-        self.smile_button.setEnabled(not self.session.smiled)
-        self.smile_button.setText(f"스마일 할인 −{amount:,}원 적용됨" if self.session.smiled
-                                  else f"웃고 {amount:,}원 할인 받기")
+        self.smile_box.setVisible(amount > 0)
+        self.smile_check.blockSignals(True)
+        self.smile_check.setChecked(self.session.smiled)
+        self.smile_check.blockSignals(False)
+        self.smile_check.setEnabled(not self.session.smiled)
+        self.smile_note.setText(f"스마일 할인 −{amount:,}원 적용됨" if self.session.smiled
+                                else f"카메라를 보고 웃으면 {amount:,}원 할인")
+
+    def toggle_smile(self, checked):
+        if checked and not self.session.smiled:
+            self.try_smile()
 
     def try_smile(self):
+        """미소 미션: 작은 카드에서 커피잔 표정을 보며 3초 웃기 → 성공 팝업."""
+        mission = self.smile_mission
+        mission.open()
         try:
-            smiled = self.router.run_face(lambda face: face.detect_smile(print))
+            smiled = self.router.run_face(lambda face: face.detect_smile(print, mission.update_state))
         except FaceError as error:
             self.router.notify(str(error), 4)
             return
+        finally:
+            mission.hide()
         if smiled:
             self.session.smiled = True
-            self.router.notify(f"좋아요! 스마일 할인 −{self.session.smile_discount():,}원", 3)
+            if self.router.popup is not None:
+                self.router.popup.tell("미소 미션 성공!", f"멋진 미소예요.\n스마일 할인 −{self.session.smile_discount():,}원을 적용했어요.")
         else:
             self.router.notify("웃는 얼굴을 찾지 못했어요 · 다시 눌러 주세요", 4)
         self.on_show()
@@ -435,6 +464,17 @@ class DoneScreen(QWidget):
         left.addWidget(self.number)
         self.waiting = center(label("", 24, bold=True))
         left.addWidget(self.waiting)
+        # 11/03: 새 칭호는 눈에 띄게 (영수증 한 줄로는 잘 모른다는 의견)
+        self.title_badge = center(label("", 22, bold=True))
+        self.title_badge.setStyleSheet(f"background: {theme.ACCENT}; color: #FFFFFF; border-radius: 14px; padding: 10px 18px;")
+        self.title_badge.hide()
+        left.addWidget(self.title_badge)
+        # 11/03: 회원카드 스탬프를 쿠폰처럼 (도장이 하나씩 늘어난다)
+        self.stamp_title = center(label("", 16, bold=True))
+        self.stamp_card = StampCard()
+        for widget in (self.stamp_title, self.stamp_card):
+            widget.hide()
+            left.addWidget(widget)
         self.ready_hint = center(label("준비되면 번호로 불러 드릴게요.", 18, muted=True))
         left.addWidget(self.ready_hint)
         self.change_notice = center(label("", 20, bold=True))      # 거스름돈이 나왔을 때만
@@ -576,30 +616,51 @@ class DoneScreen(QWidget):
         number = int(order["id"][1:])
         self.number.setText(f"{number:03d}")
         has_tickets, has_drinks = bool(order.get("tickets")), bool(order["lines"])
+        extras = bool(order.get("new_titles")) or bool((order.get("card_stamp") or {}).get("goal"))
+        tight = extras and (has_tickets or theme.SCALE > 1)       # 새 칭호 · 스탬프 자리를 먼저 준다
         self.ticket_box.setVisible(has_tickets)
         if has_tickets:
             self.show_tickets(order)
         # 승차권이 있으면 번호를 줄이고, 승차권만 샀으면 음료 대기 번호를 숨긴다
-        self.number.setFont(theme.font((64 if theme.SCALE == 1 else 48) if has_tickets
+        self.number.setFont(theme.font((64 if theme.SCALE == 1 else 48) if has_tickets or tight
                                        else (110 if theme.SCALE == 1 else 84), bold=True))
         for widget in (self.number, self.waiting):
             widget.setVisible(has_drinks)
         self.number_title.setVisible(has_drinks and not (has_tickets and theme.SCALE > 1))
-        self.ready_hint.setVisible(has_drinks and not has_tickets)
-        show_status = has_drinks and not (has_tickets and theme.SCALE > 1)   # 큰 글자는 승차권 안내가 먼저
+        where = {True: "포장", False: "매장"}.get(order.get("takeout"))
+        self.number_title.setText(f"대기 번호 · {where}" if where else "대기 번호")
+        self.ready_hint.setVisible(has_drinks and not has_tickets and not tight)
+        show_status = has_drinks and not (has_tickets and theme.SCALE > 1) and not tight   # 큰 글자는 승차권 안내가 먼저
         for part in self.status_parts:
             for widget in (part if isinstance(part, tuple) else (part,)):
                 widget.setVisible(show_status)
         member = order.get("customer")
+        new_titles = order.get("new_titles") or []
+        squeeze = has_tickets and theme.SCALE > 1                 # 큰 글자 + 승차권: 띠 대신 대기자 줄에 ★
+        self.title_badge.setVisible(bool(new_titles) and not squeeze)
+        if new_titles:
+            self.title_badge.setText("★ 새 칭호 획득! " + " · ".join(f"[{title_name(t)}]" for t in new_titles))
+        stamp = order.get("card_stamp")
+        show_stamp = bool(stamp and stamp.get("goal"))
+        for widget in (self.stamp_title, self.stamp_card):
+            widget.setVisible(show_stamp)
+        if show_stamp:
+            full = bool(stamp.get("coupon"))
+            shown = stamp["goal"] if full else stamp["stamps"]
+            self.stamp_card.set_stamps(shown, stamp["goal"], new=1)
+            self.stamp_title.setText("스탬프를 다 모았어요! 음료 1잔 무료 쿠폰을 넣어 드렸어요" if full
+                                     else f"회원카드 스탬프 {stamp['stamps']} / {stamp['goal']}  ·  도장 쾅!")
         if member:
             title = f"[{title_name(member['title'])}] " if member.get("title") else ""
-            self.waiting.setText(f"대기자: {title}{member['nickname']}")
+            star = "  ★ 새 칭호!" if new_titles and squeeze else ""
+            self.waiting.setText(f"대기자: {title}{member.get('name') or member['nickname']}{star}")
         else:
             self.waiting.setText(f"비회원 {number:03d}번")
         self.change_notice.setVisible(order["change"] > 0)
         self.change_notice.setText(f"거스름돈 {theme.won(order['change'])}이 나왔어요 · 반환구에서 꼭 챙겨 주세요")
         clear(self.receipt)
-        self.receipt.addWidget(label("영수증", 22, title=True))
+        where = {True: " · 포장", False: " · 매장"}.get(order.get("takeout"), "")
+        self.receipt.addWidget(label(f"영수증{where}", 22, title=True))
         for line in order["lines"]:
             text = f"{line['name']} × {line['quantity']}"
             if line["option_label"]:
@@ -627,7 +688,8 @@ class DoneScreen(QWidget):
         if any(p["benefit"] != "없음" for t in order.get("tickets", []) for p in t["passengers"]):
             self.receipt.addWidget(label("  할인 승차권은 승차 때 증명서 확인", 13, muted=True))
         self.receipt.addStretch()
-        discount = order.get("smile_discount", 0) + order.get("coupon_discount", 0) + order.get("points_used", 0)
+        discount = (order.get("card_discount", 0) + order.get("smile_discount", 0) + order.get("coupon_discount", 0)
+                    + order.get("points_used", 0))
         rows = [("주문 금액", theme.won(order["total"]))]
         if discount:
             rows.append(("할인", f"−{theme.won(discount)}"))
@@ -655,8 +717,9 @@ class DoneScreen(QWidget):
             lines.append(f"새 쿠폰: {order['issued_coupon']}")
         if order.get("card_kind"):
             lines.append("회원카드는 음료와 함께 받아 가세요\n다음 주문 때 로그인하고 카드를 대면 등록돼요")
-        if order.get("card_thanks"):
-            lines.append(f"감사 쿠폰: {order['card_thanks']}")
+        stamp = order.get("card_stamp")
+        if stamp and stamp.get("coupon"):
+            lines.append(f"새 쿠폰: {stamp['coupon']}")
         for text in lines:
             self.receipt.addWidget(label(text, 15))
         for title in order.get("new_titles", []):

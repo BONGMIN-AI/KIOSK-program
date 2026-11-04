@@ -74,8 +74,9 @@ class SignupScreen(QWidget):
         self.allergy_search.textChanged.connect(self.show_allergies)
         self.allergy_area = QScrollArea()
         self.allergy_area.setWidgetResizable(True)
-        self.allergy_area.setFixedHeight(110 if theme.SCALE == 1 else 104)   # 11/01: 회원카드 상자 자리
+        self.allergy_area.setMinimumHeight(104)   # 11/03: 남는 높이를 알레르기 칸이 쓴다 (아래 빈 곳 없이)
         section(self.allergy_title, self.allergy_search, self.allergy_area)
+        right.setStretch(right.count() - 1, 1)
         self.privacy = check_box("[필수] 개인정보 수집·이용 동의", bold=True)
         self.marketing = check_box("[선택] 마케팅 정보 수신 동의")
         self.face_consent = check_box("[선택] 얼굴 등록 동의 · 다음부터 카메라만 보면 로그인")
@@ -88,7 +89,7 @@ class SignupScreen(QWidget):
         card = QVBoxLayout(self.card_box)
         card.setContentsMargins(12, 6, 12, 6)
         card.setSpacing(2)
-        self.card_request = check_box("[선택] 회원카드 신청 (무료)", bold=True)
+        self.card_request = check_box("[선택] 회원카드 신청", bold=True)
         self.card_request.setStyleSheet("border: none;")
         card.addWidget(self.card_request)
         self.card_perks = perks = label("", 14, bold=True)       # 운영자 정책 값으로 on_show에서 채운다
@@ -99,7 +100,6 @@ class SignupScreen(QWidget):
         how.setVisible(theme.SCALE == 1)         # 큰 글자에서는 칸 높이에 맞춰 뺀다
         card.addWidget(how)
         right.addWidget(self.card_box)
-        right.addStretch(1)                      # 남는 높이는 여기로 (버튼은 맨 아래)
         self.message = message_label()
         right.addWidget(self.message)
         right.addWidget(button("다음 →", "primary", self.submit))
@@ -114,9 +114,8 @@ class SignupScreen(QWidget):
         for box in (self.privacy, self.marketing, self.face_consent, self.card_request):
             box.setChecked(False)
         policy = self.router.session.policy()
-        self.card_perks.setText(f"{perks_text(policy, self.router.session.vault.read('settings', default={}))}\n"
-                                "카드만 대면 바로 로그인")
-        self.card_how.setText("장바구니에 담겨 음료와 함께 결제 · 음료 나올 때 받아요")
+        self.card_perks.setText(f"{perks_text(policy)}\n카드만 대면 바로 로그인")
+        self.card_how.setText(f"카드값 {policy['card_price']:,}원 · 장바구니에 담겨 음료와 함께 결제 · 음료 나올 때 받아요")
         self.checked_allergies = set()
         self.message.setText("")
         self.show_allergies()

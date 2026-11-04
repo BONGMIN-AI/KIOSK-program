@@ -29,8 +29,9 @@ from .engines import AntiSpoof, ArcFace
 
 ALGORITHM = "ArcFace-w600k_r50"
 # 얼굴 유사도 기준 (ArcFace 코사인). 공개 사진 시험에서 같은 사람 0.9 이상, 다른 사람 0.05 안팎.
-# 웹캠은 조명 때문에 같은 사람도 0.5~0.8 정도라 0.45로 둔다. 현장에서는 KIOSK_FACE_THRESHOLD로 바꾼다.
-DEFAULT_COSINE_THRESHOLD = 0.45
+# 11/04 회의: 0.45는 보안이 너무 낮다 → 0.7. 실제로 본인은 0.85 안팎이 나왔다 (웹캠 · 밝은 곳).
+# 어두운 곳에서 본인도 떨어지면 KIOSK_FACE_THRESHOLD로 현장에서 조금 내린다.
+DEFAULT_COSINE_THRESHOLD = 0.7
 MIN_PASSING_SAMPLES = 4        # 로그인 5장 중 4장 이상이 기준을 넘어야 한다 (우연히 한 장 통과 방지)
 ENROLL_CONSISTENCY = 0.6       # 등록 10장이 서로 이만큼은 닮아야 한다 (흔들린 등록 방지)
 SESSION_SECONDS = 30
@@ -46,12 +47,15 @@ NEAR_DISTANCE_M = 0.55         # D435: 코까지 거리
 NEAR_FACE_WIDTH = 120          # 웹캠(640x480): 얼굴 폭이 이보다 작으면 50~60cm보다 멀다
 FAR_ALERT = "카메라 앞 50cm 안으로 와 주세요"
 # 스마일 할인 (11/02 B9): YuNet 점 5개 중 입꼬리 사이 / 두 눈 사이 비율. 웃으면 입이 옆으로 넓어진다.
-# 처음 몇 장의 평소 얼굴보다 SMILE_RISE배 넓어지거나 SMILE_RATIO를 넘은 채 SMILE_FRAMES장 이어지면 통과.
-# 현장 카메라에서 너무 쉽거나 어려우면 KIOSK_SMILE_RATIO로 바꾼다.
-SMILE_SECONDS = 12
-SMILE_FRAMES = 6
-SMILE_RISE = 1.12
-SMILE_BASE_FRAMES = 5
+# 처음 몇 장의 평소 얼굴보다 SMILE_RISE배 넓어지거나 SMILE_RATIO를 넘은 시간을 모아 SMILE_HOLD초가 되면 통과.
+# 11/03 시험: D435 앞 0.71m에서 평소 비율 0.89~0.92 → 예전 기준(50cm 안 · 1.12배 · 1.0)으로는 얼굴을 아예 못 찾았다.
+# 기준을 1.05배 · 0.98로 낮추고, 거리(50cm 안)를 넘으면 지금 거리를 알려 준다. 현장에서는 KIOSK_SMILE_RATIO로 바꾼다.
+SMILE_SECONDS = 20             # 이 안에 성공 못 하면 다시 누르게
+SMILE_HOLD = 3.0               # 11/03: 3초 동안 웃음을 이어 가면 성공
+SMILE_RISE = 1.05
+SMILE_MAX_M = 0.5              # 미소 미션도 50cm 안 (11/03 시험 의견) · 거리를 안내한다
+SMILE_SCORE = 0.75             # 미소 미션 동안은 얼굴 찾기 기준을 조금 낮춘다 (로그인 0.9)
+SMILE_BASE_FRAMES = 8              # 평소 얼굴: 처음 8장의 가운데 값 (한두 장 튀어도 괜찮게)
 ANTISPOOF_MODELS = (           # (모델, 얼굴 박스를 넓히는 배수)
     (config.FACE_ANTISPOOF_V2_PATH, 2.7),
     (config.FACE_ANTISPOOF_V1SE_PATH, 4.0),
@@ -183,49 +187,92 @@ class OpenCVFace:
         self._capture_samples("VERIFY", on_status)
         return True
 
-    def detect_smile(self, on_status=print) -> bool:
-        """카메라 앞에서 웃으면 True. 시간 안에 못 찾으면 False, 취소하면 FaceError. 아무것도 저장하지 않는다."""
-        title = "COFFEE & SPOON KIOSK - Smile (ESC: cancel)"
-        labels = ["카메라 앞에 서기", "활짝 웃기", "할인 적용"]
-        footer = "ESC 취소 · 사진은 저장하지 않아요"
-        threshold = float(os.environ.get("KIOSK_SMILE_RATIO", "1.0"))
-        cap = self._open_camera()
-        base, streak = [], 0
+    def detect_smile(self, on_status=print, on_state=None) -> bool:
+        """카메라 앞에서 웃은 시간을 모아 3초가 되면 True. 시간 안에 못 하면 False, 취소하면 FaceError.
+
+        on_state(얼굴 있음, 웃는 중, 진행 0~1, 안내 한 줄) -> 취소했으면 True. 화면은 카메라 영상 대신
+        작은 커피잔 표정만 보여 준다. 웃은 시간은 끊겨도 0으로 돌아가지 않고 쌓인다 (11/03). 아무것도 저장하지 않는다.
+        """
+        threshold = float(os.environ.get("KIOSK_SMILE_RATIO", "0.98"))
+
+        def report(found, smiling, progress, hint):
+            if on_state is not None:
+                return on_state(found, smiling, progress, hint)
+            return False
+
+        if report(False, False, 0.0, "카메라를 켜는 중이에요 · 잠시만 기다려 주세요"):
+            raise FaceError("스마일 미션을 취소했어요")
+        depth_camera, cap = None, None
+        if self.use_depth:
+            depth_camera = RealSenseCamera().__enter__()
+        else:
+            cap = self._open_camera()
+        self.detector.setScoreThreshold(SMILE_SCORE)
+        base, earned, last = [], 0.0, None
         started = time.monotonic()
-        on_status("카메라를 보고 활짝 웃어 주세요")
+        on_status("카메라를 보고 웃어 주세요 (웃은 시간 3초)")
         try:
             while time.monotonic() - started < SMILE_SECONDS:
-                ok, frame = cap.read()
-                if not ok or frame is None:
-                    raise FaceError("카메라 영상을 받지 못했습니다")
-                frame = cv2.flip(frame, 1)
-                face, count, _far = self._detect_one(frame)
-                ratio = smile_ratio(face) if face is not None else 0.0
-                if face is not None and len(base) < SMILE_BASE_FRAMES:
-                    base.append(ratio)
-                neutral = min(base) if base else 0.0
-                smiling = face is not None and (ratio >= threshold or
-                                                (len(base) >= SMILE_BASE_FRAMES and ratio >= neutral * SMILE_RISE))
-                streak = streak + 1 if smiling else 0
-                done = streak >= SMILE_FRAMES
-                alert = "" if face is not None else ("한 사람만 카메라 앞에 서 주세요" if count > 1 else
-                                                     "카메라 앞에 서 주세요")
-                view, _scale, _offset = guide_view.fit_camera(frame)
-                panel = guide_view.render_panel("스마일 할인", labels, 2 if done else (1 if face is not None else 0),
-                                                alert, streak / SMILE_FRAMES, footer)
-                if self.on_step is not None:
-                    self.on_step(alert or ("좋아요!" if done else "활짝 웃어 주세요"))
-                if self._show(title, np.hstack([view, panel]), 1):
-                    raise FaceError("스마일 할인을 취소했어요")
-                if done:
+                if depth_camera is not None:
+                    frame, depth = depth_camera.read()          # 이미 거울처럼 뒤집혀 있다
+                    if frame is None:
+                        continue
+                else:
+                    ok, frame = cap.read()
+                    if not ok or frame is None:
+                        raise FaceError("카메라 영상을 받지 못했습니다")
+                    frame, depth = cv2.flip(frame, 1), None
+                face, distance = self._smile_face(frame, depth)
+                now = time.monotonic()
+                step = min(0.3, now - last) if last else 0.0
+                last = now
+                smiling = False
+                if face is None:
+                    hint = "카메라를 정면으로 봐 주세요"
+                elif distance is not None and distance > SMILE_MAX_M:
+                    hint = f"조금 더 가까이 와 주세요 · 지금 {distance * 100:.0f}cm (50cm 안)"
+                    face = None
+                else:
+                    ratio = smile_ratio(face)
+                    if len(base) < SMILE_BASE_FRAMES:
+                        base.append(ratio)
+                    neutral = sorted(base)[len(base) // 2]
+                    smiling = ratio >= threshold or (len(base) >= SMILE_BASE_FRAMES and ratio >= neutral * SMILE_RISE)
+                    if smiling:
+                        earned += step
+                    hint = "좋아요! 그대로 웃어 주세요" if smiling else "입꼬리를 올려 활짝 웃어 주세요"
+                progress = min(1.0, earned / SMILE_HOLD)
+                if report(face is not None, smiling, progress, hint):
+                    raise FaceError("스마일 미션을 취소했어요")
+                if on_state is None and self._show("COFFEE & SPOON KIOSK - Smile (ESC: cancel)",
+                                                   guide_view.fit_camera(frame)[0], 1):
+                    raise FaceError("스마일 미션을 취소했어요")
+                if progress >= 1.0:
                     on_status("웃음 확인 완료")
                     return True
             on_status("웃음을 찾지 못했어요")
             return False
         finally:
-            cap.release()
-            if self.viewer is None:
-                cv2.destroyWindow(title)
+            self.detector.setScoreThreshold(0.9)
+            if cap is not None:
+                cap.release()
+            if depth_camera is not None:
+                depth_camera.__exit__(None, None, None)
+            if on_state is None and self.viewer is None:
+                cv2.destroyAllWindows()
+
+    def _smile_face(self, frame, depth=None):
+        """미소 미션용: 가장 큰(가까운) 얼굴 하나와 거리(m, D435 깊이 또는 얼굴 폭으로 어림)."""
+        height, width = frame.shape[:2]
+        self.detector.setInputSize((width, height))
+        _result, faces = self.detector.detect(frame)
+        if faces is None or not len(faces):
+            return None, None
+        face = max(faces, key=lambda f: f[2])
+        distance = sample_depth(depth, face[8], face[9]) if depth is not None else None
+        if distance is None:
+            distance = 66 / max(float(face[2]) * 640 / width, 1.0)
+        return face, distance
 
     def _open_camera(self):
         cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
@@ -264,6 +311,9 @@ class OpenCVFace:
         enrolling = purpose == "ENROLL"
         challenges = [DEPTH_CHALLENGE if self.use_depth else LIVE_CHALLENGE]
         depth_camera, cap = None, None
+        if self.viewer is not None:          # 11/04 회의: 카메라가 켜지는 1~3초 동안 '잠시만 기다려 주세요'
+            if self._show(title, guide_view.waiting_screen(purpose), 1):
+                raise FaceError("얼굴 인증을 취소했습니다")
         if self.use_depth:
             depth_camera = RealSenseCamera().__enter__()
         else:

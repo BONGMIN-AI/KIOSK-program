@@ -19,9 +19,18 @@ import zlib
 from datetime import date, datetime, time, timedelta
 
 ORIGIN = "서울경부"
+# 시연 예매자 (11/04 회의: 예매표는 이름 + 휴대폰 번호로 찾는다). 팀원 임예찬이 비회원으로 보여 준다.
+BOOKER_NAME, BOOKER_PHONE = "임예찬", "010-2007-2007"
+OTHER_NAME, OTHER_PHONE = "김공학", "010-0315-0315"        # 이미 출력 · 출발 지남 안내를 보여 주는 표
+
+
+def phone_digits(text):
+    """'010-2007-2007' · '01020072007' → '01020072007'."""
+    return "".join(ch for ch in (text or "") if ch.isdigit())
 SALES_CLOSE_MINUTES = 10       # 출발 10분 전 판매·출력 마감
 HOLD_SECONDS = 5 * 60          # 고른 좌석을 잡아 두는 시간
 MAX_PASSENGERS = 6
+RESERVED = "RSV"               # 장바구니에 담은 예매표의 hold_id 머리 (예: RSV12345678) — 결제하면 출력
 DAYS_AHEAD = 7                 # 오늘부터 7일
 WEEKDAYS = "월화수목금토일"
 GRADES = {"우등": 28, "일반": 45}
@@ -304,7 +313,13 @@ class TicketOffice:
         return hold_id
 
     def hold_seconds(self, hold_id, now=None):
-        """잡아 둔 좌석의 남은 초 (없거나 지났으면 0)."""
+        """잡아 둔 좌석의 남은 초 (없거나 지났으면 0). 예매표는 출력 마감(출발 10분 전)까지."""
+        if hold_id.startswith(RESERVED):
+            reservation = self.reservations.get(hold_id[len(RESERVED):])
+            if reservation is None or reservation["printed"]:
+                return 0
+            close = datetime.fromisoformat(reservation["depart"]) - timedelta(minutes=SALES_CLOSE_MINUTES)
+            return max(0, int((close - (now or datetime.now())).total_seconds()))
         hold = self.holds.get(hold_id)
         if hold is None:
             return 0
@@ -314,11 +329,17 @@ class TicketOffice:
         self.holds.pop(hold_id, None)
 
     def check_hold(self, hold_id, now=None):
+        if hold_id.startswith(RESERVED):
+            self.lookup(number=hold_id[len(RESERVED):], now=now)    # 마감 · 이미 출력이면 이유를 알린다
+            return
         if not self.hold_seconds(hold_id, now):
             raise ValueError("좌석을 잡아 둔 5분이 지났어요 · 승차권을 다시 골라 주세요")
 
     def confirm(self, hold_id, now=None):
-        """결제가 끝나면 잡아 둔 좌석을 판 좌석으로 바꾼다."""
+        """결제가 끝나면 잡아 둔 좌석을 판 좌석으로 바꾼다. 예매표는 이때 출력한다."""
+        if hold_id.startswith(RESERVED):
+            self.print_reservations([hold_id[len(RESERVED):]], now)
+            return
         self.check_hold(hold_id, now)
         hold = self.holds.pop(hold_id)
         self.sold.setdefault(hold["bus_id"], set()).update(hold["seats"])
@@ -334,6 +355,16 @@ class TicketOffice:
         }
 
     # 예매표 출력
+    def reservation_item(self, number):
+        """예매표를 장바구니에 담는 한 묶음 (이미 결제한 표라 0원). 결제를 마치면 출력된다 (11/03)."""
+        r = self.reservations[number]
+        passengers = [{"seat": seat, "type": "어른", "benefit": "없음", "price": 0} for seat in r["seats"]]
+        return {
+            "hold_id": f"{RESERVED}{number}", "reservation": number, "bus_id": "", "origin": r["origin"],
+            "destination": r["destination"], "depart": r["depart"], "grade": r["grade"], "company": r["company"],
+            "platform": r["platform"], "passengers": passengers, "count": len(passengers), "total": 0,
+        }
+
     def first_bus_after(self, destination, moment):
         for offset in range(DAYS_AHEAD + 1):
             for bus in self.buses_on(ORIGIN, destination, moment.date() + timedelta(days=offset)):
@@ -347,25 +378,25 @@ class TicketOffice:
         later = self.first_bus_after("동대구", datetime.combine(now.date() + timedelta(days=2), time(18, 0)))
         printed = self.first_bus_after("부산", now + timedelta(hours=3))
         rows = [
-            ("12345678", "홍길동", "900101", soon, [7, 8]),
-            ("23456789", "홍길동", "900101", later, [11]),
-            ("34567890", "김공학", "010315", printed, [20]),
+            ("12345678", BOOKER_NAME, BOOKER_PHONE, soon, [7, 8]),
+            ("23456789", BOOKER_NAME, BOOKER_PHONE, later, [11]),
+            ("34567890", OTHER_NAME, OTHER_PHONE, printed, [20]),
         ]
-        for number, name, birth, bus, seats in rows:
+        for number, name, phone, bus, seats in rows:
             self.reservations[number] = {
-                "number": number, "name": name, "birth": birth, "origin": bus["origin"],
+                "number": number, "name": name, "phone": phone_digits(phone), "origin": bus["origin"],
                 "destination": bus["destination"], "depart": bus["depart"], "grade": bus["grade"],
                 "company": bus["company"], "platform": bus["platform"], "seats": seats, "printed": False}
             self.sold.setdefault(bus["id"], set()).update(seats)
         self.reservations["34567890"]["printed"] = True
         gone = (now - timedelta(minutes=40)).replace(second=0, microsecond=0)
         self.reservations["45678901"] = {
-            "number": "45678901", "name": "김공학", "birth": "010315", "origin": ORIGIN,
+            "number": "45678901", "name": OTHER_NAME, "phone": phone_digits(OTHER_PHONE), "origin": ORIGIN,
             "destination": "천안", "depart": gone.isoformat(timespec="minutes"), "grade": "일반",
             "company": "동양", "platform": 5, "seats": [3], "printed": False}
 
-    def lookup(self, number=None, name=None, birth=None, now=None):
-        """예매번호 또는 이름 + 생년월일 6자리로 출력할 수 있는 예매를 찾는다. 없으면 이유를 담은 ValueError."""
+    def lookup(self, number=None, name=None, phone=None, now=None):
+        """예매번호 또는 이름 + 휴대폰 번호로 출력할 수 있는 예매를 찾는다. 없으면 이유를 담은 ValueError."""
         now = now or datetime.now()
         if number is not None:
             number = number.replace("-", "").strip()
@@ -373,10 +404,10 @@ class TicketOffice:
                 raise ValueError("예매번호를 입력해 주세요")
             found = [self.reservations[number]] if number in self.reservations else []
         else:
-            name, birth = (name or "").strip(), (birth or "").strip()
-            if not name or len(birth) != 6 or not birth.isdigit():
-                raise ValueError("이름과 생년월일 6자리를 입력해 주세요 (예: 900101)")
-            found = [r for r in self.reservations.values() if r["name"] == name and r["birth"] == birth]
+            name, phone = (name or "").strip(), phone_digits(phone)
+            if not name or not phone.startswith("01") or len(phone) not in (10, 11):
+                raise ValueError(f"이름과 휴대폰 번호를 입력해 주세요 (예: {BOOKER_PHONE})")
+            found = [r for r in self.reservations.values() if r["name"] == name and r["phone"] == phone]
         if not found:
             raise ValueError("조회된 예매가 없어요 · 입력한 내용을 확인해 주세요")
         usable, reasons = [], []

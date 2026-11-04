@@ -194,7 +194,8 @@ def buy_card_and_register(router, member, number):
     session.pay()
     router.start_member_order(session.vault.read("customers")[member["id"]])
     router.card_scanned(number)
-    assert "등록 완료" in router.notice.text(), router.notice.text()
+    assert "등록 완료" in router.popup.title.text()
+    router.popup.hide()
 
 
 def test_card_bought_registered_then_tag_starts_face_login(window, app):
@@ -207,6 +208,9 @@ def test_card_bought_registered_then_tag_starts_face_login(window, app):
     for digit in "0099887766":                        # 대기 화면에서 리더기가 번호 + Enter
         QTest.keyClick(handle, getattr(Qt.Key, f"Key_{digit}"), Qt.KeyboardModifier.NoModifier)
     QTest.keyClick(handle, Qt.Key.Key_Return)
+    app.processEvents()
+    assert router.choosing_dine() and router.current_name == "idle"   # 대기 화면 위에 매장 / 포장 버튼
+    router.choose_dine(True)
     app.processEvents()
     assert router.current_name == "menu" and router.session.customer["id"] == member["id"]
     assert any(entry["action"] == "card_tag" for entry in router.audit_memory)

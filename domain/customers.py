@@ -49,6 +49,13 @@ def validate_password_pair(password: str, confirm: str) -> None:
         raise ValueError("비밀번호와 비밀번호 재입력이 다릅니다")
 
 
+def call_name(customer: dict | None) -> str:
+    """손님을 부를 때 쓰는 이름 (11/04 회의: 닉네임보다 이름이 먼저). 이름이 없으면 닉네임."""
+    if not customer:
+        return ""
+    return (customer.get("name") or "").strip() or customer.get("extra", customer).get("nickname", "")
+
+
 def register_customer(vault, name: str, nickname: str, phone: str,
                       login_id: str, password: str,
                       birthday: str = "", allergies=None,

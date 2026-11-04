@@ -125,25 +125,25 @@ def test_confirm_sells_seats_and_closed_bus_cannot_be_held():
 # ---------------------------------------------------------------- 예매표 출력
 def test_lookup_by_name_or_number_and_print_once():
     office = TicketOffice(NOW)
-    found = office.lookup(name="홍길동", birth="900101", now=NOW)
+    found = office.lookup(name="임예찬", phone="010-2007-2007", now=NOW)
     assert [r["number"] for r in found] == ["12345678", "23456789"]
     assert office.lookup(number="1234-5678", now=NOW)[0]["seats"] == [7, 8]
     office.print_reservations(["12345678"], NOW)
     with pytest.raises(ValueError, match="이미 출력한 표"):
         office.lookup(number="12345678", now=NOW)
-    assert [r["number"] for r in office.lookup(name="홍길동", birth="900101", now=NOW)] == ["23456789"]
+    assert [r["number"] for r in office.lookup(name="임예찬", phone="010-2007-2007", now=NOW)] == ["23456789"]
 
 
 def test_lookup_explains_why_nothing_can_be_printed():
     office = TicketOffice(NOW)
     with pytest.raises(ValueError, match="조회된 예매가 없어요"):
-        office.lookup(name="없는사람", birth="000101", now=NOW)
-    with pytest.raises(ValueError, match="6자리"):
-        office.lookup(name="홍길동", birth="9001", now=NOW)
+        office.lookup(name="없는사람", phone="01000000000", now=NOW)
+    with pytest.raises(ValueError, match="휴대폰 번호"):
+        office.lookup(name="임예찬", phone="010-2007", now=NOW)
     with pytest.raises(ValueError, match="출발 시간이 지났어요"):
         office.lookup(number="45678901", now=NOW)
     with pytest.raises(ValueError, match="이미 출력한 표예요 · 출발 시간이 지났어요"):
-        office.lookup(name="김공학", birth="010315", now=NOW)
+        office.lookup(name="김공학", phone="01003150315", now=NOW)
     soon = office.reservations["12345678"]
     near = datetime.fromisoformat(soon["depart"]) - timedelta(minutes=5)
     with pytest.raises(ValueError, match="출발 시간이 지났어요"):
@@ -372,25 +372,33 @@ def test_going_back_from_confirm_releases_seats(window):
     assert panel.page_name() == "home"
 
 
-def test_print_reservation_by_name_and_birth(window):
+def test_print_reservation_by_name_and_phone(window):
     router, menu, panel = ticket_tab(window)
     panel.print_choice.click()
-    for key in "ㅎㅗㅇㄱㅣㄹㄷㅗㅇ":
+    for key in "ㅇㅣㅁㅇㅖㅊㅏㄴ":
         panel.lookup_keyboard.type(key)
-    assert panel.name_field.text() == "홍길동"
-    panel.lookup_keyboard.target = panel.birth_field
-    for key in "900101ㄱ":
-        panel.lookup_keyboard.type(key)                     # 생년월일 칸에는 숫자만
-    assert panel.birth_field.text() == "900101"
+    assert panel.name_field.text() == "임예찬"
+    panel.lookup_keyboard.target = panel.phone_field
+    for key in "01020072007ㄱ":
+        panel.lookup_keyboard.type(key)                     # 휴대폰 번호 칸에는 숫자만 (11/04)
+    assert panel.phone_field.text() == "01020072007"
     panel.lookup()
     assert panel.page_name() == "result" and len(panel.reservation_buttons) == 2
     panel.reservation_buttons[1].click()                    # 하나만 출력
-    assert panel.print_button.text() == "선택한 표 출력 (2매)"
+    assert panel.print_button.text() == "장바구니에 담기 (2매 · 0원)"
     panel.print_button.click()
-    assert panel.printed_box.isVisibleTo(panel) and "출력됐어요" in panel.printed_title.text()
-    assert router.session.is_empty()                        # 예매표는 장바구니에 안 담김
-    assert router.session.office.reservations["12345678"]["printed"]
-    assert not router.session.office.reservations["23456789"]["printed"]
+    assert panel.printed_box.isVisibleTo(panel) and "장바구니에 담았어요" in panel.printed_title.text()
+    session = router.session
+    assert len(session.tickets) == 1 and session.tickets[0]["total"] == 0      # 11/03: 예매표는 0원으로 담김
+    assert session.total() == 0 and not session.office.reservations["12345678"]["printed"]
+    panel.print_selected()                                  # 같은 표를 두 번 담지 않는다
+    assert len(session.tickets) == 1
+    session.add("M001", None, 1)
+    session.insert(10000)
+    order = session.pay()                                   # 결제를 마치면 출력
+    assert order["tickets"][0]["reservation"] == "12345678" and order["ticket_total"] == 0
+    assert session.office.reservations["12345678"]["printed"]
+    assert not session.office.reservations["23456789"]["printed"]
 
 
 def test_lookup_error_stays_on_lookup(window):

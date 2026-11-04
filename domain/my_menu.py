@@ -76,8 +76,11 @@ def likes_of(customer: dict) -> list[str]:
     return list(customer["extra"].get("likes", []))
 
 
+MAX_LIKES = 6                  # My Menu '좋아요한 음료' 칸에 다 보이는 만큼 (11/03)
+
+
 def toggle_like(vault, customer_id: str, menu_id: str) -> bool:
-    """좋아요를 켜거나 끈다. 켜졌으면 True."""
+    """좋아요를 켜거나 끈다. 켜졌으면 True. 이미 6잔이면 더 켜지 않고 ValueError."""
     customers = vault.read("customers", default={})
     if customer_id not in customers:
         raise ValueError("회원을 찾을 수 없습니다")
@@ -86,6 +89,8 @@ def toggle_like(vault, customer_id: str, menu_id: str) -> bool:
     record = customers[customer_id]
     likes = likes_of(record)
     liked = menu_id not in likes
+    if liked and len(likes) >= MAX_LIKES:
+        raise ValueError(f"즐겨찾기는 최대 {MAX_LIKES}잔만 가능해요\n다른 음료의 ♥를 먼저 풀어 주세요")
     if liked:
         likes.append(menu_id)
     else:

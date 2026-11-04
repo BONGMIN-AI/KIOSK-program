@@ -7,6 +7,7 @@
 """
 from datetime import date
 
+from .member_cards import first_card_discount
 from .policy import DEFAULT_POLICY, coupon_expiry
 
 POINT_UNIT = DEFAULT_POLICY["point_unit"]
@@ -48,10 +49,12 @@ def apply_benefits(total: int, customer: dict | None, coupon_id: str | None = No
         if coupon_id or use_points:
             raise ValueError("비회원은 쿠폰과 포인트를 사용할 수 없습니다")
         smile_discount = min(smile, total)
-        return {"smile_discount": smile_discount, "coupon": None, "coupon_discount": 0,
+        return {"card_discount": 0, "smile_discount": smile_discount, "coupon": None, "coupon_discount": 0,
                 "points_used": 0, "final_total": total - smile_discount}
 
     today = today or date.today().isoformat()
+    card_discount = first_card_discount(customer, total, policy)   # 회원카드 받은 뒤 첫 주문
+    total -= card_discount
     smile_discount = min(smile, total)
     total -= smile_discount
     coupon = None
@@ -84,6 +87,7 @@ def apply_benefits(total: int, customer: dict | None, coupon_id: str | None = No
             raise ValueError(f"결제 금액({after_coupon:,}원)보다 많은 포인트는 쓸 수 없습니다")
 
     return {
+        "card_discount": card_discount,
         "smile_discount": smile_discount,
         "coupon": coupon,
         "coupon_discount": coupon_discount,

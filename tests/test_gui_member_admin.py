@@ -57,7 +57,7 @@ def test_face_failure_then_password(window):
     assert router.current_name == "menu"
     menu = router.screens["menu"]
     assert menu.category == "My Menu"                # 회원은 My Menu가 먼저
-    assert "MVP보민" in menu.member_name.text()
+    assert "김팀장" in menu.member_name.text()                    # 11/04: 닉네임보다 이름
 
 
 def test_member_order_with_allergy_coupon_points_and_change(window):
@@ -97,7 +97,7 @@ def test_member_order_with_allergy_coupon_points_and_change(window):
     assert router.current_name == "done"
     order = router.session.last_order
     assert order["change"] == 0 and order["change_points"] == 500
-    assert router.screens["done"].waiting.text() == "대기자: [새내기] MVP보민"
+    assert router.screens["done"].waiting.text() == "대기자: [새내기] 김팀장"
     after = router.session.customer["extra"]["points"]
     assert after == before - 500 + order["earned_points"] + 500
 

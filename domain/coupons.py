@@ -14,10 +14,10 @@ DEFAULT_TEMPLATES = [
     {"id": "T002", "name": "생일 축하 2,000원", "amount": 2000, "min_order": 0, "days": 14},
     {"id": "T003", "name": "이스터에그 100원", "amount": 100, "min_order": 0, "days": 30},
     {"id": "T004", "name": "가입 기념 1,000원", "amount": 1000, "min_order": 0, "days": 14},
-    {"id": "T005", "name": "회원카드 감사 1,000원", "amount": 1000, "min_order": 0, "days": 30},
+    {"id": "T005", "name": "음료 1잔 무료 (5,000원까지)", "amount": 5000, "min_order": 0, "days": 60},
 ]
 BIRTHDAY_TEMPLATE, EASTER_EGG_TEMPLATE, ANNIVERSARY_TEMPLATE = "T002", "T003", "T004"
-CARD_THANKS_TEMPLATE = "T005"            # 회원카드를 결제하면 (11/03)
+STAMP_TEMPLATE = "T005"                  # 회원카드 스탬프를 다 모으면 (11/03)
 
 
 def templates(settings: dict | None) -> list[dict]:

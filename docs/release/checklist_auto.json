@@ -1,0 +1,193 @@
+{
+ "at": "2026-11-04T18:57",
+ "results": {
+  "idle_touch": {
+   "ok": true,
+   "detail": "대기 화면 위에 매장 / 포장 버튼이 떠오름 (화면은 그대로)"
+  },
+  "takeout": {
+   "ok": true,
+   "detail": "장바구니 · 완료 · 영수증 모두 '포장'"
+  },
+  "display_reset": {
+   "ok": true,
+   "detail": "처음 화면으로 가면 글자 · 색 · 언어가 기본으로"
+  },
+  "away_refund": {
+   "ok": true,
+   "detail": "0초 → 처음 화면 · '넣은 현금 1,000원을 반환했어요'"
+  },
+  "login_fail": {
+   "ok": true,
+   "detail": "틀린 비밀번호 → 로그인 안 되고 아이디부터 다시"
+  },
+  "no_card_option": {
+   "ok": true,
+   "detail": "user01 (카드 있음) → '회원카드 신청' 칸 없음"
+  },
+  "no_face_option": {
+   "ok": true,
+   "detail": "얼굴 등록된 bomin → '얼굴도 등록할게요' 칸 없음"
+  },
+  "find_id": {
+   "ok": true,
+   "detail": "결과 '회원 ID: bo***'"
+  },
+  "greet_withtop": {
+   "ok": true,
+   "detail": "'[얼죽아] 김휘원 님, 2일 만이에요!'"
+  },
+  "greet_jisung": {
+   "ok": true,
+   "detail": "'김지성 님, 오늘 두 번째 방문이에요!'"
+  },
+  "title_sheet": {
+   "ok": true,
+   "detail": "칭호 7개 진행 막대"
+  },
+  "new_title": {
+   "ok": true,
+   "detail": "★ 새 칭호 획득! [신메뉴 헌터] · [단골손님]"
+  },
+  "easter_egg": {
+   "ok": true,
+   "detail": "첫 번째 100원 쿠폰 · 두 번째 '이미 찾으셨네요!'"
+  },
+  "quick": {
+   "ok": true,
+   "detail": "다시 담기 → '그래도 담을까요?' → 예 → 2잔"
+  },
+  "caffeine_gear": {
+   "ok": true,
+   "detail": "제한 → 450mg"
+  },
+  "caffeine_views": {
+   "ok": true,
+   "detail": "이번 주 · 주별 · 월별"
+  },
+  "habit": {
+   "ok": true,
+   "detail": "ICE · L · 샷 추가가 미리 골라짐"
+  },
+  "like": {
+   "ok": true,
+   "detail": "♡ → My Menu 좋아요한 음료"
+  },
+  "like_max": {
+   "ok": true,
+   "detail": "'즐겨찾기는 최대 6잔만 가능해요'"
+  },
+  "allergy": {
+   "ok": true,
+   "detail": "'알레르기 주의 · 우유' → 취소 / 그래도 담기"
+  },
+  "saved_route": {
+   "ok": true,
+   "detail": "저장한 노선 → 바로 시간표"
+  },
+  "ticket_discount": {
+   "ok": true,
+   "detail": "경로 할인 적용 · 9,500원"
+  },
+  "ticket_drink": {
+   "ok": true,
+   "detail": "승차권 + 음료 한 번에 결제 · 완료 화면 승차장"
+  },
+  "reservation_cart": {
+   "ok": true,
+   "detail": "예매표 2장 · 0원"
+  },
+  "reservation_pay": {
+   "ok": true,
+   "detail": "0원 결제 → 출력"
+  },
+  "reservation_printed": {
+   "ok": true,
+   "detail": "'이미 출력한 표예요'"
+  },
+  "seat_hold": {
+   "ok": true,
+   "detail": "5분 뒤 장바구니에서 빠짐"
+  },
+  "card_login_notice": {
+   "ok": true,
+   "detail": "'받으신 회원카드를 리더기에 대면 등록돼요'"
+  },
+  "card_button": {
+   "ok": true,
+   "detail": "'받으신 회원카드를 리더기에 대 주세요 · 20초'"
+  },
+  "card_pay": {
+   "ok": true,
+   "detail": "할인 450원 · 스탬프 1 / 10"
+  },
+  "notice_fade": {
+   "ok": true,
+   "detail": "흐려지며 사라짐 · 처음 화면에서 바로 사라짐"
+  },
+  "lost_card": {
+   "ok": true,
+   "detail": "예전 카드 정지 · 재발급 500원 장바구니"
+  },
+  "card_apply": {
+   "ok": true,
+   "detail": "장바구니 1,000원 · 완료 '음료와 함께 받아 가세요'"
+  },
+  "smile_once": {
+   "ok": true,
+   "detail": "한 번 쓰면 다음부터 안 보임"
+  },
+  "change_points": {
+   "ok": true,
+   "detail": "잔돈 포인트 +6,500P"
+  },
+  "coupon_points": {
+   "ok": true,
+   "detail": "10,500원 → 10,000원"
+  },
+  "eco": {
+   "ok": true,
+   "detail": "에코 포인트 +100P"
+  },
+  "coin_tip": {
+   "ok": true,
+   "detail": "'500원을 동전으로 같이 넣으면 거스름돈에 동전이 없어요'"
+  },
+  "short_refund": {
+   "ok": true,
+   "detail": "부족 금액 안내 → 반환"
+  },
+  "zero_won": {
+   "ok": true,
+   "detail": "포인트 전액 → 0원 결제"
+  },
+  "admin_sales": {
+   "ok": true,
+   "detail": "30일 매출 874,500원"
+  },
+  "admin_sold_out": {
+   "ok": true,
+   "detail": "아메리카노 → 품절"
+  },
+  "admin_card_columns": {
+   "ok": true,
+   "detail": "아이디 · 이름 · 칭호"
+  },
+  "admin_lost": {
+   "ok": true,
+   "detail": "user08 분실 처리"
+  },
+  "admin_coupon": {
+   "ok": true,
+   "detail": "발급 → 내역 '미사용'"
+  },
+  "admin_perks": {
+   "ok": true,
+   "detail": "가입 화면 '매 주문 5% 적립'"
+  },
+  "admin_presence_off": {
+   "ok": true,
+   "detail": "끄면 안내도 사라지고 다가와도 시작 안 함"
+  }
+ }
+}
