@@ -39,8 +39,9 @@ class FakePresence:
     def latest(self):
         return self.distance
 
-    def pause(self):
+    def pause(self, handoff=False):
         self.paused = True
+        return None
 
     def resume(self):
         self.paused = False
@@ -58,6 +59,8 @@ class CameraPresence:
         self.distance = None
         self.working = True                 # 카메라를 못 열면 False (화면은 평소처럼 터치로만)
         self._want_pause = threading.Event()
+        self._handoff_requested = False
+        self._shared_camera = None
         self._released = threading.Event()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="presence", daemon=True)
@@ -66,13 +69,17 @@ class CameraPresence:
     def latest(self):
         return self.distance if self.working else None
 
-    def pause(self, wait: float = 3.0):
-        """카메라를 놓을 때까지 기다린다 (얼굴 로그인이 같은 카메라를 연다)."""
+    def pause(self, wait: float = 3.0, handoff: bool = False):
+        """사람 감지를 멈춘다. handoff이면 연결을 유지한 카메라를 얼굴 인증에 빌려준다."""
         self._released.clear()
+        self._handoff_requested = handoff
         self._want_pause.set()
-        if self._thread.is_alive():
-            self._released.wait(wait)
+        if self._thread.is_alive() and not self._released.wait(wait):
+            self._handoff_requested = False
+            if not self._released.wait(wait):
+                raise TimeoutError("사람 감지 카메라가 읽기를 멈추지 않음")
         self.distance = None
+        return self._shared_camera if handoff and self._released.is_set() else None
 
     def resume(self):
         self._want_pause.clear()
@@ -113,12 +120,22 @@ class CameraPresence:
                         raise OSError("camera")
                     read = lambda: (cap.read()[1], None)
                     close = cap.release
+                    camera = cap
             except Exception:
                 self.working = False
                 self._released.set()
                 return
             try:
-                while not self._stop.is_set() and not self._want_pause.is_set():
+                while not self._stop.is_set():
+                    if self._want_pause.is_set():
+                        if not self._handoff_requested:
+                            break
+                        self._shared_camera = (camera, use_depth)
+                        self._released.set()
+                        while self._want_pause.is_set() and not self._stop.is_set():
+                            time.sleep(POLL_SECONDS)
+                        self._shared_camera = None
+                        continue
                     frame, depth = read()
                     if frame is None:
                         break
@@ -127,6 +144,7 @@ class CameraPresence:
             except Exception:
                 self.distance = None
             finally:
+                self._shared_camera = None
                 close()
                 self._released.set()
 

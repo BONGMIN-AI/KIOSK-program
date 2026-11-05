@@ -132,6 +132,7 @@ class OpenCVFace:
         self.vault = vault
         self.camera_index = camera_index
         self.use_depth = depth_wanted() if use_depth is None else use_depth
+        self.shared_camera = None  # 사람 감지가 열어 둔 (카메라, 깊이 사용 여부)
         # 키오스크 창 안에 카메라 화면을 그리는 함수 (image, 기다릴 ms) -> 취소했으면 True.
         # 없으면 OpenCV 창을 따로 띄운다 (터미널 앱·시험용).
         self.viewer = None
@@ -203,7 +204,11 @@ class OpenCVFace:
         if report(False, False, 0.0, "카메라를 켜는 중이에요 · 잠시만 기다려 주세요"):
             raise FaceError("스마일 미션을 취소했어요")
         depth_camera, cap = None, None
-        if self.use_depth:
+        borrowed = self.shared_camera is not None
+        if borrowed:
+            camera, depth_enabled = self.shared_camera
+            depth_camera, cap = (camera, None) if depth_enabled else (None, camera)
+        elif self.use_depth:
             depth_camera = RealSenseCamera().__enter__()
         else:
             cap = self._open_camera()
@@ -254,9 +259,9 @@ class OpenCVFace:
             return False
         finally:
             self.detector.setScoreThreshold(0.9)
-            if cap is not None:
+            if cap is not None and not borrowed:
                 cap.release()
-            if depth_camera is not None:
+            if depth_camera is not None and not borrowed:
                 depth_camera.__exit__(None, None, None)
             if on_state is None and self.viewer is None:
                 cv2.destroyAllWindows()
@@ -314,7 +319,11 @@ class OpenCVFace:
         if self.viewer is not None:          # 11/04 회의: 카메라가 켜지는 1~3초 동안 '잠시만 기다려 주세요'
             if self._show(title, guide_view.waiting_screen(purpose), 1):
                 raise FaceError("얼굴 인증을 취소했습니다")
-        if self.use_depth:
+        borrowed = self.shared_camera is not None
+        if borrowed:
+            camera, depth_enabled = self.shared_camera
+            depth_camera, cap = (camera, None) if depth_enabled else (None, camera)
+        elif self.use_depth:
             depth_camera = RealSenseCamera().__enter__()
         else:
             cap = self._open_camera()
@@ -395,9 +404,9 @@ class OpenCVFace:
                 if self._show(title, display, 1):
                     raise FaceError("사용자가 얼굴 인증을 취소했습니다")
         finally:
-            if cap is not None:
+            if cap is not None and not borrowed:
                 cap.release()
-            if depth_camera is not None:
+            if depth_camera is not None and not borrowed:
                 depth_camera.__exit__(None, None, None)
             if self.viewer is None:
                 cv2.destroyAllWindows()

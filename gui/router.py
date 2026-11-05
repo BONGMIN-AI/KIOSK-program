@@ -545,10 +545,15 @@ class Router(QStackedWidget):
         """
         self.stop_timer()
         self.camera_busy = True
-        if self.presence is not None:
-            self.presence.pause()               # 사람 감지가 잡고 있는 카메라를 놓는다
+        shared_camera = None
         try:
-            return work(self.face(viewer, on_step, vault))
+            if self.presence is not None:
+                shared_camera = self.presence.pause(handoff=True)  # 연결은 유지하고 읽기만 넘긴다
+            provider = self.face(viewer, on_step, vault)
+            if shared_camera is not None and hasattr(provider, "shared_camera"):
+                provider.shared_camera = shared_camera
+                provider.use_depth = shared_camera[1]
+            return work(provider)
         except ValueError:
             raise                               # FaceError·입력 오류는 화면이 그대로 안내한다
         except Exception as error:              # cv2.error·장치 끊김 등
