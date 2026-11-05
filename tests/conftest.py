@@ -2,3 +2,4 @@
 import os
 
 os.environ.setdefault("KIOSK_CARD_PORT", "off")
+os.environ.setdefault("KIOSK_HID_CARD", "off")

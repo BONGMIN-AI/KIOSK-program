@@ -27,6 +27,7 @@ from face import create_face_provider
 from face.presence import CameraPresence, presence_wanted
 from gui import theme
 from gui.card_reader import CardReader
+from gui.hid_card import start_hid_reader
 from gui.serial_card import start_serial_reader
 from gui.router import Router
 from gui.screens.admin import AdminLoginScreen, AdminScreen
@@ -124,6 +125,13 @@ class KioskWindow(QMainWindow):
             self.serial_card.notice.connect(self.router.card_refused)
             self.serial_card.status.connect(self.router.card_status_line)   # 테스트 모드: 리더 연결 상태
             self.serial_card.seen.connect(self.router.card_status_line)     # 테스트 모드: 카드가 올 때마다
+        self.hid_card = start_hid_reader(self.router.card_active, self.router.card_scanned, parent=self,
+                                         on_status=lambda text: print(text, flush=True),
+                                         screen=lambda: self.router.current_name)
+        if self.hid_card is not None:
+            self.hid_card.notice.connect(self.router.card_refused)
+            self.hid_card.status.connect(self.router.card_status_line)
+            self.hid_card.seen.connect(self.router.card_status_line)
         # QR 회원 페이지 (--web, 11/04): 휴대폰으로 가입 · 내 정보 고치기. 키오스크와 같은 금고를 쓴다 (잠금 해제 전이면 None)
         self.member_site = None
         if web:
@@ -190,6 +198,8 @@ class KioskWindow(QMainWindow):
         QApplication.instance().removeEventFilter(self.card_reader)
         if self.serial_card is not None:
             self.serial_card.stop()
+        if self.hid_card is not None:
+            self.hid_card.stop()
         if self.member_site is not None:
             self.member_site.stop()
         super().closeEvent(event)
