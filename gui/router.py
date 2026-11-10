@@ -432,7 +432,7 @@ class Router(QStackedWidget):
             return
         if customer is None:
             if is_lost_card(self.session.vault, number):
-                self.notify("분실 신고된 카드예요. 이 카드로는 로그인할 수 없어요.\n새 카드는 카운터에서 받아 주세요.", 8)
+                self.notify("분실 신고된 카드예요. 이 카드로는 로그인할 수 없어요.\n새 카드는 로그인한 뒤 My Menu에서 재발급할 수 있어요.", 8)
             else:
                 self.notify("처음 쓰는 카드예요.\n로그인한 뒤 카드를 대면 등록돼요.", 8)
             return
@@ -533,7 +533,7 @@ class Router(QStackedWidget):
         title = f"[{title_name(title)}] " if title else ""
         hello = f"{title}{call_name(customer)} 님, {greeting}"   # E14 방문 간격 인사 (11/04: '[얼죽아] 김휘원 님,')
         if unused_card(self.session.vault, customer["id"]):              # 받은 카드를 아직 안 댔으면
-            self.notify(f"{hello}\n받으신 회원카드를 리더기에 대면 등록돼요", 8)
+            self.notify(f"{hello}\n키오스크에서 나온 회원카드를 리더기에 대면 등록돼요", 8)
         else:
             self.notify(hello, 4)
         if gifts and self.popup is not None:

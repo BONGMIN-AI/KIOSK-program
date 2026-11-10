@@ -125,7 +125,7 @@ class SignupScreen(QWidget):
         self.face_box, self.face_consent, self.face_perks = option_box(
             "[선택] 얼굴 등록", "다음부터 카메라만 보면 바로 로그인 · 사진은 저장하지 않아요")
         right.addWidget(self.face_box)
-        # 11/01 회원카드 신청 (선택): 혜택을 보여 주고 고르게 한다 → 운영자 승인 → 카운터에서 받기
+        # 11/01 회원카드 신청 (선택): 혜택을 보여 주고 고르게 한다 → 결제 → 키오스크 배출구에서 발급 (11/10)
         self.card_box, self.card_request, self.card_perks = option_box("[선택] 회원카드 신청", "")
         card = self.card_box.layout()                          # 혜택 글은 운영자 정책 값으로 on_show에서 채운다
         self.card_how = how = label("", 13, muted=True)
@@ -156,7 +156,7 @@ class SignupScreen(QWidget):
             box.setChecked(False)
         policy = self.router.session.policy()
         self.card_perks.setText(f"{perks_text(policy)}\n카드만 대면 바로 로그인")
-        self.card_how.setText(f"카드값 {policy['card_price']:,}원 · 장바구니에 담겨 음료와 함께 결제 · 음료 나올 때 받아요")
+        self.card_how.setText(f"카드값 {policy['card_price']:,}원 · 장바구니에 담겨 음료와 함께 결제 · 결제하면 키오스크 배출구에서 바로 나와요")
         self.checked_allergies = set()
         self.message.setText("")
         self.show_allergies()

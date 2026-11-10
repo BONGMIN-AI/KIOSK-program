@@ -179,7 +179,7 @@ def test_signup_card_goes_to_cart_then_pay_then_first_tap(window):
     router.show_screen("done")
     from PySide6.QtWidgets import QLabel
     receipt = " ".join(w.text() for w in router.screens["done"].findChildren(QLabel) if w.isVisibleTo(window))
-    assert "음료와 함께 받아" in receipt and "회원카드 (신규)" in receipt
+    assert "배출구에서 나와요" in receipt and "회원카드 (신규)" in receipt
     cid = session.customer["id"]
     router.start_member_order(session.vault.read("customers")[cid])        # 다음 주문
     assert "리더기에 대면 등록" in router.notice.text()

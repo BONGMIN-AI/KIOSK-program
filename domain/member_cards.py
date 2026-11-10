@@ -62,7 +62,7 @@ def check_can_buy(vault, customer: dict, kind: str) -> None:
     if kind not in KINDS:
         raise ValueError(f"없는 카드 종류입니다: {kind}")
     if unused_card(vault, customer["id"]):
-        raise ValueError("받으신 회원카드를 아직 등록하지 않았어요.\n로그인한 뒤 카드를 리더기에 대 주세요")
+        raise ValueError("키오스크에서 나온 회원카드를 아직 등록하지 않았어요.\n로그인한 뒤 카드를 리더기에 대 주세요")
     extra = customer["extra"]
     if kind == "new" and has_card(customer):
         raise ValueError("이미 회원카드가 있어요. 잃어버렸으면 My Menu에서 분실 신고해 주세요")
@@ -145,7 +145,7 @@ def register_first_tap(vault, customer_id: str, card_uid: str, now: datetime | N
     if request is None:
         raise ValueError("등록할 회원카드가 없어요")
     if is_lost_card(vault, card_uid):
-        raise ValueError("분실 신고된 카드예요. 받으신 새 카드를 대 주세요")
+        raise ValueError("분실 신고된 카드예요. 새로 나온 카드를 대 주세요")
     link_card(vault, customer_id, card_uid)              # 다른 회원 카드면 여기서 ValueError
     now = now or datetime.now()
     customers = vault.read("customers", default={})

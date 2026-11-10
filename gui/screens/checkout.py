@@ -738,7 +738,7 @@ class DoneScreen(QWidget):
         if order.get("issued_coupon"):
             lines.append(f"새 쿠폰: {order['issued_coupon']}")
         if order.get("card_kind"):
-            lines.append("회원카드는 음료와 함께 받아 가세요\n다음 주문 때 로그인하고 카드를 대면 등록돼요")
+            lines.append("회원카드가 키오스크 아래 배출구에서 나와요 · 꼭 챙겨 가세요\n다음 주문 때 로그인하고 카드를 한 번 대면 등록돼요")
         stamp = order.get("card_stamp")
         if stamp and stamp.get("coupon"):
             lines.append(f"새 쿠폰: {stamp['coupon']}")

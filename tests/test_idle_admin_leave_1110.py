@@ -36,8 +36,10 @@ def test_admin_button_shows_with_dine_choice(window):
     router.ask_dine()
     assert idle.admin_button.isVisible()
     assert idle.admin_button.geometry().right() > idle.width() - 40     # 오른쪽 위
+    opened = []
+    router.open_action = opened.append               # 화면은 열지 않고 연결만 본다 (다른 시험에 영향 없게)
     idle.admin_button.click()
-    assert router.current_name == "admin_login" and not idle.dine_choice.isVisible()
+    assert opened == ["admin"] and not idle.dine_choice.isVisible()
 
 
 def test_choice_closes_when_customer_leaves(window):
@@ -50,5 +52,8 @@ def test_choice_closes_when_customer_leaves(window):
     router.presence.distance = None                  # 떠났다
     for _ in range(CHOICE_GONE_TICKS):
         router.check_presence()
-    QTest.qWait(600)                                 # 흐려지며 들어가는 시간
+    for _ in range(30):                              # 흐려지며 들어가는 시간 (느린 PC는 더 걸림)
+        if not idle.dine_choice.isVisible():
+            break
+        QTest.qWait(100)
     assert not idle.dine_choice.isVisible() and idle.admin_button.isHidden()

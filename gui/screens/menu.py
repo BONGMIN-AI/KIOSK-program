@@ -334,7 +334,7 @@ class MenuScreen(QWidget):
             self.router.notify(str(error), 5)
             return
         fee = self.session.card_total()
-        self.router.notify(f"회원카드({fee:,}원)를 장바구니에 담았어요\n음료와 함께 결제해 주세요", 4)
+        self.router.notify(f"회원카드({fee:,}원)를 장바구니에 담았어요\n음료와 함께 결제하면 키오스크에서 바로 나와요", 4)
         self.after_card_change()
 
     def card_link_clicked(self):
@@ -629,7 +629,7 @@ class MenuScreen(QWidget):
         row = QHBoxLayout(card)
         row.setContentsMargins(20, 12, 16, 12)
         text = QVBoxLayout()
-        text.addWidget(label("받으신 회원카드를 등록해 주세요", 18, bold=True))
+        text.addWidget(label("키오스크에서 나온 회원카드를 등록해 주세요", 18, bold=True))
         policy = self.session.policy()
         text.addWidget(label(f"등록하는 이번 주문 {policy['card_first_discount']}% 할인 · "
                              f"매 주문 {policy['card_point_rate']:g}% 적립", 14, muted=True))
@@ -645,7 +645,7 @@ class MenuScreen(QWidget):
         from domain.member_cards import unused_card
         alive = lambda: (self.isVisible() and self.session.customer is not None
                          and unused_card(self.session.vault, customer_id) is not None)
-        self.router.notice.show_countdown(lambda s: f"받으신 회원카드를 리더기에 대 주세요 · {s}초", 20, alive)
+        self.router.notice.show_countdown(lambda s: f"나온 회원카드를 리더기에 대 주세요 · {s}초", 20, alive)
 
     def ask_lost_card(self):
         fee = self.session.policy()["card_reissue_fee"]
@@ -655,7 +655,7 @@ class MenuScreen(QWidget):
     def report_lost_card(self):
         self.session.report_lost_card()
         self.router.audit("card_lost", self.session.customer["id"])
-        self.router.notify("예전 카드를 막았어요.\n새 카드를 장바구니에 담았어요 · 음료와 함께 결제해 주세요", 7)
+        self.router.notify("예전 카드를 막았어요.\n새 카드를 장바구니에 담았어요 · 결제하면 키오스크에서 바로 나와요", 7)
         self.after_card_change()
 
     def add_reissue_card(self):
