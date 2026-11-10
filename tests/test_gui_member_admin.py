@@ -7,6 +7,7 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 import pytest
 
 pytest.importorskip("PySide6")
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QPushButton, QRadioButton
 
 from face import FakeFace
@@ -187,20 +188,26 @@ def test_admin_flow(window):
 
     assert admin.title.text() == "매출 요약"             # 11/02: 첫 화면은 매출 요약
     admin.show_tab("menu")
-    admin.menu_table.selectRow(0)                    # 09-B 품절 전환
+    admin.menu_table.selectRow(0)                    # 09-B 품절 전환 (첫 줄이 계절 메뉴일 수 있다)
+    first = admin.menu_table.item(0, 0).data(Qt.ItemDataRole.UserRole)
     admin.toggle_sold_out()
-    assert router.session.vault.read("menu")["M001"]["sold_out"]
+    assert router.session.vault.read("menu")[first]["sold_out"]
 
-    admin.show_tab("events")                         # 09-D 이벤트 + 테마
-    admin.new_event()
-    admin.ev_name.setText("주말 축제")
-    admin.ev_start.setText("2026-10-01")
-    admin.ev_end.setText("2026-12-31")
-    admin.ev_bonus.setText("100")
-    admin.set_theme("festival")
-    admin.save_event()
+    admin.show_tab("events_add")                     # 생성 전용 탭
+    admin.add_fields["name"].setText("주말 축제")
+    admin.add_fields["start"].setText("2026-10-01")
+    admin.add_fields["end"].setText("2026-12-31")
+    admin.add_fields["bonus"].setText("100")
+    for chip in admin.add_theme_group.buttons():
+        chip.setChecked(chip.property("theme") == "festival")
+    admin.save_event(creating=True)
     events = router.session.policy()["events"]
     assert events[-1]["name"] == "주말 축제" and events[-1]["theme"] == "festival"
+    admin.show_tab("events")                         # 목록에서 선택해 수정
+    admin.event_table.selectRow(len(events) - 1)
+    admin.ev_bonus.setText("200")
+    admin.save_event()
+    assert router.session.policy()["events"][-1]["bonus_points"] == 200
 
     admin.show_tab("points")                         # 09-E 포인트 조정 (사유 필수)
     admin.point_table.selectRow(1)
@@ -217,4 +224,34 @@ def test_admin_flow(window):
     admin.logout()
     assert router.current_name == "home" and router.admin_id is None    # 플로차트: 로그아웃 → 고객 HOME
     actions = [entry["action"] for entry in router.audit_memory]
-    assert actions == ["admin_login", "menu_sold_out", "event_save", "points_adjust", "admin_logout"]
+    assert actions == ["admin_login", "menu_sold_out", "event_save", "event_save", "points_adjust", "admin_logout"]
+
+
+def test_enter_on_id_without_face_goes_to_password(window):
+    """11/09: 아이디 입력 뒤 엔터 → 얼굴 미등록 회원이면 바로 비밀번호 입력, 비밀번호에서 엔터 → 로그인."""
+    router = window.router
+    router.open_action("member")
+    login = router.screens["login"]
+    login.login_id.setText("bomin")
+    login.login_id.returnPressed.emit()
+    assert login.mode == "password" and login.keyboard.target is login.password
+    login.password.setText("1234")
+    login.password.returnPressed.emit()
+    assert router.current_name == "menu"
+
+
+def test_face_enroll_goes_straight_to_my_menu(window):
+    """11/09: 얼굴 등록이 끝나면 '주문 시작'을 누르지 않아도 바로 My Menu."""
+    router = window.router
+    router.open_action("signup")
+    signup = router.screens["signup"]
+    for field, text in ((signup.name, "얼굴이"), (signup.login_id, "facey"), (signup.password, "1111"),
+                        (signup.password_again, "1111"), (signup.phone, "010-4444-6666")):
+        field.setText(text)
+    signup.privacy.setChecked(True)
+    signup.face_box.clicked()                        # 얼굴 등록 칸 아무 데나 눌러도 체크
+    assert signup.face_consent.isChecked()
+    signup.submit()
+    assert router.current_name == "enroll"
+    router.screens["enroll"].enroll()
+    assert router.current_name == "menu" and router.screens["menu"].category == "My Menu"

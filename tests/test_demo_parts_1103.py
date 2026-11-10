@@ -32,6 +32,25 @@ def start(router, login_id, takeout=False):
     return router.screens["menu"]
 
 
+@pytest.mark.parametrize("login_id,width", [("bomin", 1200), ("bomin", 1900),
+                                          ("withtop77", 1900), ("user01", 1900)])
+def test_my_menu_uses_side_by_side_cards_on_first_show(window, login_id, width):
+    from PySide6.QtWidgets import QFrame
+
+    window.resize(width, 1050)
+    menu = start(window.router, login_id)
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
+    page = menu.grid_area.widget()
+    divider = page.findChild(QFrame, "my_menu_vertical_divider")
+    assert divider is not None
+    column = divider.parentWidget().layout()          # 맨 위에 얼굴 등록 · 카드 등록 줄이 올 수 있다
+    pair = next(column.itemAt(i).layout() for i in range(column.count())
+                if column.itemAt(i).layout() is not None and column.itemAt(i).layout().indexOf(divider) >= 0)
+    assert pair.itemAt(0).widget().x() < divider.x() < pair.itemAt(2).widget().x()
+    assert pair.itemAt(0).widget().y() == pair.itemAt(2).widget().y()
+
+
 def test_part1_my_menu_route_quick_and_caffeine(window):
     from domain.tickets import ORIGIN
     router = window.router
@@ -65,7 +84,7 @@ def test_reservation_zero_won_and_first_card_tap(window):
     assert session.benefit()["card_discount"] > 0
     session.insert(10000)
     order = session.pay()
-    assert order["card_stamp"]["stamps"] == 1
+    assert order["card_stamp"]["stamps"] == 2 and order["card_stamp"]["earned"] == 2   # 새 카드 첫 주문은 도장 2개
     assert session.office.reservations[order["tickets"][0]["reservation"]]["printed"]
 
 

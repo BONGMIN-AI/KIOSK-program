@@ -226,8 +226,8 @@ def test_done_screen_highlights_new_title_and_stamp_card(window):
     router.show_screen("done")
     done = router.screens["done"]
     assert done.title_badge.isVisibleTo(window) and "★ 새 칭호 획득!" in done.title_badge.text()
-    assert done.stamp_card.isVisibleTo(window) and done.stamp_card.stamps == 1
-    assert "1 / 10" in done.stamp_title.text()
+    assert done.stamp_card.isVisibleTo(window) and done.stamp_card.stamps == 2   # 새 카드 첫 주문은 도장 2개
+    assert "2 / 10" in done.stamp_title.text()
     done.stamp_card.grab()
 
 

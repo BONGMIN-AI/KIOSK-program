@@ -10,7 +10,12 @@ from .titles import customer_lines
 
 SHOT_CAFFEINE_MG = 75      # 샷 1회 추가
 LARGE_SIZE_RATE = 1.3      # L 사이즈는 기본(M)의 1.3배
-WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
+WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"]
+
+
+def week_start(day: date) -> date:
+    """일요일부터 시작하는 달력 한 주의 첫날."""
+    return day - timedelta(days=(day.weekday() + 1) % 7)
 
 
 # ---------------------------------------------------------------- 평소 주문
@@ -19,7 +24,7 @@ def usual_order(orders: dict, customer_id: str, menu: dict) -> dict | None:
     counts, last_seen = {}, {}
     for index, lines in enumerate(customer_lines(orders, customer_id)):
         for line in lines:
-            if line["menu_id"] not in menu:
+            if line["menu_id"] not in menu or menu[line["menu_id"]].get("hidden"):
                 continue
             key = line_key(line["menu_id"], line.get("options") or {})
             counts[key] = counts.get(key, 0) + line["quantity"]
@@ -45,7 +50,8 @@ def recent_order(orders: dict, customer_id: str, menu: dict) -> dict | None:
     지금 메뉴에 없는 줄은 뺀다. 주문이 없으면 None.
     """
     for lines in reversed(customer_lines(orders, customer_id)):
-        kept = [_repeat_line(line, menu) for line in lines if line.get("menu_id") in menu]
+        kept = [_repeat_line(line, menu) for line in lines
+                if line.get("menu_id") in menu and not menu[line["menu_id"]].get("hidden")]
         if kept:
             return {"lines": kept, "count": sum(line["quantity"] for line in kept)}
     return None
@@ -129,27 +135,28 @@ def caffeine_by_day(orders: dict, customer_id: str, menu: dict) -> dict:
     return days
 
 
-def daily_caffeine(orders: dict, customer_id: str, menu: dict, monday: date) -> list[int]:
-    """monday부터 7일 동안 날마다 마신 카페인(mg)."""
+def daily_caffeine(orders: dict, customer_id: str, menu: dict, start: date) -> list[int]:
+    """start부터 7일 동안 날마다 마신 카페인(mg)."""
     days = caffeine_by_day(orders, customer_id, menu)
-    return [days.get(monday + timedelta(days=index), 0) for index in range(7)]
+    return [days.get(start + timedelta(days=index), 0) for index in range(7)]
 
 
 def caffeine_report(orders: dict, customer_id: str, menu: dict, today: date | None = None) -> dict:
-    """이번 주(월~일) 요일별 카페인과 가장 많이 마신 요일 한 줄 (10/31: 같은 말이 반복돼 줄였다)."""
+    """이번 주(일~토) 요일별 카페인과 가장 많이 마신 요일 한 줄."""
     today = today or date.today()
-    monday = today - timedelta(days=today.weekday())
-    this_week = daily_caffeine(orders, customer_id, menu, monday)
-    last_week = daily_caffeine(orders, customer_id, menu, monday - timedelta(days=7))
+    sunday = week_start(today)
+    this_week = daily_caffeine(orders, customer_id, menu, sunday)
+    last_week = daily_caffeine(orders, customer_id, menu, sunday - timedelta(days=7))
     total, last_total = sum(this_week), sum(last_week)
     change = None if last_total == 0 else round((total - last_total) / last_total * 100)
-    days_so_far = this_week[: today.weekday() + 1]
+    today_index = (today.weekday() + 1) % 7
+    days_so_far = this_week[: today_index + 1]
     if total == 0:
         message = "이번 주 카페인 기록이 아직 없어요"
     else:
         top = this_week.index(max(this_week))
         message = f"{WEEKDAYS[top]}요일에 가장 많은 카페인을 섭취했어요!"
-    suggest_decaf = bool(this_week[today.weekday()]) or (total > 0 and all(days_so_far))
+    suggest_decaf = bool(this_week[today_index]) or (total > 0 and all(days_so_far))
     return {"days": WEEKDAYS, "this_week": this_week, "total": total, "last_week_total": last_total,
             "change_percent": change, "message": message, "suggest_decaf": suggest_decaf}
 
@@ -160,17 +167,21 @@ TREND_VIEWS = ("이번 주", "주별", "월별")
 def caffeine_trend(orders: dict, customer_id: str, menu: dict, view: str, today: date | None = None) -> dict:
     """그래프 한 장: {labels, values, current(강조할 칸)}. 주별은 최근 8주, 월별은 최근 6개월."""
     today = today or date.today()
-    monday = today - timedelta(days=today.weekday())
+    sunday = week_start(today)
     days = caffeine_by_day(orders, customer_id, menu)
     if view == "이번 주":
-        return {"labels": WEEKDAYS, "values": daily_caffeine(orders, customer_id, menu, monday),
-                "current": today.weekday()}
+        return {"labels": WEEKDAYS, "values": daily_caffeine(orders, customer_id, menu, sunday),
+                "current": (today.weekday() + 1) % 7}
     if view == "주별":
-        mondays = [monday - timedelta(weeks=back) for back in range(7, -1, -1)]
-        values = [sum(days.get(start + timedelta(days=i), 0) for i in range(7)) for start in mondays]
-        # 달이 바뀌는 칸에만 월을 붙인다 (9/7 14 21 28 10/5 …) — 좁은 화면에서 글자가 겹치지 않게
-        labels = [f"{start.month}/{start.day}" if index == 0 or start.month != mondays[index - 1].month
-                  else str(start.day) for index, start in enumerate(mondays)]
+        sundays = [sunday - timedelta(weeks=back) for back in range(7, -1, -1)]
+        values = [sum(days.get(start + timedelta(days=i), 0) for i in range(7)) for start in sundays]
+        labels = []
+        for index, start in enumerate(sundays):
+            first_day = date(start.year, start.month, 1)
+            first_sunday = first_day + timedelta(days=(6 - first_day.weekday()) % 7)
+            ordinal = 1 + (start - first_sunday).days // 7
+            month_changed = index == 0 or (start.year, start.month) != (sundays[index - 1].year, sundays[index - 1].month)
+            labels.append(f"{start.month}월/{ordinal}주" if month_changed else f"{ordinal}주")
         return {"labels": labels, "values": values, "current": 7}
     if view == "월별":
         months = []
@@ -222,14 +233,14 @@ def lines_caffeine(lines: list[dict], menu: dict) -> dict:
 
 
 def week_caffeine(orders: dict, customer_id: str, menu: dict, today: date | None = None) -> dict:
-    """이번 주(월요일부터) 이미 마신 카페인 {'mg', '잔'}."""
+    """이번 주(일요일부터) 이미 마신 카페인 {'mg', '잔'}."""
     today = today or date.today()
-    monday = today - timedelta(days=today.weekday())
+    sunday = week_start(today)
     lines = []
     for order in orders.values():
         if (order.get("customer") or {}).get("id") != customer_id:
             continue
-        if monday <= datetime.fromisoformat(order["created_at"]).date() <= today:
+        if sunday <= datetime.fromisoformat(order["created_at"]).date() <= today:
             lines.extend(order["lines"])
     return lines_caffeine(lines, menu)
 

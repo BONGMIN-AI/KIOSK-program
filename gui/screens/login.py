@@ -15,7 +15,7 @@ from domain.customers import find_by_login_id, login_with_face, login_with_passw
 from domain.member_cards import perks_text
 from face import FaceError, guide_view
 from gui import theme
-from gui.widgets import (Card, FixedWidthCard, TouchKeyboard, button, label, link_button, message_label, option_check,
+from gui.widgets import (Card, FixedWidthCard, PromoBanner, TouchKeyboard, button, label, link_button, message_label, option_check,
                          promo_row, text_field)
 
 
@@ -73,6 +73,9 @@ class LoginScreen(QWidget):
         left.addWidget(self.login_id)
         self.password = text_field("비밀번호 (화면에 보이지 않아요)", password=True)
         left.addWidget(self.password)
+        # 11/09: 엔터로 다음 단계 (아이디 → 얼굴 인증 또는 비밀번호 칸, 비밀번호 → 로그인)
+        self.login_id.returnPressed.connect(self.id_entered)
+        self.password.returnPressed.connect(self.password_login)
         self.keyboard = TouchKeyboard()
         self.keyboard.attach(self.login_id, self.password)
         left.addWidget(self.keyboard)
@@ -145,6 +148,10 @@ class LoginScreen(QWidget):
         self.set_mode("face")      # 처음부터 02 모양으로 (02-B 버튼은 숨김)
 
     def on_show(self, mode="face", message="", keep_id=False, login_id=""):
+        from domain.kiosk_settings import login_promos
+        settings = self.router.session.vault.read("settings", default={})
+        for widget, filename in zip(self.promo.findChildren(PromoBanner), login_promos(settings)):
+            widget.set_file(filename)
         if not keep_id:
             self.login_id.clear()
         if login_id:
@@ -191,6 +198,29 @@ class LoginScreen(QWidget):
 
     def vault(self):
         return self.router.session.vault
+
+    def id_entered(self):
+        """아이디 칸에서 엔터: 얼굴을 등록한 회원은 얼굴 인증, 아니면 바로 비밀번호 입력으로."""
+        login_id = self.login_id.text().strip()
+        if not login_id:
+            self.say("회원 ID를 먼저 입력해 주세요", ok=False)
+            return
+        if self.mode == "password":
+            self.password.setFocus(Qt.FocusReason.OtherFocusReason)
+            self.keyboard.target = self.password
+            return
+        try:
+            customer = find_by_login_id(self.vault(), login_id)
+        except ValueError:
+            customer = None
+        if customer is None:
+            self.say("없는 회원 ID예요 · 다시 확인해 주세요", ok=False)
+            return
+        if customer["extra"].get("face_enrolled"):
+            self.face_login()
+        else:
+            self.set_mode("password")
+            self.say("얼굴을 등록하지 않은 회원이에요 · 비밀번호를 입력해 주세요")
 
     # 02: 얼굴
     def face_login(self):

@@ -21,7 +21,9 @@ import config
 from core import auth, schema
 from core.storage import MemoryVault
 from domain import seed
+from domain.kiosk_settings import font_style
 from domain.random_members import make_random_members
+from domain.demo_activity import add_demo_activity
 from domain.team_members import add_team_members
 from face import create_face_provider
 from face.presence import CameraPresence, presence_wanted
@@ -59,9 +61,12 @@ def demo_vault(random_members=False):
     vault.write("settings", dict(schema.DEFAULT_SETTINGS))
     seed.run(vault)
     seed.add_demo_events(vault)
+    from domain.seasonal_theme import set_theme
+    set_theme(vault, "none")              # 11/10: 시연은 기본 테마로 시작 (운영자 화면에서 계절 테마를 바꿔 보여 준다)
     if random_members:
         make_random_members(vault)
         add_team_members(vault)          # 팀원 시연 계정 withtop77 · jisung0642 / 1234
+        add_demo_activity(vault)
     return vault
 
 
@@ -86,6 +91,7 @@ class KioskWindow(QMainWindow):
         super().__init__()
         theme.load_fonts()
         theme.set_display()          # 새 창은 기본 색·글자 크기로
+        theme.set_font_style(font_style(vault.read("settings", default={})) if vault else "default")
         self.setWindowTitle("COFFEE & SPOON KIOSK")
         self.setWindowIcon(QIcon(str(theme.ASSETS / "logo_sub.png")))
         self.resize(1200, 800)
@@ -155,6 +161,8 @@ class KioskWindow(QMainWindow):
         keep: 다시 만들지 않고 그대로 둘 화면 (11/03: 손님 화면만 다시 만들어 버튼 반응을 빠르게).
         """
         app = QApplication.instance()
+        vault = self.router.session.vault
+        theme.set_font_style(font_style(vault.read("settings", default={})) if vault else "default")
         app.removeEventFilter(self.router)        # 수백 개 위젯을 만드는 동안 무입력 감시를 쉬게 한다
         kept = {name: screen for name, screen in self.router.screens.items() if name in keep}
         for name, screen in list(self.router.screens.items()):

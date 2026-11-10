@@ -8,8 +8,9 @@
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QCheckBox, QFrame, QGridLayout, QHBoxLayout, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
+from PySide6.QtWidgets import (QCheckBox, QFrame, QGraphicsOpacityEffect, QGridLayout, QHBoxLayout, QScrollArea,
+                               QSizePolicy, QVBoxLayout, QWidget)
 
 from domain.kiosk_settings import load_kiosk
 from face import FaceError
@@ -453,7 +454,9 @@ class DoneScreen(QWidget):
         number_card = Card()
         left = QVBoxLayout(number_card)
         left.setContentsMargins(28, 28, 28, 28)
-        left.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # 11/09: 남는 높이는 위 1 : 아래 2로 나눈다 → 내용이 적으면 위~가운데에 모이고,
+        # 많으면(승차권 · 칭호 · 스탬프) 빈칸이 줄어 카드를 고르게 채운다
+        left.addStretch(1)
         left.addWidget(center(label("주문이 완료되었습니다", 26, title=True)))
         self.ticket_box = self.make_ticket_box()                    # 승차권을 산 주문만
         self.ticket_box.hide()
@@ -477,11 +480,25 @@ class DoneScreen(QWidget):
             left.addWidget(widget)
         self.ready_hint = center(label("준비되면 번호로 불러 드릴게요.", 18, muted=True))
         left.addWidget(self.ready_hint)
-        self.change_notice = center(label("", 20, bold=True))      # 거스름돈이 나왔을 때만
+        left.addSpacing(24)
+        status = QWidget()                         # 진행 표시가 남는 높이를 다 먹지 않게 (아래가 텅 비던 원인)
+        status.setLayout(self.make_order_status())
+        status.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        left.addWidget(status)
+        left.addStretch(2)
+        # 11/09: 거스름돈 안내는 카드 맨 아래에 고정하고 천천히 깜박여 눈에 띄게 (거스름돈이 나왔을 때만)
+        self.change_notice = center(label("", 20, bold=True))
         self.change_notice.setStyleSheet(f"background: {theme.WARN_BG}; border-radius: 12px; padding: 10px;")
         left.addWidget(self.change_notice)
-        left.addSpacing(10)
-        left.addLayout(self.make_order_status())
+        fade = QGraphicsOpacityEffect(self.change_notice)
+        self.change_notice.setGraphicsEffect(fade)
+        self.change_pulse = QPropertyAnimation(fade, b"opacity", self)
+        self.change_pulse.setDuration(1600)
+        self.change_pulse.setKeyValueAt(0.0, 1.0)
+        self.change_pulse.setKeyValueAt(0.5, 0.35)
+        self.change_pulse.setKeyValueAt(1.0, 1.0)
+        self.change_pulse.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self.change_pulse.setLoopCount(-1)
         body.addWidget(number_card, 1)
         receipt, self.receipt = scroll_card(22)
         receipt.setFixedWidth(380)
@@ -515,11 +532,11 @@ class DoneScreen(QWidget):
         box = QFrame()
         box.setStyleSheet(f"QFrame {{ background: {theme.CARAMEL_LIGHT}; border-radius: 16px; }}")
         column = QVBoxLayout(box)
-        column.setContentsMargins(18, 12, 18, 12)
-        column.setSpacing(6)
-        column.addWidget(center(label("승차권이 나왔어요", 22, bold=True)))
+        column.setContentsMargins(22, 22, 22, 22)        # 11/09: 위아래 여유 · 글자 키움
+        column.setSpacing(12)
+        column.addWidget(center(label("승차권이 나왔어요", 24, bold=True)))
         self.ticket_rows = QVBoxLayout()
-        self.ticket_rows.setSpacing(4)
+        self.ticket_rows.setSpacing(10)
         column.addLayout(self.ticket_rows)
         column.addWidget(notice_label())
         return box
@@ -532,7 +549,7 @@ class DoneScreen(QWidget):
             # 자동 줄바꿈은 큰 글자에서 눌려서 줄을 직접 나눈다
             lines = [f"{ticket['origin']} → {ticket['destination']} · {depart_text(ticket['depart'])} · {ticket['grade']}",
                      f"좌석 {seats} · {ticket['platform']}번 승차장 · {until_text(depart, datetime.now())}"]
-            self.ticket_rows.addWidget(center(label("\n".join(lines), 16, bold=True)))
+            self.ticket_rows.addWidget(center(label("\n".join(lines), 19, bold=True)))
     # 디자인 템플릿의 Order Status. 매장 주문 화면과 아직 연결되지 않아 시간에 따라 넘어가는 시연용 표시다.
     ORDER_STEPS = (("주문 접수", 0), ("만드는 중", 3), ("마무리", 9), ("픽업 대기", 13))
 
@@ -602,6 +619,7 @@ class DoneScreen(QWidget):
 
     def hideEvent(self, event):
         self.countdown.stop()
+        self.change_pulse.stop()
         super().hideEvent(event)
 
     def on_show(self):
@@ -647,9 +665,9 @@ class DoneScreen(QWidget):
         if show_stamp:
             full = bool(stamp.get("coupon"))
             shown = stamp["goal"] if full else stamp["stamps"]
-            self.stamp_card.set_stamps(shown, stamp["goal"], new=1)
+            self.stamp_card.set_stamps(shown, stamp["goal"], new=stamp.get("earned", 1))
             self.stamp_title.setText("스탬프를 다 모았어요! 음료 1잔 무료 쿠폰을 넣어 드렸어요" if full
-                                     else f"회원카드 스탬프 {stamp['stamps']} / {stamp['goal']}  ·  도장 쾅!")
+                                     else f"회원카드 스탬프 {stamp['stamps']} / {stamp['goal']}  ·  도장 {stamp.get('earned', 1)}개 쾅!")
         if member:
             title = f"[{title_name(member['title'])}] " if member.get("title") else ""
             star = "  ★ 새 칭호!" if new_titles and squeeze else ""
@@ -658,6 +676,10 @@ class DoneScreen(QWidget):
             self.waiting.setText(f"비회원 {number:03d}번")
         self.change_notice.setVisible(order["change"] > 0)
         self.change_notice.setText(f"거스름돈 {theme.won(order['change'])}이 나왔어요 · 반환구에서 꼭 챙겨 주세요")
+        self.change_pulse.stop()
+        self.change_notice.graphicsEffect().setOpacity(1.0)
+        if order["change"] > 0:
+            self.change_pulse.start()
         clear(self.receipt)
         where = {True: " · 포장", False: " · 매장"}.get(order.get("takeout"), "")
         self.receipt.addWidget(label(f"영수증{where}", 22, title=True))

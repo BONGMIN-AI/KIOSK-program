@@ -51,7 +51,14 @@ def ranking(sort: str, menu: dict, customers: dict, orders: dict, today: date | 
         counts = like_counts(customers, menu)
         text = lambda value: f"♥ {value:,}"
     elif sort == "판매순":
-        counts = {menu_id: item.get("sold_count", 0) for menu_id, item in menu.items()}
+        counts = {menu_id: 0 for menu_id in menu}
+        for order in orders.values():
+            for line in order.get("lines", []):
+                menu_id = line.get("menu_id")
+                if menu_id in counts:
+                    counts[menu_id] += line.get("quantity", 0)
+        if not orders:  # 주문 이력이 없는 초기 시연 화면의 기존 기본값
+            counts = {menu_id: item.get("sold_count", 0) for menu_id, item in menu.items()}
         text = lambda value: f"누적 {value:,}잔"
     elif sort == "계절 인기순":
         season = season_of(today or date.today())

@@ -8,7 +8,7 @@ T1-0 첫 화면: 예매표 출력 | 승차권 구매 (지역을 메뉴 카드처
 
 from datetime import date, datetime, timedelta
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QPointF, QPropertyAnimation, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLineEdit, QScrollArea,
                                QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
@@ -140,6 +140,71 @@ class HangulKeyboard(QWidget):
             self.target.setText(hangul.erase(self.target.text()))
 
 
+class SlideTray(QFrame):
+    """화면 키보드를 담아 화면 아래에서 올라오고 내려가는 판 (11/09: 평소에는 숨겨 둔다)."""
+
+    def __init__(self, page, keyboard):
+        super().__init__(page)
+        self.page = page
+        self.setObjectName("keyboard_tray")
+        self.setStyleSheet(f"QFrame#keyboard_tray {{ background: {theme.CREAM}; border: 1px solid {theme.LINE};"
+                           " border-radius: 18px; }")
+        column = QVBoxLayout(self)
+        column.setContentsMargins(14, 8, 14, 14)
+        column.setSpacing(8)
+        top = QHBoxLayout()
+        top.addStretch()
+        self.close_button = button("키보드 내리기 ▼", "outline", self.slide_down)
+        self.close_button.setFont(theme.font(15, bold=True))
+        top.addWidget(self.close_button)
+        column.addLayout(top)
+        column.addWidget(keyboard)
+        self.animation = QPropertyAnimation(self, b"pos", self)
+        self.animation.setDuration(180)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.animation.finished.connect(self.after_move)
+        self.up = False
+        self.hide()
+
+    def shown_pos(self):
+        return QPoint(0, self.page.height() - self.height())
+
+    def hidden_pos(self):
+        return QPoint(0, self.page.height())
+
+    def place(self):
+        self.resize(self.page.width(), self.sizeHint().height())
+        if self.animation.state() != QPropertyAnimation.State.Running:
+            self.move(self.shown_pos() if self.up else self.hidden_pos())
+
+    def slide_up(self):
+        if self.up and self.isVisible():
+            return
+        self.up = True
+        self.animation.stop()
+        self.place()
+        self.move(self.hidden_pos())
+        self.show()
+        self.raise_()
+        self.animation.setStartValue(self.hidden_pos())
+        self.animation.setEndValue(self.shown_pos())
+        self.animation.start()
+
+    def slide_down(self, animate=True):
+        self.up = False
+        self.animation.stop()
+        if not animate or not self.isVisible():
+            self.hide()
+            return
+        self.animation.setStartValue(self.pos())
+        self.animation.setEndValue(self.hidden_pos())
+        self.animation.start()
+
+    def after_move(self):
+        if not self.up:
+            self.hide()
+
+
 def step_bar(now):
     """승차권 구매 단계 표시 (가운데 칸 맨 위)."""
     row = QHBoxLayout()
@@ -233,9 +298,18 @@ def saved_routes_card(session, on_open, on_remove):
     column = QVBoxLayout(card)
     column.setContentsMargins(18, 14, 18, 16)
     column.setSpacing(8)
-    column.addWidget(label("★ 저장한 노선 · 최근·자주 가는 곳", 14, bold=True))
+    column.addWidget(label("★ 즐겨찾기 노선", 14, bold=True))
     routes = session.saved_routes()
-    for route in routes[:5]:
+    if not routes:
+        hint = label("승차권을 살 때 '예 · 저장'을 고르면 여기에 모여요", 15, muted=True, guide=True)
+        column.addWidget(hint)
+        column.addStretch()
+        return card
+    list_page = QWidget()
+    list_column = QVBoxLayout(list_page)
+    list_column.setContentsMargins(0, 0, 0, 0)
+    list_column.setSpacing(8)
+    for route in routes:
         row = QHBoxLayout()
         row.setSpacing(8)
         item = button("", "option", lambda checked=False, r=route: on_open(r["origin"], r["destination"]))
@@ -257,10 +331,13 @@ def saved_routes_card(session, on_open, on_remove):
         remove.setFixedSize(side, side)
         remove.setStyleSheet("padding: 0;")
         row.addWidget(remove)
-        column.addLayout(row)
-    if not routes:
-        hint = label("승차권을 살 때 '예 · 저장'을 고르면 여기에 모여요", 15, muted=True, guide=True)
-        column.addWidget(hint)
+        list_column.addLayout(row)
+    list_column.addStretch()
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll.setWidget(list_page)
+    column.addWidget(scroll, 1)
     return card
 
 
@@ -565,27 +642,43 @@ class TicketPanel(QStackedWidget):
 
     # ① 노선
     def make_route(self):
-        area, column = self.new_page()
+        """① 노선 (11/09): 출발지 | 도착지 두 블럭. 블럭마다 위에 초성 검색 칸, 아래에 가나다순 목록(위아래로 밀기).
+        화면 키보드는 숨겨 두었다가 입력 칸을 누르면 아래에서 올라온다."""
+        page, column = self.new_page(scroll=False)
         column.addLayout(step_bar(1))
-        fields = QHBoxLayout()
-        fields.setSpacing(14)
-        self.origin_field = text_field("출발지", text=tickets.ORIGIN)
-        self.dest_field = text_field("글자나 초성 (예: ㄷㅈ)")
-        for title, field in (("출발지 · 눌러서 바꾸기 (기본: 이 터미널)", self.origin_field), ("도착지", self.dest_field)):
-            part = QVBoxLayout()
-            part.addWidget(label(title, 14, bold=True, muted=True))
+        blocks = QHBoxLayout()
+        blocks.setSpacing(14)
+        self.origin_field = text_field("출발지 · 글자나 초성", text=tickets.ORIGIN)
+        self.dest_field = text_field("도착지 · 글자나 초성 (예: ㄷㅈ)")
+        self.terminal_lists = {}
+        for title, field in (("출발지 (기본: 이 터미널)", self.origin_field), ("도착지", self.dest_field)):
+            block = box_frame()
+            part = QVBoxLayout(block)
+            part.setContentsMargins(14, 12, 14, 12)
+            part.setSpacing(8)
+            part.addWidget(label(title, 16, bold=True))
             part.addWidget(field)
-            fields.addLayout(part, 1)
             field.setMaxLength(8)
-            field.installEventFilter(self)          # 누른 칸의 후보를 아래에 보여 준다
+            field.installEventFilter(self)          # 누르면 그 칸에 키보드를 붙이고 올린다
             field.textChanged.connect(lambda text, f=field: self.choose_field(f))
-        self.active_field = self.dest_field
-        column.addLayout(fields)
-        self.candidate_title = label("", 14, bold=True, muted=True)
-        column.addWidget(self.candidate_title)
-        self.candidates = QGridLayout()
-        self.candidates.setSpacing(8)
-        column.addLayout(self.candidates)
+            names = QScrollArea()
+            names.setWidgetResizable(True)
+            names.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            names.setFrameShape(QFrame.Shape.NoFrame)
+            names.setStyleSheet("QScrollArea { background: transparent; }")
+            inner = QWidget()
+            inner.setObjectName("terminal_list")
+            inner.setStyleSheet("QWidget#terminal_list { background: transparent; }")
+            grid = QGridLayout(inner)
+            grid.setContentsMargins(0, 0, 6, 0)
+            grid.setSpacing(8)
+            grid.setAlignment(Qt.AlignmentFlag.AlignTop)
+            names.setWidget(inner)
+            part.addWidget(names, 1)
+            self.terminal_lists[field] = (names, grid)
+            blocks.addWidget(block, 1)
+        self.active_field = self.origin_field
+        column.addLayout(blocks, 1)
         column.addWidget(label(f"날짜 · 오늘부터 {tickets.DAYS_AHEAD}일", 14, bold=True, muted=True))
         days = QGridLayout()
         days.setSpacing(8)
@@ -607,21 +700,41 @@ class TicketPanel(QStackedWidget):
         column.addLayout(actions)
         self.route_message = message_label()
         column.addWidget(self.route_message)
+        # 아래에서 올라오는 화면 키보드 (평소에는 숨김)
         self.route_keyboard = HangulKeyboard()
-        self.route_keyboard.attach(self.dest_field, self.origin_field)
-        column.addWidget(self.route_keyboard)
-        column.addStretch()
-        return area
+        self.keyboard_tray = SlideTray(page, self.route_keyboard)
+        page.installEventFilter(self)
+        return page
+
+    @property
+    def candidates(self):
+        """지금 누른 칸(출발지·도착지) 블럭의 터미널 목록 격자."""
+        return self.terminal_lists[self.active_field][1]
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.FocusIn and watched in (self.origin_field, self.dest_field):
-            self.choose_field(watched)
+        kind = event.type()
+        if watched in (getattr(self, "origin_field", None), getattr(self, "dest_field", None)):
+            # 프로그램이 옮긴 커서(늦게 오는 FocusIn)로는 칸을 바꾸지 않는다 · 손으로 누르거나 Tab일 때만
+            if kind == QEvent.Type.FocusIn and event.reason() in (Qt.FocusReason.TabFocusReason,
+                                                                  Qt.FocusReason.BacktabFocusReason):
+                self.choose_field(watched)
+            elif kind == QEvent.Type.MouseButtonPress:     # 입력 칸을 누르면 키보드가 올라온다
+                self.choose_field(watched)
+                self.keyboard_tray.slide_up()
+        elif watched is getattr(self, "route_page", None) and kind == QEvent.Type.Resize:
+            self.keyboard_tray.place()
         return False
 
     def choose_field(self, field):
         self.active_field = field
         self.route_keyboard.target = field
         self.update_candidates()
+
+    def focus_field(self, field):
+        """커서를 그 칸으로 (글자 끝)."""
+        self.choose_field(field)
+        field.setFocus(Qt.FocusReason.OtherFocusReason)
+        field.end(False)
 
     def open_route(self):
         today = date.today()
@@ -630,8 +743,10 @@ class TicketPanel(QStackedWidget):
         if self.day_group.checkedButton() is None:
             self.day_buttons[0].setChecked(True)
         self.route_message.setText("")
-        self.choose_field(self.dest_field)
+        self.keyboard_tray.slide_down(animate=False)
         self.go(self.route_page)
+        self.update_candidates(self.dest_field)
+        self.focus_field(self.origin_field)          # 11/09: 들어오자마자 출발지 칸에 커서
 
     def open_route_for(self, origin, destination):
         """My Menu의 저장한 노선: 출발지·도착지를 채우고 오늘 시간표로 바로 간다."""
@@ -642,30 +757,45 @@ class TicketPanel(QStackedWidget):
         self.open_route()
         self.search()
 
-    def update_candidates(self, *_):
-        """누른 칸(출발지·도착지)의 글자·초성에 맞는 터미널 후보 (그림 카드 없이 글자 칩만)."""
-        clear(self.candidates)
-        field = self.active_field
+    def pick_terminal(self, field, name):
+        """목록에서 터미널을 눌렀다: 출발지면 도착지 칸으로 커서를 옮기고, 도착지면 키보드를 내린다."""
+        field.setText(name)
+        if field is self.origin_field:
+            if self.dest_field.text().strip() == name:
+                self.dest_field.clear()
+            self.focus_field(self.dest_field)
+        else:
+            self.update_candidates(self.origin_field)     # 출발지 목록에서 고른 도착지를 뺀다
+            self.keyboard_tray.slide_down()
+
+    def update_candidates(self, field=None):
+        """한 블럭(출발지·도착지)의 목록: 칸의 글자·초성에 맞는 터미널을 가나다순으로."""
+        if not isinstance(field, QLineEdit):
+            field = self.active_field
+        scroll, grid = self.terminal_lists[field]
+        clear(grid)
         text = field.text().strip()
         other = (self.dest_field if field is self.origin_field else self.origin_field).text().strip()
-        # 11/04 회의: 이미 고른 터미널(기본 출발지 서울경부 등)이면 그 하나만 보여서 못 바꾸는 줄 알았다 → 전체를 보여 준다
+        if other not in tickets.TERMINAL_NAMES:
+            other = None
+        # 이미 고른 터미널이면 전체를 보여 주고 고른 것에 표시 (11/04 회의: 하나만 보이면 못 바꾸는 줄 안다)
         query = "" if text in tickets.TERMINAL_NAMES else text
-        names = tickets.search_terminals(query, exclude=other)
-        if query == "" and text in names:                  # 고른 것을 맨 앞에
-            names.remove(text)
-            names.insert(0, text)
-        names = names[:8]
-        self.candidate_title.setText("출발지 고르기" if field is self.origin_field else "도착지 고르기")
-        columns = 4 if theme.SCALE == 1 else 3
+        names = sorted(tickets.search_terminals(query, exclude=other))
+        columns = 2
+        chosen = None
         for index, name in enumerate(names):
-            chip = button(name, "pill", lambda checked=False, n=name, f=field: f.setText(n))
+            chip = button(name, "pill", lambda checked=False, n=name, f=field: self.pick_terminal(f, n))
             chip.setCheckable(True)
             chip.setChecked(name == text)
             chip.setFont(theme.font(17, bold=True))
-            chip.setMinimumHeight(46)
-            self.candidates.addWidget(chip, index // columns, index % columns)
+            chip.setMinimumHeight(48)
+            grid.addWidget(chip, index // columns, index % columns)
+            if name == text:
+                chosen = chip
         if not names:
-            self.candidates.addWidget(label("맞는 터미널이 없어요 · 다시 입력해 주세요", 15, muted=True), 0, 0, 1, columns)
+            grid.addWidget(label("맞는 터미널이 없어요 · 다시 입력해 주세요", 15, muted=True), 0, 0, 1, columns)
+        if chosen is not None:
+            QTimer.singleShot(0, chosen, lambda: scroll.ensureWidgetVisible(chosen))
 
     def picked_terminal(self, field, exclude=None):
         """칸의 글자를 터미널 이름으로. 후보가 하나뿐이면 그것으로 채운다. 못 정하면 None."""
@@ -679,14 +809,15 @@ class TicketPanel(QStackedWidget):
         return None
 
     def search(self):
+        self.keyboard_tray.slide_down()
         origin = self.picked_terminal(self.origin_field)
         if origin is None:
-            self.choose_field(self.origin_field)
+            self.focus_field(self.origin_field)
             self.route_message.setText("출발지를 입력하고 아래 목록에서 골라 주세요")
             return
         destination = self.picked_terminal(self.dest_field, exclude=origin)
         if destination is None:
-            self.choose_field(self.dest_field)
+            self.focus_field(self.dest_field)
             self.route_message.setText("도착지를 입력하고 아래 목록에서 골라 주세요")
             return
         if origin == destination:

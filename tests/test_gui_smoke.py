@@ -99,24 +99,26 @@ def test_idle_uses_clean_background_and_hides_approach_hint(window):
 def test_banner_alternates_event_and_approach_hint(window):
     idle = window.router.screens["idle"]
     banner = idle.banner
-    assert len(banner.messages) == 1 and banner.is_scrolling()
+    assert len(banner.messages) >= 2 and banner.is_scrolling()
+    assert any("회원카드" in message[0] for message in banner.messages)
     idle.set_approach_hint(True)
-    assert len(banner.messages) == 2
+    assert len(banner.messages) >= 4
     first = banner.current_text()
     assert first.startswith("가을 더블 포인트") and banner.is_scrolling()
     banner.show_next(animated=False)
     assert banner.current_text() == "가까이 오시면 자동으로 시작할 수 있어요"
     assert not banner.is_scrolling() and banner.switch_timer.isActive()   # 가운데 5초
     banner.show_next(animated=False)
-    assert banner.current_text() == first
+    assert banner.is_scrolling() and banner.current_text() != first
     QTest.mouseClick(idle.languages.buttons()[1], Qt.MouseButton.LeftButton)
     assert banner.messages[1][0] == "Come closer and it starts by itself"
     idle.set_approach_hint(False)
-    assert len(banner.messages) == 1 and not banner.switch_timer.isActive()
+    assert all(message[2] for message in banner.messages) and not banner.switch_timer.isActive()
 
 
 def test_event_text_scrolls_right_to_left(window):
     banner = window.router.screens["idle"].banner
+    banner.set_promotions([])                  # 이벤트 한 문장만 있을 때의 반복 동작
     assert banner.frame_timer.isActive()            # 대기 화면에 보이는 동안 움직인다
     banner.start_message()
     start = banner.offset
@@ -283,7 +285,7 @@ def test_banners_follow_operator_policy(app):
     settings["point_policy"]["events"] = []     # 운영자가 이벤트를 모두 끄면
     vault.write("settings", settings)
     window.router.show_screen("idle")
-    assert idle.banner.isHidden()
+    assert "회원카드" in idle.banner.current_text()   # 행사 종료 후에도 실제 카드 혜택은 안내
     window.router.open_action("guest")
     assert window.router.screens["menu"].banner.isHidden()
     window.close()

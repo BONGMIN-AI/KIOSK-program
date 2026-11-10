@@ -9,8 +9,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QTimer
-from PySide6.QtWidgets import QApplication, QPushButton, QStackedWidget, QWidget
+from PySide6.QtCore import QEasingCurve, QEvent, QPropertyAnimation, QTimer
+from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QPushButton, QStackedWidget, QWidget
 
 import config
 from core import audit
@@ -30,6 +30,7 @@ STAFF_SCREENS = ("unlock", "admin_login", "admin", "placeholder")   # 손님 화
 # 사람 감지 (11/02 C): 대기 화면에서 1m 안에 1초 머물면 시작, 주문 중 1.5m 안에 아무도 없으면 자리 비움
 APPROACH_M, SEEN_M = 1.0, 1.5
 APPROACH_TICKS = 2                     # 0.5초 × 2
+CHOICE_GONE_TICKS = 6                  # 0.5초 × 6 = 3초: 매장 / 포장이 떠 있는데 아무도 없으면 버튼을 내린다
 NO_AWAY_SCREENS = ("idle", "unlock", "admin_login", "admin", "done")   # 완료 화면은 자기 시간으로 돌아간다
 AWAY_ASK_SECONDS = 10
 
@@ -101,6 +102,7 @@ class Router(QStackedWidget):
         self.away_box = None                  # KioskWindow가 넣어 준다: '로그아웃할까요? (10)' 상자
         self.popup = None                     # KioskWindow가 넣어 준다: 축하 · 이스터에그 팝업
         self.near_ticks = 0
+        self.choice_gone_ticks = 0
         self.approach_armed = False           # 한 번 1m 밖으로 물러나야 다음 '다가오면 시작'이 된다 (11/03)
         self.camera_status = None             # KioskWindow가 넣어 준다 (테스트 모드): 카메라가 본 것 한 줄
         self.last_seen = time.monotonic()
@@ -148,7 +150,25 @@ class Router(QStackedWidget):
             screen.on_show(**options)
         for leave in screen.findChildren(QPushButton, "leave_button"):
             leave.setText(self.leave_text())
+        changed = screen is not self.currentWidget()
         self.setCurrentWidget(screen)
+        if changed:
+            self.fade_in(screen)
+
+    def fade_in(self, screen):
+        """11/09: 화면이 바뀔 때 0.22초 동안 서서히 나타난다. 끝나면 효과를 떼어 다른 효과와 겹치지 않게."""
+        if screen.graphicsEffect() is not None and not isinstance(screen.graphicsEffect(), QGraphicsOpacityEffect):
+            return                                 # 화면에 이미 다른 효과가 있으면 건드리지 않는다
+        effect = QGraphicsOpacityEffect(screen)
+        effect.setOpacity(0.0)
+        screen.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", screen)
+        animation.setDuration(220)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        animation.finished.connect(lambda: screen.setGraphicsEffect(None))
+        animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def leave_text(self):
         """처음 화면으로 가는 버튼 글 (11/04): 회원이면 '로그아웃' (메뉴로 가는 줄 알고 누르는 일이 있어서)."""
@@ -163,8 +183,10 @@ class Router(QStackedWidget):
             return
         lost = "\n담은 메뉴 · 승차권은 지워져요." if has_items else ""
         if session.is_member():
-            self.popup.ask("로그아웃할까요?", "처음 화면으로 돌아가요." + lost + "\n메뉴를 더 보려면 '아니요'를 눌러 주세요.",
-                           "예, 로그아웃", lambda: self.show_screen("idle"))
+            self.away_box.ask_countdown(
+                "로그아웃할까요?", "처음 화면으로 돌아가요." + lost + "\n계속 주문하려면 '아니요'를 눌러 주세요.",
+                lambda seconds: f"예, 로그아웃 ({seconds})", 10,
+                lambda: self.leave("로그아웃하여", "cash_refund_logout"))
         else:
             self.popup.ask("처음으로 갈까요?", "처음 화면으로 돌아가요." + lost, "예, 처음으로",
                            lambda: self.show_screen("idle"))
@@ -257,6 +279,14 @@ class Router(QStackedWidget):
         name = self.current_name
         if name == "idle":
             near = distance is not None and distance <= APPROACH_M
+            # 11/10: 매장 / 포장이 떠 있는데 1.5m 안에 아무도 없으면 3초 뒤 버튼을 내린다 (떠난 손님)
+            choice = idle.dine_choice if idle is not None else None
+            gone = distance is None or distance > SEEN_M
+            self.choice_gone_ticks = self.choice_gone_ticks + 1 if (
+                choice is not None and choice.isVisible() and not choice.closing and gone) else 0
+            if self.choice_gone_ticks >= CHOICE_GONE_TICKS:
+                self.choice_gone_ticks = 0
+                choice.close_choice()
             if not near:
                 self.approach_armed = True            # 1m 밖(또는 아무도 없음)을 한 번 봤다 → 다가오면 시작
             self.near_ticks = self.near_ticks + 1 if near and self.approach_armed else 0
@@ -357,8 +387,14 @@ class Router(QStackedWidget):
 
     def set_vault(self, vault):
         """운영자가 금고를 열면 주문에 쓸 데이터를 연결하고 대기 화면으로 간다."""
+        from domain.seasonal_theme import initialize as initialize_seasonal_theme
+        initialize_seasonal_theme(vault)
+        from domain.seed import enrich_existing_events
+        enrich_existing_events(vault)
         self.session.vault = vault
         self.apply_kiosk_settings()        # 금고가 열리면 운영자가 정한 시간을 읽는다
+        if self.rebuild is not None:
+            self.rebuild()
         self.show_screen("idle")
         self.check_last_shutdown()
 

@@ -35,11 +35,13 @@ def test_member_sees_logout_and_is_asked(window):
     button = leave_button(router, "menu")
     assert button.text() == "로그아웃"
     button.click()
-    assert router.popup.isVisible() and router.current_name == "menu"     # 바로 나가지 않고 묻는다
-    router.popup.no_button.click()
+    box = router.away_box                                                 # 11/07: 10초 카운트다운 상자로 묻는다
+    assert box.isVisible() and router.current_name == "menu"              # 바로 나가지 않고 묻는다
+    assert "(10)" in box.yes_button.text()
+    box.no_button.click()
     assert router.current_name == "menu" and router.session.is_member()   # 아니요 → 그대로
     button.click()
-    router.popup.yes_button.click()
+    box.yes_button.click()
     assert router.current_name == "idle" and not router.session.is_member()
 
 

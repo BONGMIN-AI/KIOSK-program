@@ -103,8 +103,9 @@ class OrderSession:
         return self.vault.read("menu", default={})
 
     def items_in(self, category):
-        items = [item for item in self.menu().values() if item["category"] == category]
-        return sorted(items, key=lambda item: item["id"])
+        items = [item for item in self.menu().values()
+                 if item["category"] == category and not item.get("hidden")]
+        return sorted(items, key=lambda item: (not item.get("new_menu", False), item["id"]))
 
     def options_for(self, menu_id):
         return available_options(self.menu()[menu_id])
@@ -133,7 +134,7 @@ class OrderSession:
 
     def popular(self, sort):
         """인기 탭 순위 [{item, value, text}] (domain/popular.py)."""
-        return ranking(sort, self.menu(), self.vault.read("customers", default={}), self.orders())
+        return ranking(sort, self.menu(), self.vault.read("customers", default={}), self.orders(), limit=12)
 
     # 회원카드 (11/01)
     def add_card(self, kind="new"):
@@ -183,7 +184,8 @@ class OrderSession:
 
     def likes(self):
         menu = self.menu()
-        return [menu[menu_id] for menu_id in likes_of(self.customer) if menu_id in menu]
+        return [menu[menu_id] for menu_id in likes_of(self.customer)
+                if menu_id in menu and not menu[menu_id].get("hidden")]
 
     def is_liked(self, menu_id):
         return self.is_member() and menu_id in likes_of(self.customer)
@@ -227,6 +229,8 @@ class OrderSession:
 
     # 장바구니
     def add(self, menu_id, options=None, quantity=1):
+        if self.menu().get(menu_id, {}).get("hidden"):
+            raise ValueError("지금 판매하지 않는 계절 메뉴예요")
         new_cart = add_item(self.cart, menu_id, quantity, options, self.menu())
         cart_lines(new_cart, self.menu())   # 재고가 모자라면 여기서 ValueError (장바구니는 그대로)
         self.cart = new_cart

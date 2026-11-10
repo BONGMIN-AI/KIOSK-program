@@ -5,14 +5,16 @@
 운영자가 바꾼 것은 모두 감사 로그(해시 체인)에 남는다. 고객 전화번호는 가려서 보여 준다.
 """
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
+import shutil
+from uuid import uuid4
 
 import numpy as np
 from PySide6.QtCore import QElapsedTimer, QPointF, Qt, QTimer
-from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QIcon, QImage, QImageReader, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QFrame,
-                               QHBoxLayout, QHeaderView, QLabel, QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QTableWidget, QTableWidgetItem,
+                               QFileDialog, QHBoxLayout, QHeaderView, QLabel, QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
 import config
@@ -24,20 +26,23 @@ from domain import policy as policy_logic
 from domain import coupons as coupon_logic
 from domain import kiosk_settings as kiosk_logic
 from domain import sales as sales_logic
+from domain import seasonal_theme
 from domain.titles import title_name
 from domain.customers import adjust_points, update_member_info
 from face import FaceError
 from gui import theme
 from gui.order import CATEGORY_ORDER
 from gui.screens.login import info_box, nav_bar
-from gui.widgets import Card, TouchKeyboard, TrendBars, button, label, message_label, phone_field, text_field
+from gui.widgets import Card, Slideshow, TouchKeyboard, TrendBars, button, label, message_label, phone_field, text_field
 
 # 왼쪽 목록 (11/02: 위쪽 탭 → 묶음별 세로 목록, 한 화면에 한 가지 일)
 SECTIONS = [
     ("매장", [("sales", "매출 요약"), ("menu", "메뉴 · 재고")]),
     ("회원", [("members", "회원 목록"), ("orders", "주문 기록"), ("cards", "회원카드"), ("points", "포인트 조정")]),
-    ("혜택 · 행사", [("events", "이벤트"), ("coupons", "쿠폰"), ("perks", "혜택 설정")]),
-    ("화면 · 설정", [("banners", "광고 배너"), ("kiosk", "키오스크 설정")]),
+    ("혜택 · 행사", [("events_add", "이벤트 생성"), ("events", "이벤트 목록·수정"),
+                    ("coupons", "쿠폰"), ("perks", "혜택 설정")]),
+    ("화면 · 설정", [("banners", "광고 배너"), ("login_ads", "로그인 광고"),
+                    ("season", "계절 테마"), ("kiosk", "키오스크 설정")]),
     ("기록", [("log", "운영 기록")]),
 ]
 TABS = [item for _, items in SECTIONS for item in items]
@@ -69,6 +74,8 @@ def table(headers):
     widget.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     widget.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
     widget.setFont(theme.font(15))
+    widget.horizontalHeader().setFont(theme.font(14, bold=True))     # 표 제목이 작고 흐리게 보이던 것 (11/09)
+    widget.verticalHeader().setDefaultSectionSize(30)
     widget.setStyleSheet(f"QTableWidget {{ background: {theme.CARD}; border: 1px solid {theme.LINE};"
                          f" border-radius: 12px; gridline-color: {theme.LINE}; }}"
                          f" QHeaderView::section {{ background: {theme.CARAMEL_LIGHT}; border: none;"
@@ -94,11 +101,14 @@ def line_text(line):
 
 
 def fit_columns(widget, stretch):
-    """칸 폭을 글자 길이만큼 (잘리지 않게), stretch 칸만 남는 폭을 채운다."""
+    """짧은 칸은 내용에 맞추고 남는 폭은 두 칸에 나눠 준다."""
     header = widget.horizontalHeader()
     for index in range(widget.columnCount()):
         header.setSectionResizeMode(index, QHeaderView.ResizeMode.ResizeToContents)
     header.setSectionResizeMode(stretch, QHeaderView.ResizeMode.Stretch)
+    other = widget.columnCount() - 1 if stretch != widget.columnCount() - 1 else max(0, stretch - 1)
+    if other != stretch:
+        header.setSectionResizeMode(other, QHeaderView.ResizeMode.Stretch)
 
 
 def add_checks(widget, keep=()):
@@ -140,6 +150,15 @@ def fill_table(widget, rows, keys=None):
                 item.setData(Qt.ItemDataRole.UserRole, keys[r])
             widget.setItem(r, c, item)
     widget.blockSignals(False)
+
+
+def align_right(widget, columns):
+    """금액 · 수량 칸은 오른쪽 정렬해 자릿수를 한눈에 비교한다 (fill_table 다음에 부른다)."""
+    for row in range(widget.rowCount()):
+        for column in columns:
+            item = widget.item(row, column)
+            if item is not None:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
 
 def selected_key(widget):
@@ -291,13 +310,17 @@ class AdminLoginScreen(QWidget):
         """운영자 얼굴 확인. badge=True면 관리자 카드에 같이 저장한 얼굴(data/admin_badge.bin)과 비교한다."""
         admin_id = admin_badge.ADMIN_ID if badge else self.admin_id.text().strip().lower()
         key = admin_badge.ADMIN_KEY if badge else auth.admin_face_key(admin_id)
+        # 주 관리자 얼굴은 재실행해도 남는 관리자 카드 금고에 저장돼 있다.
+        # 시연 모드의 회원 금고는 매번 새로 만들어지므로 여기서 읽으면 얼굴 로그인이 끊긴다.
+        persistent_admin = admin_id == admin_badge.ADMIN_ID and key in admin_badge.load().get("face_profiles", {})
+        face_vault = admin_badge.BadgeVault() if badge or persistent_admin else None
         scores = []
         self.message.setText("")
         self.begin_face("관리자 카드 확인 · 카메라를 켜는 중이에요…" if badge else "카메라를 켜는 중이에요…")
         try:
             matched = self.router.run_face(lambda provider: provider.identify_face(key, scores.append),
                                            viewer=self.show_face, on_step=self.show_step,
-                                           vault=admin_badge.BadgeVault() if badge else None)
+                                           vault=face_vault)
         except (FaceError, ValueError) as error:
             self.end_face()
             self.message.setText(f"{error} · 비밀번호 로그인을 사용하세요")
@@ -383,8 +406,11 @@ class AdminScreen(QWidget):
                         "members": self.make_members_page(),
                         "orders": self.make_orders_page(),
                         "cards": self.make_cards_page(), "points": self.make_points_page(),
-                        "events": self.make_events_page(), "perks": self.make_perks_page(),
-                        "coupons": self.make_coupons_page(), "banners": self.make_banners_page(), "kiosk": self.make_kiosk_page(),
+                        "events": self.make_events_page(), "events_add": self.make_event_add_page(),
+                        "perks": self.make_perks_page(),
+                        "coupons": self.make_coupons_page(), "banners": self.make_banners_page(),
+                        "login_ads": self.make_login_ads_page(), "season": self.make_season_page(),
+                        "kiosk": self.make_kiosk_page(),
                         "log": self.make_log_page()}
         for page in self.page_of.values():
             self.pages.addWidget(page)
@@ -468,18 +494,63 @@ class AdminScreen(QWidget):
         top_card = Card()
         top = QVBoxLayout(top_card)
         top.setContentsMargins(16, 12, 16, 12)
-        top.addWidget(label("많이 팔린 메뉴", 16, bold=True))
-        self.sales_top = table(["순위", "메뉴", "잔 수", "매출"])
+        self.sales_top_title = label("판매 메뉴 전체", 16, bold=True)
+        top.addWidget(self.sales_top_title)
+        self.sales_top = table(["순위", "메뉴", "수량", "매출"])   # 디저트도 있어 "잔"이 아니라 "개"
         fit_columns(self.sales_top, 1)
         top.addWidget(self.sales_top, 1)
         body.addWidget(top_card, 1)
         hour_card = Card()
         hours = QVBoxLayout(hour_card)
         hours.setContentsMargins(16, 12, 16, 12)
-        hours.addWidget(label("시간대별 주문", 16, bold=True))
-        self.sales_hours = TrendBars([str(h) for h in sales_logic.HOURS], [0] * len(sales_logic.HOURS), -1)
-        hours.addWidget(self.sales_hours)
-        hours.addStretch()
+        selector = QHBoxLayout()
+        heading = label("분석", 19, bold=True)
+        selector.addWidget(heading)
+        self.sales_analysis_mode = QComboBox()
+        self.sales_analysis_mode.setFont(theme.font(17, bold=True))
+        self.sales_analysis_mode.setMinimumHeight(46)
+        self.sales_analysis_mode.addItems(("카테고리별 판매", "시간대별 주문", "일별 매출", "주별 매출",
+                                           "월별 매출", "회원가입 추이", "카드 등록 추이"))
+        self.sales_analysis_mode.currentTextChanged.connect(lambda _mode: self.load_sales_analysis())
+        selector.addWidget(self.sales_analysis_mode, 1)
+        # 분류 선택은 같은 줄에 (11/09: 따로 한 줄을 쓰면 아래 표가 3~4줄만 보였다)
+        self.sales_category_controls = QWidget()
+        categories = QHBoxLayout(self.sales_category_controls)
+        categories.setContentsMargins(0, 0, 0, 0)
+        self.sales_category_picker = QComboBox()
+        self.sales_category_picker.setFont(theme.font(16))
+        self.sales_category_picker.setMinimumHeight(46)
+        self.sales_category_picker.currentTextChanged.connect(lambda _name: self.load_sales_analysis())
+        categories.addWidget(self.sales_category_picker, 1)
+        self.sales_category_back = button("전체", "outline",
+                                          lambda: self.sales_category_picker.setCurrentIndex(0))
+        categories.addWidget(self.sales_category_back)
+        selector.addWidget(self.sales_category_controls, 1)
+        hours.addLayout(selector)
+        self.sales_hour_day = date.today()
+        self.sales_hour_first_open = True
+        self.sales_hour_controls = QWidget()
+        days = QHBoxLayout(self.sales_hour_controls)
+        days.setContentsMargins(0, 0, 0, 0)
+        self.sales_hour_previous = button("← 이전 날", "outline", lambda: self.move_sales_hour_day(-1))
+        self.sales_hour_next = button("다음 날 →", "outline", lambda: self.move_sales_hour_day(1))
+        self.sales_hour_date = label("", 19, bold=True)
+        self.sales_hour_date.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        days.addWidget(self.sales_hour_previous)
+        days.addWidget(self.sales_hour_date, 1)
+        days.addWidget(self.sales_hour_next)
+        hours.addWidget(self.sales_hour_controls)
+        self.sales_analysis_note = label("", 14, muted=True)
+        hours.addWidget(self.sales_analysis_note)
+        self.sales_analysis_insight = label("", 15, bold=True)
+        hours.addWidget(self.sales_analysis_insight)
+        self.sales_hours = TrendBars([str(h) for h in sales_logic.HOURS], [0] * len(sales_logic.HOURS), -1,
+                                     unit="건")
+        hours.addWidget(self.sales_hours, 1)
+        self.sales_analysis_table = table(["분류", "수량", "상품 매출"])
+        fit_columns(self.sales_analysis_table, 0)
+        self.sales_analysis_table.cellClicked.connect(self.open_sales_category)
+        hours.addWidget(self.sales_analysis_table, 1)
         body.addWidget(hour_card, 1)
         column.addLayout(body, 1)
         return page
@@ -496,12 +567,114 @@ class AdminScreen(QWidget):
         self.sales_tiles["count"].setText(f"{data['count']:,}건")
         self.sales_tiles["average"].setText(f"{data['average']:,}원")
         self.sales_tiles["tickets"].setText(f"{data['tickets']:,}매")
-        fill_table(self.sales_top, [[f"{rank}", name, f"{qty:,}잔", f"{sales:,}원"]
+        fill_table(self.sales_top, [[f"{rank}", name, f"{qty:,}개", f"{sales:,}원"]
                                     for rank, (name, qty, sales) in enumerate(data["top"], 1)])
+        align_right(self.sales_top, (2, 3))
+        self.sales_top_title.setText(f"판매 메뉴 전체 · {len(data['top'])}종")
+        self.load_sales_analysis()
+
+    def load_sales_analysis(self):
+        mode = self.sales_analysis_mode.currentText()
+        vault = self.vault()
+        orders = vault.read("orders", default={})
         bars = self.sales_hours
-        bars.values = data["hours"]
-        bars.current = data["hours"].index(max(data["hours"])) if any(data["hours"]) else -1
+        self.sales_category_controls.setVisible(mode == "카테고리별 판매")
+        self.sales_hour_controls.setVisible(mode == "시간대별 주문")
+        self.sales_analysis_table.setVisible(mode != "시간대별 주문")
+        if mode == "시간대별 주문":                       # 표가 없으니 남는 높이를 그래프가 다 쓴다 (잘림 · 빈칸 방지)
+            bars.setMinimumHeight(170)
+            bars.setMaximumHeight(16777215)
+            bars.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        else:
+            bars.setFixedHeight(130)
+            bars.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.sales_analysis_table.setColumnHidden(2, mode != "카테고리별 판매")   # 추이 표의 빈 칸 숨김
+        if mode == "카테고리별 판매":
+            menu = vault.read("menu", default={})
+            categories = sales_logic.category_summary(orders, menu, self.sales_period)
+            selected = self.sales_category_picker.currentText()
+            self.sales_category_picker.blockSignals(True)
+            self.sales_category_picker.clear()
+            self.sales_category_picker.addItems(["전체 분류"] + [name for name, _qty, _amount in categories])
+            self.sales_category_picker.setCurrentText(selected if selected in
+                                                     [name for name, _qty, _amount in categories] else "전체 분류")
+            self.sales_category_picker.blockSignals(False)
+            selected = self.sales_category_picker.currentText()
+            self.sales_category_back.setVisible(selected != "전체 분류")
+            if selected == "전체 분류":
+                rows = categories
+                labels = [name for name, _qty, _amount in rows]
+                values = [qty for _name, qty, _amount in rows]
+                self.sales_analysis_table.setHorizontalHeaderLabels(["분류", "판매 수량", "상품 매출"])
+                self.sales_analysis_note.setText(f"{self.sales_period} · 분류를 누르면 메뉴별 판매 순위를 볼 수 있어요")
+                total = sum(amount for _name, _qty, amount in rows)
+                self.sales_analysis_insight.setText(
+                    f"매출 1위 {rows[0][0]} · 상품 매출의 {rows[0][2] / total:.0%}" if rows and total
+                    else "판매 내역이 없어요")
+            else:
+                rows = sales_logic.category_menu_summary(orders, menu, selected, self.sales_period)
+                labels = [name for name, _qty, _amount in rows[:6]]
+                values = [qty for _name, qty, _amount in rows[:6]]
+                self.sales_analysis_table.setHorizontalHeaderLabels(["메뉴", "판매 수량", "상품 매출"])
+                self.sales_analysis_note.setText(f"{self.sales_period} · {selected} · 판매 수량 많은 순 · 품목 소계는 할인 전")
+                self.sales_analysis_insight.setText(
+                    f"{selected} 1위 {rows[0][0]} · {rows[0][1]:,}개 판매" if rows else "판매 내역이 없어요")
+            fill_table(self.sales_analysis_table,
+                       [[name, f"{qty:,}개", f"{amount:,}원"] for name, qty, amount in rows])
+            align_right(self.sales_analysis_table, (1, 2))
+            bars.unit, bars.value_format = "개", None
+        elif mode == "시간대별 주문":
+            if self.sales_hour_first_open:
+                self.sales_hour_day = sales_logic.latest_order_day(orders)
+                self.sales_hour_first_open = False
+            data = sales_logic.hourly_day(orders, self.sales_hour_day)
+            labels, values = data["labels"], data["hours"]
+            self.sales_hour_date.setText(self.sales_hour_day.strftime("%Y년 %m월 %d일"))
+            self.sales_hour_next.setEnabled(self.sales_hour_day < date.today())
+            self.sales_analysis_note.setText(
+                f"선택한 하루 (기간 버튼과 별개) · 주문 {data['count']:,}건 · 실결제 매출 {data['total']:,}원 · 00~23시 분포")
+            self.sales_analysis_insight.setText(
+                f"주문이 가장 많은 시간 {labels[values.index(max(values))]}시 · {max(values)}건"
+                if any(values) else "해당 기간의 주문이 없어요")
+            bars.unit, bars.value_format = "건", None
+        else:
+            days = 30 if self.sales_period == "최근 30일" else 7       # 일별은 위 기간 버튼을 따른다 (오늘 → 7일)
+            points = sales_logic.trend(orders, vault.read("customers", default={}),
+                                       vault.read("card_requests", default={}), mode, days=days)
+            labels = [name for name, _value in points]
+            values = [value for _name, value in points]
+            money = mode in ("일별 매출", "주별 매출", "월별 매출")
+            self.sales_analysis_table.setHorizontalHeaderLabels(["기간", "매출" if money else "인원", ""])
+            fill_table(self.sales_analysis_table,
+                       [[name, f"{value:,}{'원' if money else '명'}", ""] for name, value in points])
+            align_right(self.sales_analysis_table, (1,))
+            self.sales_analysis_note.setText(("주문 기록의 실결제액" if money else
+                                             "회원 가입일" if mode == "회원가입 추이" else "카드 최초 등록일")
+                                            + (f" · 최근 {len(points)}일 (위 기간 버튼을 따름)" if mode == "일별 매출" else
+                                               f" · 최근 {len(points)}{'개월' if mode == '월별 매출' else '주'} (기간 버튼과 별개)"))
+            total = sum(values)
+            self.sales_analysis_insight.setText(
+                f"최고 {labels[values.index(max(values))]} · {max(values):,}{'원' if money else '명'}"
+                f"  |  기간 합계 {total:,}{'원' if money else '명'}" if any(values) else "기록이 없어요")
+            bars.unit = "원" if money else "명"
+            # 막대 위 숫자는 짧게 (10만 이상은 반올림한 '만' 단위) · 정확한 금액은 아래 표에 있다
+            bars.value_format = (lambda value: f"{round(value / 10000):,}만" if value >= 100000 else
+                                 f"{value / 10000:.1f}만" if value >= 10000 else f"{value:,}원") if money else None
+        bars.labels = labels
+        bars.values = values
+        bars.current = values.index(max(values)) if any(values) else -1
         bars.update()
+
+    def open_sales_category(self, row, _column):
+        if (self.sales_analysis_mode.currentText() == "카테고리별 판매"
+                and self.sales_category_picker.currentText() == "전체 분류"):
+            self.sales_category_picker.setCurrentText(self.sales_analysis_table.item(row, 0).text())
+
+    def move_sales_hour_day(self, step):
+        target = self.sales_hour_day + timedelta(days=step)
+        if target <= date.today():
+            self.sales_hour_day = target
+            self.load_sales_analysis()
 
     def make_menu_page(self):
         """메뉴 · 재고 (11/02): 분류로 걸러 보기, 체크로 여러 개 품절·판매 재개, 오른쪽은 고른 메뉴 하나 수정."""
@@ -523,7 +696,13 @@ class AdminScreen(QWidget):
         search_row.addWidget(button("+ 새 메뉴", "outline", self.new_menu))
         left.addLayout(search_row)
         self.menu_table = table(["", "메뉴명", "분류", "가격", "재고", "상태"])
-        fit_columns(self.menu_table, 1)
+        menu_header = self.menu_table.horizontalHeader()
+        menu_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        menu_header.resizeSection(0, 32)
+        menu_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        menu_header.resizeSection(1, 250)
+        for index in range(2, self.menu_table.columnCount()):
+            menu_header.setSectionResizeMode(index, QHeaderView.ResizeMode.Stretch)
         self.menu_table.itemSelectionChanged.connect(self.select_menu)
         self.menu_table.itemChanged.connect(lambda _item: self.update_menu_buttons())
         left.addWidget(self.menu_table, 1)
@@ -567,7 +746,7 @@ class AdminScreen(QWidget):
         keyword = self.menu_search.text().strip()
         category = self.menu_filter.currentText()
         items = [i for i in sorted(self.vault().read("menu", default={}).values(), key=lambda i: i["id"])
-                 if keyword in i["name"] and (category == "전체 분류" or i["category"] == category
+                 if not i.get("hidden") and keyword in i["name"] and (category == "전체 분류" or i["category"] == category
                                               or (category == "품절만" and i.get("sold_out")))]
         fill_table(self.menu_table, [["", i["name"], i["category"], f"{i['price']:,}원", f"{i['stock']}개",
                                       "품절" if i.get("sold_out") else "판매 중"] for i in items],
@@ -844,7 +1023,7 @@ class AdminScreen(QWidget):
 
     def load_orders(self):
         keyword = self.order_search.text().strip().lower()
-        days = {"오늘": 0, "최근 7일": 7, "최근 30일": 30}.get(self.order_period.currentText())
+        period = self.order_period.currentText()
         today = datetime.now().date()
         rows, total = [], 0
         for order_id, order in sorted(self.vault().read("orders", default={}).items(),
@@ -855,12 +1034,13 @@ class AdminScreen(QWidget):
                 items += f" · 승차권 {sum(t['count'] for t in order['tickets'])}매"
             if keyword and keyword not in f"{order_id} {member} {items}".lower():
                 continue
-            if days is not None and (today - datetime.fromisoformat(order["created_at"]).date()).days > days:
+            if period != "전체 기간" and not sales_logic.in_period(order, period, today):
                 continue
             rows.append([order_id, items, f"{order['final_total']:,}원", member,
                          order["created_at"][5:16].replace("T", " ")])
             total += order["final_total"]
         fill_table(self.order_table, rows)
+        align_right(self.order_table, (2,))
         self.order_table.resizeRowsToContents()
         self.order_total.setText(f"{len(rows)}건 · 합계 {total:,}원")
 
@@ -874,7 +1054,7 @@ class AdminScreen(QWidget):
         top = QHBoxLayout()
         top.addWidget(label("이벤트 목록", 17, bold=True))
         top.addStretch()
-        top.addWidget(button("+ 새 이벤트", "outline", self.new_event))
+        top.addWidget(button("+ 새 이벤트", "outline", lambda: self.show_tab("events_add")))
         left.addLayout(top)
         self.event_table = table(["이벤트", "기간", "혜택", "상태 · 테마"])
         self.event_table.itemSelectionChanged.connect(self.select_event)
@@ -883,9 +1063,10 @@ class AdminScreen(QWidget):
         form_card = Card()
         form = QVBoxLayout(form_card)
         form.setContentsMargins(18, 12, 18, 12)
-        form.setSpacing(5)
-        self.event_form_title = label("새 이벤트", 19, bold=True)
+        form.setSpacing(10)
+        self.event_form_title = label("수정할 이벤트를 선택하세요", 19, bold=True)
         form.addWidget(self.event_form_title)
+        form.addSpacing(6)
         self.ev_name = text_field("이벤트 이름")
         self.ev_start = text_field("2026-10-20")
         self.ev_end = text_field("2026-10-31")
@@ -902,6 +1083,7 @@ class AdminScreen(QWidget):
                               ("문구", self.ev_message)):
             widget.setMinimumHeight(40)
             form.addLayout(field_row(title, widget, 90))
+            form.addStretch(1)
         category_row = QHBoxLayout()
         category_row.addWidget(label("대상", 15, bold=True))
         self.ev_categories = {}
@@ -911,6 +1093,8 @@ class AdminScreen(QWidget):
             self.ev_categories[name] = box
             category_row.addWidget(box)
         form.addLayout(category_row)
+        form.addWidget(label("대상을 선택하지 않으면 전체 메뉴에 적용", 12, muted=True))
+        form.addStretch(1)
         theme_row = QHBoxLayout()
         theme_row.addWidget(label("테마", 15, bold=True))
         self.theme_group = QButtonGroup(self)
@@ -925,11 +1109,12 @@ class AdminScreen(QWidget):
             self.theme_group.addButton(chip)
             theme_row.addWidget(chip, 1)
         form.addLayout(theme_row)
+        form.addStretch(1)
         self.ev_enabled = QCheckBox("켜짐")
         self.ev_enabled.setFont(theme.font(15, bold=True))
         actions = QHBoxLayout()
         actions.addWidget(self.ev_enabled)
-        actions.addWidget(button("이벤트 저장", "primary", self.save_event), 1)
+        actions.addWidget(button("수정 저장", "primary", self.save_event), 1)
         actions.addWidget(button("선택 삭제", "outline", self.delete_event))
         form.addLayout(actions)
         scroll = QScrollArea()          # 칸이 많아 화면이 낮으면 위아래로 밀어 본다
@@ -939,6 +1124,70 @@ class AdminScreen(QWidget):
         row.addWidget(scroll, 8)
         self.editing_event = None
         return page
+
+    def make_event_add_page(self):
+        """새 이벤트 입력 전용 화면. 목록의 선택 상태와 입력값을 공유하지 않는다."""
+        page = QWidget()
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(0, 0, 0, 0)
+        card = Card()
+        form = QVBoxLayout(card)
+        form.setContentsMargins(24, 12, 24, 12)
+        form.setSpacing(6)
+        form.addWidget(label("새 이벤트", 22, bold=True))
+        self.add_fields = {}
+        specs = (("name", "이름 *", "이벤트 이름"), ("start", "시작일 *", "2026-11-07"),
+                 ("end", "종료일 *", "2026-12-31"), ("days", "요일", "매일 / 평일 / 주말 / 월,수,금"),
+                 ("hours", "시간", "하루 종일이면 비움 · 14-17"), ("rate", "적립률", "이벤트 적립률 %"),
+                 ("bonus", "보너스", "보너스 P"), ("min", "최소 결제", "보너스 최소 결제액"),
+                 ("smile", "스마일", "웃으면 할인 (원)"), ("message", "문구", "배너 문구 (비우면 자동)"))
+        for key, title, hint in specs:
+            widget = text_field(hint)
+            widget.setMinimumHeight(40)
+            self.add_fields[key] = widget
+            form.addLayout(field_row(title, widget, 110))
+        categories = QHBoxLayout()
+        categories.addWidget(label("대상", 15, bold=True))
+        self.add_categories = {}
+        for name in CATEGORY_ORDER:
+            box = QCheckBox(name)
+            box.setFont(theme.font(14))
+            self.add_categories[name] = box
+            categories.addWidget(box)
+        form.addLayout(categories)
+        form.addWidget(label("대상을 선택하지 않으면 전체 메뉴에 적용", 12, muted=True))
+        form.addStretch(1)
+        themes = QHBoxLayout()
+        themes.addWidget(label("테마", 15, bold=True))
+        self.add_theme_group = QButtonGroup(self)
+        for key, name in THEME_NAMES.items():
+            background, foreground = theme.EVENT_THEMES[key]
+            chip = button(name, "option")
+            chip.setCheckable(True)
+            chip.setProperty("theme", key)
+            chip.setMinimumHeight(40)
+            chip.setStyleSheet(f"QPushButton {{ background: {background}; color: {foreground}; }}"
+                               f" QPushButton:checked {{ border: 3px solid {theme.BROWN}; }}")
+            self.add_theme_group.addButton(chip)
+            themes.addWidget(chip, 1)
+        form.addLayout(themes)
+        form.addStretch(1)
+        actions = QHBoxLayout()
+        self.add_enabled = QCheckBox("켜짐")
+        self.add_enabled.setFont(theme.font(15, bold=True))
+        actions.addWidget(self.add_enabled)
+        actions.addWidget(button("이벤트 추가", "primary", lambda: self.save_event(creating=True)), 1)
+        form.addLayout(actions)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(card)
+        outer.addWidget(scroll)
+        self.new_event()
+        return page
+
+    def load_events_add(self):
+        self.new_event()
 
     def policy(self):
         return policy_logic.load_policy(self.vault().read("settings", default={}))
@@ -955,20 +1204,17 @@ class AdminScreen(QWidget):
                                        policy_logic.describe_event(e).split(" · ", 4)[-1],
                                        f"{policy_logic.event_status(e)} · {THEME_NAMES.get(e.get('theme', 'basic'))}"]
                                       for e in events], [e["id"] for e in events])
-        if self.editing_event is None:
-            self.new_event()
+        if self.editing_event is not None and not any(e["id"] == self.editing_event for e in events):
+            self.editing_event = None
 
     def new_event(self):
-        self.editing_event = None
-        self.event_table.clearSelection()
-        self.event_form_title.setText("새 이벤트")
-        for field in (self.ev_name, self.ev_start, self.ev_end, self.ev_days, self.ev_hours, self.ev_rate,
-                      self.ev_bonus, self.ev_min, self.ev_smile, self.ev_message):
+        for field in self.add_fields.values():
             field.clear()
-        for box in self.ev_categories.values():
+        for box in self.add_categories.values():
             box.setChecked(False)
-        self.ev_enabled.setChecked(True)
-        self.set_theme("basic")
+        self.add_enabled.setChecked(True)
+        for chip in self.add_theme_group.buttons():
+            chip.setChecked(chip.property("theme") == "basic")
 
     def set_theme(self, key):
         for chip in self.theme_group.buttons():
@@ -984,37 +1230,51 @@ class AdminScreen(QWidget):
         self.ev_name.setText(event["name"])
         self.ev_start.setText(event["start"])
         self.ev_end.setText(event["end"])
-        self.ev_days.setText(",".join(policy_logic.WEEKDAY_NAMES[d] for d in event["weekdays"]))
-        self.ev_hours.setText(f"{event['hours'][0]}-{event['hours'][1]}" if event.get("hours") else "")
-        self.ev_rate.setText(f"{event['rate']:g}" if event["rate"] else "")
-        self.ev_bonus.setText(str(event["bonus_points"] or ""))
-        self.ev_min.setText(str(event["min_order"] or ""))
-        self.ev_smile.setText(str(event.get("smile_discount") or ""))
+        self.ev_days.setText(",".join(policy_logic.WEEKDAY_NAMES[d] for d in event["weekdays"]) or "매일")
+        self.ev_hours.setText(f"{event['hours'][0]}-{event['hours'][1]}" if event.get("hours") else "하루 종일")
+        self.ev_rate.setText(f"{event['rate']:g}")
+        self.ev_bonus.setText(str(event["bonus_points"]))
+        self.ev_min.setText(str(event["min_order"]))
+        self.ev_smile.setText(str(event.get("smile_discount", 0)))
         self.ev_message.setText(event.get("message", ""))
         for name, box in self.ev_categories.items():
             box.setChecked(name in event["categories"])
         self.ev_enabled.setChecked(event.get("enabled", True))
         self.set_theme(event.get("theme", "basic"))
 
-    def save_event(self):
-        checked = self.theme_group.checkedButton()
+    def save_event(self, creating=False):
+        if not creating and self.editing_event is None:
+            self.fail("수정할 이벤트를 목록에서 선택하세요")
+            return
+        fields = (self.add_fields if creating else {
+            "name": self.ev_name, "start": self.ev_start, "end": self.ev_end,
+            "days": self.ev_days, "hours": self.ev_hours, "rate": self.ev_rate,
+            "bonus": self.ev_bonus, "min": self.ev_min, "smile": self.ev_smile,
+            "message": self.ev_message})
+        group = self.add_theme_group if creating else self.theme_group
+        categories = self.add_categories if creating else self.ev_categories
+        enabled = self.add_enabled if creating else self.ev_enabled
+        checked = group.checkedButton()
         try:
             policy, event = policy_logic.upsert_event(self.policy(), {
-                "id": self.editing_event or "", "name": self.ev_name.text(),
-                "start": self.ev_start.text().strip(), "end": self.ev_end.text().strip(),
-                "weekdays": self.ev_days.text(), "hours": self.ev_hours.text(),
-                "categories": [n for n, box in self.ev_categories.items() if box.isChecked()],
-                "rate": float(self.ev_rate.text() or 0), "bonus_points": as_int(self.ev_bonus.text(), "보너스"),
-                "min_order": as_int(self.ev_min.text(), "최소 결제액"),
-                "smile_discount": as_int(self.ev_smile.text(), "스마일 할인"),
+                "id": "" if creating else self.editing_event, "name": fields["name"].text(),
+                "start": fields["start"].text().strip(), "end": fields["end"].text().strip(),
+                "weekdays": fields["days"].text(), "hours": fields["hours"].text(),
+                "categories": [n for n, box in categories.items() if box.isChecked()],
+                "rate": float(fields["rate"].text() or 0), "bonus_points": as_int(fields["bonus"].text(), "보너스"),
+                "min_order": as_int(fields["min"].text(), "최소 결제액"),
+                "smile_discount": as_int(fields["smile"].text(), "스마일 할인"),
                 "theme": checked.property("theme") if checked else "basic",
-                "message": self.ev_message.text(), "enabled": self.ev_enabled.isChecked()})
+                "message": fields["message"].text(), "enabled": enabled.isChecked()})
             self.save_policy(policy)
         except ValueError as error:
             self.fail(error)
             return
         self.router.audit("event_save", event["id"])
-        self.editing_event = event["id"]
+        if creating:
+            self.new_event()
+        else:
+            self.editing_event = event["id"]
         self.load_events()
         self.done(f"{event['id']} '{event['name']}' 저장 · {policy_logic.event_status(event)}")
 
@@ -1042,9 +1302,15 @@ class AdminScreen(QWidget):
         column.setSpacing(10)
         self.card_table = table(["", "아이디", "이름", "칭호", "종류", "카드값", "상태", "카드 번호", "결제 시각"])
         header = self.card_table.horizontalHeader()
-        for index in range(self.card_table.columnCount()):          # 글자 길이만큼 (회원 칸만 남는 폭을 채운다)
-            header.setSectionResizeMode(index, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        for index in range(1, self.card_table.columnCount()):
+            header.setSectionResizeMode(index, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(2, 140)
+        self.card_table.verticalHeader().setDefaultSectionSize(
+            round(self.card_table.verticalHeader().defaultSectionSize() * 1.02))
+        self.card_table.setStyleSheet(self.card_table.styleSheet() +
+                                      " QTableWidget::item:selected { background: #C88E5D; color: #2C1608; }")
         self.card_table.itemChanged.connect(lambda _item: self.update_card_buttons())
         self.card_table.itemSelectionChanged.connect(self.update_card_buttons)
         column.addWidget(self.card_table, 1)
@@ -1152,7 +1418,7 @@ class AdminScreen(QWidget):
             title = title_name(extra["title"]) if extra.get("title") else ""
             rows.append(["", extra.get("login_id", ""), record.get("name", "?"), title,
                          card_logic.KINDS[request["kind"]], f"{request['fee']:,}원" if request["fee"] else "무료",
-                         card_logic.STATUS[request["status"]], card_logic.masked_card(request["card_tail"]),
+                         card_logic.request_status_text(request), card_logic.masked_card(request["card_tail"]),
                          request["requested_at"][5:16].replace("T", " ")])
             keys.append(request["id"])
         fill_table(self.card_table, rows, keys)
@@ -1167,11 +1433,11 @@ class AdminScreen(QWidget):
         return [requests[key] for key in checked_keys(self.card_table) if key in requests]
 
     def update_card_buttons(self):
-        """분실 처리 · 등록 해제는 미사용 · 사용 중 카드를 골랐을 때만."""
+        """분실 처리는 사용 중 카드, 등록 해제는 목록에 보이는 카드를 골랐을 때."""
         statuses = {request["status"] for request in self.checked_card_requests()}
         live = bool(statuses & set(card_logic.LIVE))
         self.card_lost_button.setEnabled(live)
-        self.card_unregister_button.setEnabled(live)
+        self.card_unregister_button.setEnabled(bool(statuses))
 
     def mark_cards_lost(self):
         """손님이 카운터에서 분실을 알렸을 때: 예전 카드를 막는다. 손님은 My Menu에서 재발급 카드를 장바구니에 담는다."""
@@ -1185,12 +1451,12 @@ class AdminScreen(QWidget):
                   f"새 카드는 손님이 My Menu에서 재발급({fee:,}원)을 장바구니에 담아 결제해요")
 
     def unregister_cards(self):
-        targets = [r["id"] for r in self.checked_card_requests() if r["status"] in card_logic.LIVE]
+        targets = [r["id"] for r in self.checked_card_requests()]
         for request_id in targets:
-            card_logic.unregister_card(self.vault(), request_id, self.router.admin_id)
+            card_logic.remove_card_record(self.vault(), request_id, self.router.admin_id)
             self.router.audit("card_unregistered", request_id)
         self.load_cards()
-        self.done(f"{len(targets)}건 등록 해제했어요 · 그 카드로는 더 로그인 · 적립할 수 없어요")
+        self.done(f"{len(targets)}건 등록 해제해 목록에서 제거했어요 · 그 카드로는 더 로그인 · 적립할 수 없어요")
 
     def make_points_page(self):
         """포인트 조정 (11/02): 회원 찾기 → 고르고 → 금액·사유를 다 넣었을 때만 저장."""
@@ -1430,25 +1696,22 @@ class AdminScreen(QWidget):
             moves.addWidget(widget)
         left.addLayout(moves)
         add = QHBoxLayout()
-        self.banner_file = QComboBox()
-        self.banner_file.setFont(theme.font(14))
-        self.banner_file.setMinimumHeight(44)
-        files = [f"{p.name}" for p in sorted(theme.ASSETS.glob("promo_*"))]
-        files += [f"menu/{p.name}" for p in sorted((theme.ASSETS / "menu").glob("M*.png"))]
-        self.banner_file.addItems(files)
         self.banner_caption = text_field("아래에 쓸 글 (비워도 돼요)")
-        add.addWidget(self.banner_file, 2)
-        add.addWidget(self.banner_caption, 2)
-        add.addWidget(button("+ 추가", "primary", self.add_banner))
+        add.addWidget(self.banner_caption, 1)
+        add.addWidget(button("+ 이미지 추가", "primary", self.add_banner))
         left.addLayout(add)
         row.addLayout(left, 3)
         preview = Card()
         preview_box = QVBoxLayout(preview)
         preview_box.setContentsMargins(14, 12, 14, 12)
-        self.banner_preview = QLabel()
-        self.banner_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.banner_preview = Slideshow([])
         self.banner_preview.setMinimumSize(220, 220)
         preview_box.addWidget(self.banner_preview, 1)
+        preview_box.addWidget(label("선택한 광고의 아래 문구", 15, bold=True))
+        self.banner_edit_caption = text_field("문구를 비우면 글자 띠가 사라져요")
+        preview_box.addWidget(self.banner_edit_caption)
+        self.banner_edit_button = button("문구 수정 저장", "primary", self.save_banner_caption)
+        preview_box.addWidget(self.banner_edit_button)
         row.addWidget(preview, 2)
         return page
 
@@ -1480,11 +1743,24 @@ class AdminScreen(QWidget):
         index = selected_key(self.banner_table)
         slides = self.banners()
         if index is None or index >= len(slides):
-            self.banner_preview.clear()
+            self.banner_preview.set_slides([])
+            self.banner_edit_caption.clear()
+            self.banner_edit_button.setEnabled(False)
             return
-        picture = QPixmap(str(theme.ASSETS / slides[index]["file"]))
-        self.banner_preview.setPixmap(picture.scaled(260, 260, Qt.AspectRatioMode.KeepAspectRatio,
-                                                     Qt.TransformationMode.SmoothTransformation))
+        slide = slides[index]
+        self.banner_preview.set_slides([(slide["file"], slide.get("caption", ""), slide.get("fit", "contain"))])
+        self.banner_edit_caption.setText(slide.get("caption", ""))
+        self.banner_edit_button.setEnabled(True)
+
+    def save_banner_caption(self):
+        index = selected_key(self.banner_table)
+        slides = self.banners()
+        if index is None or index >= len(slides):
+            self.fail("문구를 수정할 광고를 목록에서 선택하세요")
+            return
+        slides[index]["caption"] = self.banner_edit_caption.text().strip()
+        self.save_banners(slides, note="광고 문구를 수정했어요")
+        self.banner_table.selectRow(index)
 
     def save_banners(self, slides, keep=(), note=""):
         try:
@@ -1516,11 +1792,172 @@ class AdminScreen(QWidget):
         self.save_banners(slides, note=f"{len(chosen)}장 삭제했어요")
 
     def add_banner(self):
-        file = self.banner_file.currentText()
-        fit = "contain"                  # 11/03: 메뉴 사진도 확대해 자르지 않고 전체가 보이게
-        slides = self.banners() + [{"file": file, "caption": self.banner_caption.text().strip(), "fit": fit, "on": True}]
+        target = self.choose_ad_image()
+        if target is None:
+            return
+        try:
+            slides = self.banners() + [{"file": target.name,
+                                        "caption": self.banner_caption.text().strip(),
+                                        "fit": "contain", "on": True}]
+            kiosk_logic.save_slides(self.vault(), slides)
+        except (OSError, ValueError) as error:
+            target.unlink(missing_ok=True)
+            self.fail(error)
+            return
+        self.router.audit("banner_save", f"{sum(bool(s.get('on')) for s in slides)}/{len(slides)}")
         self.banner_caption.clear()
-        self.save_banners(slides, keep=[len(slides) - 1], note="광고를 맨 뒤에 추가했어요")
+        self.load_banners(keep=[len(slides) - 1])
+        self.done("이미지를 광고 폴더에 복사하고 맨 뒤에 추가했어요")
+
+    def choose_ad_image(self):
+        """PNG/JPG만 읽어 광고 자산 폴더로 복사한다. 취소 또는 오류면 None."""
+        source, _filter = QFileDialog.getOpenFileName(
+            self, "광고 배너 이미지 선택", str(theme.ASSETS), "이미지 파일 (*.png *.jpg)")
+        if not source:  # 파일 탐색기에서 취소
+            return
+        path = Path(source)
+        suffix = path.suffix.lower()
+        if suffix not in (".png", ".jpg"):
+            self.fail("PNG 또는 JPG 이미지만 추가할 수 있어요")
+            return
+        reader = QImageReader(str(path))
+        if reader.format().toLower() not in (b"png", b"jpeg") or reader.read().isNull():
+            self.fail("열 수 있는 PNG 또는 JPG 이미지를 선택해 주세요")
+            return
+        target = theme.ASSETS / f"promo_upload_{uuid4().hex}{suffix}"
+        try:
+            shutil.copyfile(path, target)
+        except OSError as error:
+            self.fail(error)
+            return None
+        return target
+
+    def make_login_ads_page(self):
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(14)
+        column.addWidget(label("로그인 화면 · 키보드 아래 광고", 22, bold=True))
+        column.addWidget(label("왼쪽과 오른쪽 이미지를 각각 PNG/JPG로 교체할 수 있어요", 15, muted=True))
+        row = QHBoxLayout()
+        self.login_ad_previews = []
+        self.login_ad_names = []
+        for index, title in enumerate(("왼쪽 광고", "오른쪽 광고")):
+            card = Card()
+            content = QVBoxLayout(card)
+            content.addWidget(label(title, 18, bold=True))
+            picture = QLabel()
+            picture.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            picture.setMinimumSize(260, 250)
+            content.addWidget(picture, 1)
+            name = label("", 14, muted=True)
+            content.addWidget(name)
+            content.addWidget(button("이미지 변경", "primary", lambda checked=False, i=index: self.change_login_ad(i)))
+            content.addWidget(button("기본 이미지로", "outline", lambda checked=False, i=index: self.reset_login_ad(i)))
+            self.login_ad_previews.append(picture)
+            self.login_ad_names.append(name)
+            row.addWidget(card, 1)
+        column.addLayout(row, 1)
+        return page
+
+    def load_login_ads(self):
+        files = kiosk_logic.login_promos(self.vault().read("settings", default={}))
+        for index, filename in enumerate(files):
+            picture = QPixmap(str(theme.ASSETS / filename))
+            self.login_ad_previews[index].setPixmap(picture.scaled(
+                400, 340, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation))
+            self.login_ad_names[index].setText(filename)
+
+    def change_login_ad(self, index):
+        target = self.choose_ad_image()
+        if target is None:
+            return
+        try:
+            settings = self.vault().read("settings", default={})
+            files = list(kiosk_logic.login_promos(settings))
+            files[index] = target.name
+            settings["login_promos"] = files
+            self.vault().write("settings", settings)
+        except (OSError, ValueError) as error:
+            target.unlink(missing_ok=True)
+            self.fail(error)
+            return
+        self.router.audit("login_ad_save", str(index))
+        self.load_login_ads()
+        self.done(f"{index + 1}번 로그인 광고를 변경했어요")
+
+    def reset_login_ad(self, index):
+        settings = self.vault().read("settings", default={})
+        files = list(kiosk_logic.login_promos(settings))
+        files[index] = kiosk_logic.DEFAULT_LOGIN_PROMOS[index]
+        settings["login_promos"] = files
+        self.vault().write("settings", settings)
+        self.router.audit("login_ad_reset", str(index))
+        self.load_login_ads()
+        self.done(f"{index + 1}번 로그인 광고를 기본 이미지로 돌렸어요")
+
+    def make_season_page(self):
+        page = QWidget()
+        column = QVBoxLayout(page)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(15)
+        column.addWidget(label("계절 테마", 24, bold=True))
+        column.addWidget(label("원본은 유지하고 계절 신메뉴·광고·대기 배경을 함께 전환합니다.", 16, muted=True))
+        self.season_group = QButtonGroup(self)
+        self.season_group.setExclusive(True)
+        choices = QHBoxLayout()
+        for key, title, file, details in (
+            ("none", "계절 테마 해제", "promo_photo.webp", "원본 대기 배경으로 복귀"),
+            ("autumn", "가을", "promo_autumn_2026.png", "신메뉴 5종 · 광고 1장 · 가을 대기 배경"),
+            ("winter", "겨울", "promo_christmas_2026.png", "신메뉴 10종 · 광고 1장 · 겨울 대기 배경"),
+        ):
+            card = Card()
+            content = QVBoxLayout(card)
+            choice = button(title, "option")
+            choice.setCheckable(True)
+            choice.setProperty("season", key)
+            choice.setMinimumHeight(54)
+            self.season_group.addButton(choice)
+            content.addWidget(choice)
+            preview = QLabel()
+            preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            preview.setPixmap(QPixmap(str(theme.ASSETS / file)).scaled(
+                340, 300, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation))
+            content.addWidget(preview, 1)
+            content.addWidget(label("대기 화면 미리보기", 14, muted=True))
+            idle_file = seasonal_theme.IDLE_BACKGROUNDS[key][0]
+            idle_preview = QLabel()
+            idle_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            idle_preview.setPixmap(QPixmap(str(theme.ASSETS / idle_file)).scaled(
+                340, 155, Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation))
+            content.addWidget(idle_preview)
+            content.addWidget(label(details, 15, muted=True))
+            choices.addWidget(card, 1)
+        column.addLayout(choices, 1)
+        column.addWidget(button("선택한 계절 테마 적용", "primary", self.save_season))
+        return page
+
+    def load_season(self):
+        current = seasonal_theme.current_theme(self.vault().read("settings", default={}))
+        for choice in self.season_group.buttons():
+            choice.setChecked(choice.property("season") == current)
+
+    def save_season(self):
+        selected = self.season_group.checkedButton()
+        if selected is None:
+            self.fail("계절 테마를 선택해 주세요")
+            return
+        choice = selected.property("season")
+        try:
+            seasonal_theme.set_theme(self.vault(), choice)
+        except ValueError as error:
+            self.fail(error)
+            return
+        self.router.audit("season_theme", choice)
+        self.done("계절 신메뉴·광고·대기 배경을 변경했어요 · 원본은 유지됩니다")
 
     # ---- 키오스크 설정 (11/02 B8)
     def make_kiosk_page(self):
@@ -1545,6 +1982,20 @@ class AdminScreen(QWidget):
             row.addWidget(label(f"{unit}  ({low}~{high})", 15, muted=True))
             row.addStretch(1)
             rows.addLayout(row)
+        font_row = QHBoxLayout()
+        font_title = label("화면 글꼴", 17, bold=True)
+        font_title.setFixedWidth(280 if theme.SCALE == 1 else 330)
+        font_row.addWidget(font_title)
+        self.font_choice = QComboBox()
+        self.font_choice.setFont(theme.font(17))
+        self.font_choice.setMinimumHeight(48)
+        self.font_choice.setFixedWidth(300)
+        for key, name in kiosk_logic.FONT_STYLES.items():
+            self.font_choice.addItem(name, key)
+        font_row.addWidget(self.font_choice)
+        font_row.addWidget(label("키오스크 화면에 적용", 15, muted=True))
+        font_row.addStretch(1)
+        rows.addLayout(font_row)
         self.ticket_switch = QCheckBox("승차권 탭 보이기")
         self.ticket_switch.setFont(theme.font(17, bold=True))
         rows.addWidget(self.ticket_switch)
@@ -1571,25 +2022,36 @@ class AdminScreen(QWidget):
             field.setText(str(values[key]))
         self.ticket_switch.setChecked(settings.get("ticket_sales", True) is not False)
         self.presence_switch.setChecked(kiosk_logic.presence_on(settings))
+        self.font_choice.setCurrentIndex(self.font_choice.findData(kiosk_logic.font_style(settings)))
 
     def reset_kiosk(self):
         for key, field in self.kiosk_fields.items():
             field.setText(str(kiosk_logic.KIOSK_DEFAULTS[key]))
         self.ticket_switch.setChecked(True)
         self.presence_switch.setChecked(True)
+        self.font_choice.setCurrentIndex(self.font_choice.findData("default"))
 
     def save_kiosk(self):
         raw = {key: field.text().strip() or field.placeholderText() for key, field in self.kiosk_fields.items()}
+        prior_font = kiosk_logic.font_style(self.vault().read("settings", default={}))
+        selected_font = self.font_choice.currentData()
         try:
             saved = kiosk_logic.save_kiosk(self.vault(), raw, self.ticket_switch.isChecked(),
-                                           self.presence_switch.isChecked())
+                                           self.presence_switch.isChecked(), selected_font)
         except ValueError as error:
             self.fail(error)
             return
         self.router.apply_kiosk_settings()
-        self.router.audit("kiosk_settings_save", " ".join(f"{k}={v}" for k, v in saved.items()))
+        self.router.audit("kiosk_settings_save", " ".join(f"{k}={v}" for k, v in saved.items())
+                          + f" font_style={selected_font}")
         self.load_kiosk()
         self.done("키오스크 설정을 저장했어요")
+        if selected_font != prior_font and self.router.rebuild is not None:
+            router = self.router
+            def apply_font():
+                router.rebuild()
+                router.show_screen("admin", tab="kiosk")
+            QTimer.singleShot(0, router, apply_font)
 
     def make_log_page(self):
         page = QWidget()

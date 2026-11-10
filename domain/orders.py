@@ -113,7 +113,7 @@ def complete_order(vault, cart: dict, cash: int, customer_id: str | None = None,
         if benefit["smile_discount"]:
             extra["smile_used"] = now.date().isoformat()    # 미소 미션은 계정당 한 번
         if lines:
-            stamp = add_stamp(vault, customer, policy)      # 카드 회원: 주문마다 스탬프 1개
+            stamp = add_stamp(vault, customer, policy)      # 신규 등록 뒤 첫 결제 2개, 이후 1개
         extra["visits"] += 1
         every = policy["visit_coupon_every"]
         if every and extra["visits"] % every == 0:

@@ -123,7 +123,7 @@ class HomeScreen(QWidget):
             right.addWidget(self.make_order_card(False), 1)
         self.signup_button = self.text(self.action_button("", "signup"), "signup")
         right.addWidget(self.signup_button)
-        body.addLayout(right, 2 if not big else 1)
+        body.addLayout(right, 4 if not big else 1)
         layout.addLayout(body, 7)
         layout.addSpacing(6)
         layout.addLayout(self.make_footer())

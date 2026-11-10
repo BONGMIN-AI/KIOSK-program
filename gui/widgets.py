@@ -4,7 +4,7 @@ import math
 import re
 
 from PySide6.QtCore import QElapsedTimer, QEvent, QPointF, QRectF, QTimer, QVariantAnimation, Qt
-from PySide6.QtGui import (QBitmap, QColor, QImage, QPainter, QPainterPath, QPen, QPixmap,
+from PySide6.QtGui import (QBitmap, QColor, QFontMetrics, QImage, QPainter, QPainterPath, QPen, QPixmap,
                            QPolygonF, QRadialGradient, QRegion)
 from PySide6.QtWidgets import (QApplication, QFrame, QGraphicsDropShadowEffect, QGraphicsOpacityEffect, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QSizePolicy, QVBoxLayout, QWidget)
@@ -135,9 +135,10 @@ class FixedWidthCard(Card):
 class EventBanner(QWidget):
     """대기 화면 아래 띠.
 
-    - 이벤트 문구는 전광판처럼 오른쪽에서 왼쪽으로 흘러간다.
-    - 접근 안내가 켜져 있으면, 이벤트 문구가 한 번 다 지나간 뒤 접근 안내를 가운데에 5초 보여 주고
-      다시 이벤트로 돌아간다(10/23 B안). 바뀔 때는 글자가 0.4초 흐려졌다 나타난다.
+    - 진행 중 행사와 설정된 혜택을 두 문장씩 오른쪽에서 왼쪽으로 흘린다.
+    - 두 문장 사이에는 앞 문장의 너비만큼 빈 공간을 둔다.
+    - 접근 안내가 켜져 있으면 광고 묶음 사이에 가운데 5초 보여 준다.
+      바뀔 때는 글자가 0.4초 흐려졌다 나타난다.
     """
 
     SPEED = 90         # 흘러가는 속도 (초당 픽셀)
@@ -152,6 +153,7 @@ class EventBanner(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.event = None
         self.hint = None
+        self.promotions = []  # (광고 문구, 테마 이름)
         self.messages = []     # (문구, 테마 이름, 흘러가는지) 목록
         self.index = 0
         self.offset = 0.0      # 흘러가는 글자의 왼쪽 x 위치
@@ -177,12 +179,30 @@ class EventBanner(QWidget):
         self.hint = text
         self.refresh()
 
+    def set_promotions(self, promotions):
+        """현재 정책에서 만든 광고를 표시한다. 접근 안내의 표시 조건은 그대로 둔다."""
+        self.promotions = list(promotions)
+        self.refresh()
+
     def refresh(self):
         self.messages = []
+        ads = []
         if self.event is not None:
             text = f"{self.event['name']}  ·  {self.event['message']}"
-            self.messages.append((text, self.event["theme"], True))
-        if self.hint:
+            ads.append((text, self.event["theme"]))
+        ads.extend(self.promotions)
+        for start in range(0, len(ads), 2):
+            group = ads[start:start + 2]
+            # 각 문장 뒤에 그 문장의 화면상 길이만큼 빈 공간을 둔다.
+            space_width = max(1, self.fontMetrics().horizontalAdvance(" "))
+            marquee = "".join(
+                line + (" " * max(1, round(self.fontMetrics().horizontalAdvance(line) / space_width)))
+                for line, _theme in group[:-1]
+            ) + group[-1][0]
+            self.messages.append((marquee, group[0][1], True))
+            if self.hint:
+                self.messages.append((self.hint, "basic", False))
+        if self.hint and not ads:
             self.messages.append((self.hint, "basic", False))
         self.index = 0
         self.setVisible(bool(self.messages))
@@ -652,11 +672,14 @@ class TrendBars(QWidget):
     limit: 주별 그래프에 그을 '주 제한' 점선(mg). 누르면 on_click() — 다음 보기로 넘긴다.
     """
 
-    def __init__(self, labels, values, current, limit=None, on_click=None, parent=None):
+    def __init__(self, labels, values, current, limit=None, on_click=None, parent=None, unit="mg",
+                 value_format=None):
         super().__init__(parent)
         self.labels, self.values, self.current = labels, values, current
         self.limit = limit
         self.on_click = on_click
+        self.unit = unit
+        self.value_format = value_format
         self.setMinimumSize(240, 130)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setFixedHeight(130)
@@ -670,23 +693,50 @@ class TrendBars(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if not self.values:
+            return
         top = max(max(self.values), self.limit or 0, 1)
         slot = self.width() / len(self.values)
-        bar = min(34, slot * 0.6)
-        floor, room = 102, 80
+        bar = min(38, slot * 0.6)
+        floor, room = self.height() - 32, self.height() - 64
+        # 칸이 좁으면(30일 · 긴 메뉴 이름) 글자를 줄이고, 그래도 넘치면 줄임표 · 몇 칸 걸러 쓰기로 겹치지 않게 한다.
+        axis_font = theme.font(16, bold=True)
+        widest = max(QFontMetrics(axis_font).horizontalAdvance(n) for n in self.labels) if self.labels else 0
+        if widest > slot - 4:
+            axis_font = theme.font(14, bold=True)
+            widest = max(QFontMetrics(axis_font).horizontalAdvance(n) for n in self.labels)
+        if widest > slot - 4:
+            axis_font = theme.font(12, bold=True)
+        axis_metrics = QFontMetrics(axis_font)
+        short = max((axis_metrics.horizontalAdvance(n) for n in self.labels), default=0)
+        axis_step = 1 if slot >= 34 or short <= slot - 2 else math.ceil((min(short, 60) + 6) / slot)
+        texts = [self.value_format(v) if self.value_format else f"{v:,}{self.unit}" for v in self.values]
+        value_font = theme.font(13)
+        if max(QFontMetrics(value_font).horizontalAdvance(t) for t in texts) > slot - 2:
+            value_font = theme.font(11)
+        value_metrics = QFontMetrics(value_font)
+        all_values_fit = max(value_metrics.horizontalAdvance(t) for t in texts) <= slot - 2
         for index, (name, value) in enumerate(zip(self.labels, self.values)):
             x = index * slot + (slot - bar) / 2
             height = 0 if value == 0 else max(6, value / top * room)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(theme.CARAMEL if index == self.current else "#D9BFA3"))
             painter.drawRoundedRect(QRectF(x, floor - height, bar, height), 6, 6)
-            painter.setPen(QColor(theme.TEXT2))
-            painter.setFont(theme.font(12))
-            painter.drawText(QRectF(index * slot, floor + 4, slot, 20), Qt.AlignmentFlag.AlignCenter, name)
-            if value and slot >= 44:
-                painter.setFont(theme.font(10))
-                painter.drawText(QRectF(index * slot, floor - height - 18, slot, 16),
-                                 Qt.AlignmentFlag.AlignCenter, f"{value:,}")
+            painter.setPen(QColor(theme.BROWN))
+            near_current = axis_step > 1 and self.current >= 0 and 0 < abs(index - self.current) < axis_step
+            if (index % axis_step == 0 and not near_current) or index == self.current:
+                painter.setFont(axis_font)
+                shown = name if axis_step > 1 else axis_metrics.elidedText(name, Qt.TextElideMode.ElideRight,
+                                                                           int(slot - 2))
+                width = axis_metrics.horizontalAdvance(shown) + 4
+                left = min(max(0, index * slot + slot / 2 - width / 2), self.width() - width)
+                painter.drawText(QRectF(left, floor + 4, width, 27), Qt.AlignmentFlag.AlignCenter, shown)
+            if value and (all_values_fit or index == self.current):
+                painter.setFont(value_font)
+                width = value_metrics.horizontalAdvance(texts[index]) + 4
+                left = min(max(0, index * slot + slot / 2 - width / 2), self.width() - width)   # 끝에서 잘리지 않게
+                painter.drawText(QRectF(left, floor - height - 23, width, 20), Qt.AlignmentFlag.AlignCenter,
+                                 texts[index])
         if self.limit:
             y = floor - self.limit / top * room
             painter.setPen(QPen(QColor(theme.ACCENT), 1.5, Qt.PenStyle.DashLine))
@@ -1047,6 +1097,10 @@ class PromoBanner(QWidget):
         self.picture = QPixmap(str(theme.ASSETS / filename))
         self.setMinimumSize(200, 140)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+    def set_file(self, filename):
+        self.picture = QPixmap(str(theme.ASSETS / filename))
+        self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)

@@ -94,6 +94,7 @@ def make_random_members(vault, count: int = 16, seed: int = 1101, now: datetime 
                                    rng.choice([1, 1, 1, 2])))
             history.append((when, lines))
         history.sort(key=lambda pair: pair[0])
+        record["created_at"] = (history[0][0] - timedelta(days=rng.randint(1, 7))).isoformat(timespec="seconds")
         for when, lines in history:
             total = sum(line["subtotal"] for line in lines)
             order_id = f"H{history_number:04d}"

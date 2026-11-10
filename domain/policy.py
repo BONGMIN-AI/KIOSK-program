@@ -140,7 +140,7 @@ def parse_hours(text):
         hours = text
     else:
         text = text.replace(" ", "")
-        if not text:
+        if text in ("", "하루종일"):
             return None
         try:
             hours = [int(x) for x in text.split("-")]

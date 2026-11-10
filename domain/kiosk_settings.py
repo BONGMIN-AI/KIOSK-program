@@ -15,6 +15,16 @@ DEFAULT_SLIDES = [
     {"file": "menu/M044_치즈케이크.png", "caption": "커피와 함께 · 치즈케이크", "fit": "contain", "on": True},
 ]
 
+DEFAULT_LOGIN_PROMOS = ("promo_photo.webp", "promo_smile.webp")
+
+
+def login_promos(settings: dict | None) -> tuple[str, str]:
+    """로그인 화면 키보드 아래 왼쪽·오른쪽 광고 파일."""
+    saved = (settings or {}).get("login_promos")
+    if isinstance(saved, list) and len(saved) == 2 and all(isinstance(s, str) and s for s in saved):
+        return saved[0], saved[1]
+    return DEFAULT_LOGIN_PROMOS
+
 # (키, 화면 이름, 단위, 기본값, 가장 작은 값, 가장 큰 값)
 KIOSK_FIELDS = [
     ("idle_seconds", "손님 화면 무입력 복귀", "초", 60, 20, 300),
@@ -25,6 +35,13 @@ KIOSK_FIELDS = [
     ("away_seconds", "자리 비움 확인까지", "초", 10, 5, 120),
 ]
 KIOSK_DEFAULTS = {key: default for key, _name, _unit, default, _low, _high in KIOSK_FIELDS}
+FONT_STYLES = {"default": "기본 · Noto Sans KR", "round": "동글동글 · Jua"}
+
+
+def font_style(settings: dict | None) -> str:
+    """저장된 화면 글꼴. 옛 설정이나 알 수 없는 값은 기본 글꼴로 연다."""
+    value = (settings or {}).get("font_style", "default")
+    return value if value in FONT_STYLES else "default"
 
 
 def load_kiosk(settings: dict | None) -> dict:
@@ -52,11 +69,16 @@ def presence_on(settings: dict | None) -> bool:
     return (settings or {}).get("presence", True) is not False
 
 
-def save_kiosk(vault, raw: dict, ticket_sales: bool, presence: bool = True) -> dict:
+def save_kiosk(vault, raw: dict, ticket_sales: bool, presence: bool = True,
+               selected_font: str | None = None) -> dict:
     settings = vault.read("settings", default={})
+    selected_font = font_style(settings) if selected_font is None else selected_font
+    if selected_font not in FONT_STYLES:
+        raise ValueError("화면 글꼴을 다시 선택해 주세요")
     settings["kiosk"] = validate_kiosk(raw)
     settings["ticket_sales"] = bool(ticket_sales)
     settings["presence"] = bool(presence)
+    settings["font_style"] = selected_font
     vault.write("settings", settings)
     return settings["kiosk"]
 

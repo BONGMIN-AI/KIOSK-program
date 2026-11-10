@@ -411,7 +411,7 @@ def signup_errors_then_face(r):
     r.step("10-B 얼굴 등록 화면", "enroll")
     enroll = r.screen("enroll")
     enroll.enroll()
-    r.step("10-B 얼굴 등록 완료", "enroll", lambda: r.session.customer["extra"]["face_enrolled"])
+    r.step("10-B 얼굴 등록 완료 → 바로 My Menu", "menu", lambda: r.session.customer["extra"]["face_enrolled"])
     enroll.go_order()
     r.step("가입 → My Menu", "menu", lambda: r.screen("menu").category == "My Menu")
 

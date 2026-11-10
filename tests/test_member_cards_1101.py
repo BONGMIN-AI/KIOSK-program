@@ -68,11 +68,13 @@ def test_stamps_give_free_drink_coupon_at_ten():
     vault = make_vault()
     buy(vault)
     register_first_tap(vault, "C0002", "STAMP001")
-    for count in range(1, 10):
+    first = buy(vault, kind=None)
+    assert first["card_stamp"] == {"stamps": 2, "goal": 10, "coupon": None, "earned": 2}
+    for count in range(3, 10):
         order = buy(vault, kind=None)
-        assert order["card_stamp"] == {"stamps": count, "goal": 10, "coupon": None}
+        assert order["card_stamp"] == {"stamps": count, "goal": 10, "coupon": None, "earned": 1}
     tenth = buy(vault, kind=None)
-    assert tenth["card_stamp"] == {"stamps": 0, "goal": 10, "coupon": "음료 1잔 무료 (5,000원까지)"}
+    assert tenth["card_stamp"] == {"stamps": 0, "goal": 10, "coupon": "음료 1잔 무료 (5,000원까지)", "earned": 1}
     assert any(c["name"] == "음료 1잔 무료 (5,000원까지)" for c in customer(vault)["extra"]["coupons"])
     assert buy(vault, kind=None, customer_id="C0003")["card_stamp"] is None             # 카드 없으면 스탬프 없음
 
@@ -105,6 +107,25 @@ def test_admin_unregister_stops_card():
     assert requests_of(vault)[record["id"]]["status"] == "revoked"
     with pytest.raises(ValueError, match="미사용 · 사용 중"):
         unregister_card(vault, record["id"], "admin")
+
+
+def test_admin_can_remove_selected_lost_card_record(window):
+    vault = window.router.session.vault
+    buy(vault)
+    record = register_first_tap(vault, "C0002", "LOST5555")
+    report_lost(vault, "C0002")
+    router = window.router
+    router.admin_id = "admin"
+    router.show_screen("admin", tab="cards")
+    admin = router.screens["admin"]
+    assert admin.card_table.rowCount() == 1
+    assert admin.card_table.item(0, 6).text() == "분실신고"
+    admin.card_table.selectRow(0)
+    assert admin.card_unregister_button.isEnabled()
+    admin.unregister_cards()
+    assert admin.card_table.rowCount() == 0
+    assert requests_of(vault)[record["id"]]["status"] == "removed"
+    assert is_lost_card(vault, "LOST5555")
 
 
 @pytest.fixture

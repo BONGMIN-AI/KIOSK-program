@@ -4,7 +4,7 @@
   ① 가입 · 비밀번호 로그인 때 '회원카드 신청' 체크 → 장바구니에 '회원카드' 한 줄 (음료와 함께 결제)
   ② 결제하면 카드 기록이 '미사용'으로 생긴다. 카드는 음료가 나올 때 같이 받는다 (이때는 카드 번호를 모른다).
   ③ 다음 주문 때 로그인하고 카드를 리더기에 처음 대면 그 번호가 회원에게 등록되고 '사용 중'이 된다.
-     그 주문 음료 10% 할인(신규 카드만) · 그때부터 카드 회원 적립률(기본 3%) · 주문마다 스탬프 1개
+     그 주문 음료 10% 할인(신규 카드만) · 그때부터 카드 회원 적립률(기본 3%) · 첫 결제 스탬프 2개, 이후 1개
      (10개면 음료 1잔 무료 쿠폰) · 카드만 대면 로그인.
 분실 신고(My Menu 또는 운영자 화면)하면 예전 카드를 바로 막는다. 재발급 카드(500원)는 장바구니로 산다.
 카드 번호(UID)는 회원 카드에 해시로만 저장하고, 화면·기록에는 끝 4자리만 보인다.
@@ -19,6 +19,13 @@ REQUESTS = "card_requests"          # 카드 기록 (저장 이름은 예전 그
 KINDS = {"new": "신규", "reissue": "분실 재발급"}
 STATUS = {"unused": "미사용", "issued": "사용 중", "revoked": "등록 해제"}
 LIVE = ("unused", "issued")
+
+
+def request_status_text(request: dict) -> str:
+    """분실로 막힌 카드와 관리자가 해제한 카드를 목록에서 구분한다."""
+    if request["status"] == "revoked" and request.get("by") == "분실 신고":
+        return "분실신고"
+    return STATUS[request["status"]]
 
 CARD_DEFAULTS = {"card_price": 1000, "card_first_discount": 10, "card_point_rate": 3.0, "card_stamp_goal": 10,
                  "card_reissue_fee": 500}
@@ -81,6 +88,7 @@ def report_lost(vault, customer_id: str, now: datetime | None = None) -> dict:
     if has_card(record):
         extra.setdefault("lost_card_hashes", []).append(extra.pop("card_hash"))
     extra.pop("card_first_discount", None)          # 재발급 카드에는 첫 주문 할인이 없다
+    extra.pop("card_first_double_stamp", None)
     extra["card_lost_at"] = now.isoformat(timespec="seconds")
     schema.touch(record)
     vault.write("customers", customers)
@@ -98,17 +106,18 @@ def stamp_coupon(settings: dict | None) -> dict | None:
 
 
 def add_stamp(vault, customer: dict, policy: dict, today=None) -> dict:
-    """카드 회원 주문 하나 = 스탬프 1개. 목표를 채우면 음료 무료 쿠폰을 넣고 0부터 다시. (customer는 저장 전 기록)"""
+    """신규 카드 등록 뒤 첫 결제는 2개, 이후 결제는 1개. 목표 달성 시 무료 쿠폰을 준다."""
     goal = int({**CARD_DEFAULTS, **policy}["card_stamp_goal"])
     extra = customer["extra"]
     if not goal or not has_card(customer):
         return None                                     # 카드가 없으면 스탬프도 없다 (완료 화면에 안 보임)
-    extra["card_stamps"] = extra.get("card_stamps", 0) + 1
+    earned = 2 if extra.pop("card_first_double_stamp", False) else 1
+    extra["card_stamps"] = extra.get("card_stamps", 0) + earned
     coupon = None
     if extra["card_stamps"] >= goal:
         extra["card_stamps"] -= goal
         coupon = stamp_coupon(vault.read("settings", default={}))
-    return {"stamps": extra["card_stamps"], "goal": goal, "coupon": coupon}
+    return {"stamps": extra["card_stamps"], "goal": goal, "coupon": coupon, "earned": earned}
 
 
 def purchase_card(vault, customer_id: str, kind: str, order_id: str, price: int,
@@ -144,6 +153,7 @@ def register_first_tap(vault, customer_id: str, card_uid: str, now: datetime | N
     record["extra"]["card_issued_at"] = now.isoformat(timespec="seconds")
     if request["kind"] == "new":
         record["extra"]["card_first_discount"] = True
+        record["extra"]["card_first_double_stamp"] = True
     schema.touch(record)
     vault.write("customers", customers)
     requests = requests_of(vault)
@@ -165,9 +175,26 @@ def unregister_card(vault, request_id: str, admin_id: str, now: datetime | None 
         if record is not None:
             record["extra"].pop("card_hash", None)
             record["extra"].pop("card_first_discount", None)
+            record["extra"].pop("card_first_double_stamp", None)
             schema.touch(record)
             vault.write("customers", customers)
     request.update(status="revoked", decided_at=(now or datetime.now()).isoformat(timespec="seconds"), by=admin_id)
+    vault.write(REQUESTS, requests)
+    return request
+
+
+def remove_card_record(vault, request_id: str, admin_id: str, now: datetime | None = None) -> dict:
+    """등록 해제 후 관리자 목록에서 제거한다. 기록 ID는 재사용되지 않게 보존한다."""
+    requests = requests_of(vault)
+    request = requests.get(request_id)
+    if request is None or request["status"] == "removed":
+        raise ValueError("목록에서 제거할 카드 기록을 찾을 수 없어요")
+    if request["status"] in LIVE:
+        unregister_card(vault, request_id, admin_id, now)
+        requests = requests_of(vault)
+        request = requests[request_id]
+    request.update(status="removed", removed_at=(now or datetime.now()).isoformat(timespec="seconds"),
+                   removed_by=admin_id)
     vault.write(REQUESTS, requests)
     return request
 

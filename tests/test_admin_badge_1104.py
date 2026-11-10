@@ -60,3 +60,33 @@ def test_admin_card_never_links_to_member(badge, window):
 def test_other_cards_are_not_admin(badge):
     from core import admin_badge
     assert admin_badge.is_admin_card("ADM1N001") and not admin_badge.is_admin_card("84E3D273")
+
+
+def test_main_admin_face_survives_demo_restart(badge):
+    from PySide6.QtWidgets import QApplication
+    from core import admin_badge
+    from gui.main import KioskWindow, demo_vault
+
+    saved = admin_badge.load()
+    saved["face_profiles"][admin_badge.ADMIN_KEY] = {"feature": [1.0]}
+    admin_badge.save(saved)
+    app = QApplication.instance() or QApplication([])
+
+    class SavedFace:
+        def __init__(self, vault):
+            self.vault = vault
+
+        def identify_face(self, key, on_status):
+            assert key in self.vault.read("face_profiles", default={})
+            return key
+
+    for _ in range(2):
+        kiosk = KioskWindow(vault=demo_vault(), face_factory=SavedFace)
+        kiosk.show()
+        app.processEvents()
+        kiosk.router.show_screen("admin_login")
+        kiosk.router.screens["admin_login"].face_login()
+        assert kiosk.router.current_name == "admin"
+        kiosk.close()
+        kiosk.deleteLater()
+        app.processEvents()

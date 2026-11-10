@@ -274,6 +274,7 @@ def ticket_tab(window):
 def buy_to_confirm(panel, keys="ㄷㅐㅈㅓㄴ", seats=1):
     panel.buy_choice.click()
     assert panel.page_name() == "route"
+    panel.choose_field(panel.dest_field)                   # 도착지 칸을 누른 것과 같다
     for key in keys:
         panel.route_keyboard.type(key)
     assert panel.dest_field.text() == "대전"
@@ -504,3 +505,28 @@ def test_guest_is_not_asked_to_save_route(window):
     router, menu, panel = ticket_tab(window)
     buy_to_confirm(panel)
     assert not panel.save_box.isVisibleTo(panel)
+
+
+def test_route_page_cursor_blocks_and_slide_keyboard(window):
+    """11/09: 들어오면 출발지 칸에 커서 · 출발지를 고르면 도착지 칸으로 · 키보드는 칸을 누를 때만 올라온다."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    router, menu, panel = ticket_tab(window)
+    panel.buy_choice.click()
+    QTest.qWait(20)
+    assert panel.active_field is panel.origin_field and panel.route_keyboard.target is panel.origin_field
+    assert not panel.keyboard_tray.isVisible()
+    _, origin_grid = panel.terminal_lists[panel.origin_field]
+    names = [origin_grid.itemAt(i).widget().text() for i in range(origin_grid.count())]
+    assert names == sorted(names) and "서울경부" in names          # 가나다순 목록
+    next(origin_grid.itemAt(i).widget() for i in range(origin_grid.count())
+         if origin_grid.itemAt(i).widget().text() == "대전복합").click()
+    assert panel.origin_field.text() == "대전복합" and panel.active_field is panel.dest_field
+    QTest.mouseClick(panel.dest_field, Qt.MouseButton.LeftButton)
+    assert panel.keyboard_tray.up
+    for key in "ㅂㅅ":
+        panel.route_keyboard.type(key)
+    _, dest_grid = panel.terminal_lists[panel.dest_field]
+    assert [dest_grid.itemAt(i).widget().text() for i in range(dest_grid.count())] == ["부산"]
+    dest_grid.itemAt(0).widget().click()
+    assert panel.dest_field.text() == "부산" and not panel.keyboard_tray.up

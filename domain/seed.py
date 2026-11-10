@@ -131,12 +131,30 @@ def run(vault) -> None:
 
 DEMO_EVENTS = [
     {"name": "가을 더블 포인트", "start": "2026-10-20", "end": "2026-11-11", "categories": ["커피"],
-     "rate": 3, "bonus_points": 200, "min_order": 10000, "theme": "season",
-     "message": "회원은 커피 3% 적립 + 1만원 이상 200P · 11/11까지"},
+     "weekdays": "매일", "hours": "10-22", "rate": 3, "bonus_points": 200,
+     "min_order": 10000, "theme": "season",
+     "message": "커피 3% 적립 · 1만원 이상 구매 시 200P 추가 · 11/11까지"},
     {"name": "할로윈 축제", "start": "2026-10-31", "end": "2026-10-31", "categories": [],
-     "rate": 0, "bonus_points": 300, "min_order": 0, "theme": "festival"},
+     "weekdays": "매일", "hours": "16-22", "rate": 0, "bonus_points": 300,
+     "min_order": 0, "theme": "festival",
+     "message": "할로윈 당일 16~22시 · 회원 주문 보너스 300P"},
     {"name": "스마일 할인", "start": "2026-11-01", "end": "2027-02-28", "categories": [],
-     "rate": 0, "bonus_points": 0, "min_order": 0, "smile_discount": 500, "theme": "basic"},
+     "weekdays": "매일", "hours": "하루 종일", "rate": 0, "bonus_points": 0,
+     "min_order": 0, "smile_discount": 500, "theme": "basic",
+     "message": "회원 얼굴 인식 후 미소를 보여주면 500원 할인"},
+    {"name": "가을 티타임", "start": "2026-11-07", "end": "2026-11-30", "categories": ["차"],
+     "weekdays": "평일", "hours": "14-17", "rate": 4, "bonus_points": 0,
+     "min_order": 0, "theme": "season",
+     "message": "평일 오후 2~5시 · 따뜻한 차 4% 적립"},
+    {"name": "주말 디저트 보너스", "start": "2026-11-07", "end": "2026-12-27", "categories": ["디저트"],
+     "weekdays": "주말", "hours": "11-20", "rate": 0, "bonus_points": 150,
+     "min_order": 7000, "theme": "basic",
+     "message": "주말 디저트 포함 7천원 이상 주문 시 150P 추가"},
+    {"name": "크리스마스 선물", "start": "2026-12-01", "end": "2026-12-31",
+     "categories": ["커피", "디카페인", "논커피", "차", "에이드"],
+     "weekdays": "매일", "hours": "하루 종일", "rate": 5,
+     "bonus_points": 300, "min_order": 12000, "theme": "festival",
+     "message": "12월 음료 5% 적립 · 1만2천원 이상 300P 추가"},
 ]
 
 
@@ -149,4 +167,28 @@ def add_demo_events(vault) -> None:
     for event in DEMO_EVENTS:
         policy, _ = upsert_event(policy, event)
     settings["point_policy"] = validate_policy(policy)
+    vault.write("settings", settings)
+
+
+def enrich_existing_events(vault) -> None:
+    """기존 시연 이벤트의 빈 설명을 채우고 신규 시연 행사를 한 번만 추가한다."""
+    from .policy import load_policy, upsert_event, validate_policy
+
+    settings = vault.read("settings", default={})
+    if settings.get("demo_events_2026_enriched"):
+        return
+    policy = load_policy(settings)
+    by_name = {event["name"]: event for event in policy["events"]}
+    for sample in DEMO_EVENTS:
+        old = by_name.get(sample["name"])
+        if old:
+            filled = dict(old)
+            for key in ("message", "weekdays", "hours"):
+                if not filled.get(key):
+                    filled[key] = sample.get(key)
+            policy, _ = upsert_event(policy, filled)
+        else:
+            policy, _ = upsert_event(policy, sample)
+    settings["point_policy"] = validate_policy(policy)
+    settings["demo_events_2026_enriched"] = True
     vault.write("settings", settings)

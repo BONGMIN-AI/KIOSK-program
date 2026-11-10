@@ -27,6 +27,7 @@ def test_sales_and_season_orders():
     assert [row["item"]["id"] for row in ranking("판매순", MENU, {}, {})] == ["M002", "M001"]
     orders = {"o": {"created_at": "2025-10-03T10:00:00", "lines": [{"menu_id": "M002", "quantity": 25}]},
               "x": {"created_at": "2026-07-01T10:00:00", "lines": [{"menu_id": "M002", "quantity": 99}]}}
+    assert [(row["item"]["id"], row["value"]) for row in ranking("판매순", MENU, {}, orders)] == [("M002", 124)]
     autumn = ranking("계절 인기순", MENU, {}, orders, today=date(2026, 10, 31))
     assert [(row["item"]["id"], row["text"]) for row in autumn] == [("M002", "가을 35잔"), ("M001", "가을 30잔")]
     assert season_of(date(2026, 1, 5)) == "겨울"

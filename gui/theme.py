@@ -1,6 +1,8 @@
 """디자인 기준 표와 데이터 연결 전 예시 이벤트."""
 
 from pathlib import Path
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
 
@@ -19,6 +21,8 @@ EVENT_THEMES = {
 }
 TITLE_FONT = "Noto Serif KR"
 BODY_FONT = "Noto Sans KR"
+ROUND_FONT = "Jua"
+FONT_STYLE = "default"
 FALLBACK_FONT = "Malgun Gothic"
 TITLE_SIZE = 36
 MENU_SIZE = 28
@@ -57,6 +61,17 @@ PALETTES = {
                  "DISABLED_TEXT": "#BBBBBB", "LOGO_PLATE": "#F7EEE3", "ACCENT": "#FFE45C"},
 }
 _loaded_families = set()
+_font_bonus = ContextVar("font_bonus", default=0)
+
+
+@contextmanager
+def font_adjust(pixels):
+    """한 화면을 만드는 동안에만 기본 글자 크기를 조정한다."""
+    token = _font_bonus.set(pixels)
+    try:
+        yield
+    finally:
+        _font_bonus.reset(token)
 
 
 def set_display(contrast=False, large=False):
@@ -64,6 +79,12 @@ def set_display(contrast=False, large=False):
     global SCALE
     globals().update(PALETTES["contrast" if contrast else "basic"])
     SCALE = LARGE_SCALE if large else 1.0
+
+
+def set_font_style(style="default"):
+    """운영자 화면에서 저장한 키오스크 글꼴을 다음 화면 생성에 사용한다."""
+    global FONT_STYLE
+    FONT_STYLE = style if style in ("default", "round") else "default"
 
 
 def won(amount):
@@ -85,13 +106,13 @@ def load_fonts():
 
 
 def font(size=BODY_SIZE, title=False, bold=False):
-    name = TITLE_FONT if title else BODY_FONT
+    name = ROUND_FONT if FONT_STYLE == "round" else TITLE_FONT if title else BODY_FONT
     if name not in _loaded_families:
         name = FALLBACK_FONT
     result = QFont(name)
     # 동봉 글꼴에 없는 글자(중국어 간체·기호)는 Windows 글꼴로 이어 그린다 (없으면 네모로 보였다, 10/31 점검)
     result.setFamilies([name, *GLYPH_FALLBACKS])
-    result.setPixelSize(round(size * SCALE))
+    result.setPixelSize(round((size + _font_bonus.get()) * SCALE))
     result.setBold(bold or title)
     return result
 

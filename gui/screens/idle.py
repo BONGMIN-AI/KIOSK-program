@@ -1,17 +1,21 @@
 """00: 글자 없는 배경 위에 로고·시작 안내·언어 선택·이벤트를 그린다.
 
-배경 idle_bg_clean.png는 tools/make_idle_background.py로 원본 그림에서
-로고와 안내 글자만 지운 것이다. 아래 상자 좌표는 원본 그림(1672×941) 기준이다.
+대기 배경에는 하단 손·화살표가 있고, 매장·포장 선택 배경에서는 하단 아이콘과 선을 지웠다.
+계절 테마가 켜지면 같은 구도의 가을·겨울 배경으로 전환한다.
+아래 상자 좌표는 원본 그림(1672×941) 기준이다.
 """
 
 import math
 
 from PySide6.QtCore import (QEasingCurve, QElapsedTimer, QParallelAnimationGroup, QPoint, QPointF,
                             QPropertyAnimation, QRectF, QTimer, Qt)
-from PySide6.QtGui import (QBitmap, QColor, QFontMetrics, QLinearGradient, QPainter, QPen, QPixmap,
+from PySide6.QtGui import (QBitmap, QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPen, QPixmap,
                            QPolygonF, QRegion)
 from PySide6.QtWidgets import QButtonGroup, QGraphicsOpacityEffect, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
+from domain import policy as policy_logic
+from domain import member_cards as card_logic
+from domain.seasonal_theme import idle_backgrounds
 from gui import theme
 from gui.widgets import EventBanner, chip, gear_path, label
 
@@ -19,14 +23,15 @@ IMAGE_SIZE = (1672, 941)
 LOGO_BOX = (475, 30, 765, 214)            # 원래 로고 자리 (x, y, 너비, 높이)
 LOGO_SCALE = 1.1                           # 원래보다 조금 크게
 LOGO_SHIFT_Y = 12                          # 언어 칩과 겹치지 않게 화면에서 조금 아래로
-START_BOX = (585, 786, 575, 52)            # 손가락 아이콘과 화살표 사이
+START_BOX = (585, 786, 575, 52)            # 대기 화면: 손가락 아이콘과 화살표 사이
+CHOICE_BOX = (456, 775, 760, 70)           # 매장/포장 선택 화면: 하단 가운데
 # 움직임 (5단계 다듬기 D-1~D-3). 로고 조각은 tools/make_logo_parts.py로 만든다.
 FRAME_MS = 40                              # 1초에 25번 다시 그린다
 GEAR_CENTER = (1523, 519)                  # 원본 로고(1774×887) 기준 기어 가운데
 GEAR_RADIUS = 68
-GEAR_SECONDS_PER_TURN = 24                 # 기어가 아주 천천히 돈다
+GEAR_SECONDS_PER_TURN = 16                 # 차분하지만 눈에 띄게 한 바퀴 도는 시간
 STEAMS = ((1500, 445, 180, 28, "#C68B52"), (1545, 440, 125, 18, "#EBCB9C"))   # (x, y, 높이, 굵기, 색)
-SHADOW_SWAY = 14                           # 잎 그림자가 흔들리는 폭(px)
+SHADOW_SWAY = 22                           # 잎 그림자가 흔들리는 폭(px)
 # 접근 안내는 그림 위가 아니라 아래 이벤트 띠에서 이벤트 문구와 번갈아 보여 준다(10/23 결정, B안).
 
 START_TEXT = {
@@ -34,6 +39,12 @@ START_TEXT = {
     "English": "Touch the screen to start your order",
     "日本語": "画面をタッチしてご注文を始めてください",
     "中文": "触摸屏幕开始点单",
+}
+CHOICE_TEXT = {
+    "한국어": "드시고 가세요? 포장해 가세요?",
+    "English": "Dine in or take away?",
+    "日本語": "店内でお召し上がりですか？お持ち帰りですか？",
+    "中文": "堂食还是打包？",
 }
 APPROACH_TEXT = {
     "한국어": "가까이 오시면 자동으로 시작할 수 있어요",
@@ -43,7 +54,34 @@ APPROACH_TEXT = {
 }
 
 
+def promotion_lines(policy, settings, first_event=None):
+    """현재 진행 중인 행사와 실제 설정된 회원 혜택으로 대기 화면 광고를 만든다."""
+    lines = []
+    for event in policy_logic.active_events(policy):
+        if first_event and event["id"] == first_event["id"]:
+            continue
+        lines.append((f"{event['name']}  ·  {policy_logic.banner_message(event)}", event.get("theme", "basic")))
+    discount = int(policy.get("card_first_discount", 0))
+    if discount:
+        lines.append((f"회원카드 신규 등록 주문의 음료는 {discount}% 할인받을 수 있어요", "basic"))
+    rate = float(policy.get("card_point_rate", 0))
+    if rate:
+        lines.append((f"회원카드 등록 후 매 주문 {rate:g}% 적립 혜택을 받아보세요", "basic"))
+    goal = int(policy.get("card_stamp_goal", 0))
+    if goal and card_logic.stamp_coupon(settings):
+        lines.append((f"회원카드 주문 스탬프 {goal}개를 모으면 무료 음료 쿠폰을 드려요", "basic"))
+    eco = int(policy.get("eco_points", 0))
+    if eco:
+        lines.append((f"회원이 개인 컵으로 음료를 주문하면 한 잔마다 {eco}P를 적립해 드려요", "basic"))
+    visits = int(policy.get("visit_coupon_every", 0))
+    amount = int(policy.get("visit_coupon_amount", 0))
+    if visits and amount:
+        lines.append((f"회원은 {visits}번째 방문마다 {amount:,}원 할인 쿠폰을 받을 수 있어요", "basic"))
+    return lines
+
+
 CHOICE_SECONDS = 20               # 매장 / 포장 버튼이 떠 있는 시간 (아무것도 안 고르면 다시 대기 화면)
+CHOICE_PROMPT_SECONDS = 0.55       # 하단 질문이 아래에서 올라오며 선명해지는 시간
 
 
 class DineChoice(QWidget):
@@ -62,6 +100,7 @@ class DineChoice(QWidget):
         self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title.setStyleSheet(f"background: rgba(255, 250, 244, 225); border-radius: 18px; padding: 8px 24px;")
         column.addWidget(self.title, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.title.hide()                     # 선택 질문은 버튼 위가 아닌 화면 하단에 표시한다
         row = QHBoxLayout()
         row.setSpacing(28)                  # 두 칸 사이를 확실히 띄운다
         self.buttons, self.tile_texts = {}, {}
@@ -121,15 +160,16 @@ class DineChoice(QWidget):
             self.then = then
         from gui.screens.home import LANGUAGES
         index = LANGUAGES.index(self.idle.router.language)
-        self.title.setText(self.texts["heading"][index])
         for key in ("here", "togo"):
             name, detail = self.tile_texts[key]
             name.setText(self.texts[key][index])
             detail.setText(self.texts[f"{key}_detail"][index])
         self.timeout.start(CHOICE_SECONDS * 1000)
+        self.idle.show_admin_button(True)       # 11/10: 매장 / 포장과 함께 오른쪽 위 운영자 버튼
         if self.isVisible() and not self.closing:
             return
         end = self.place()
+        self.idle.choice_prompt_started = self.idle.seconds()
         self.closing = False
         self.group.stop()
         self.use_fade_effect()
@@ -149,6 +189,7 @@ class DineChoice(QWidget):
             return
         self.then = None
         self.closing = True
+        self.idle.show_admin_button(False)
         self.group.stop()
         self.use_fade_effect()
         self.fade.setStartValue(1.0)
@@ -178,6 +219,7 @@ class DineChoice(QWidget):
         self.closing = False
         self.then = None
         self.hide()
+        self.idle.show_admin_button(False)
 
     def choose(self, takeout):
         router = self.idle.router
@@ -195,9 +237,13 @@ class IdleScreen(QWidget):
         super().__init__()
         self.router = router
         self.show_approach_hint = False    # D10 접근 감지를 연결하면 True
-        self.background = QPixmap(str(theme.ASSETS / "idle_bg_clean.png"))
+        self.background = QPixmap()
+        self.choice_background = QPixmap()
+        self.background_files = None
         self.logo, self.logo_front, self.logo_offset = self.logo_layers()
         self.scaled_background = None
+        self.scaled_choice_background = None
+        self.choice_prompt_started = 0.0
         self.shadow_layer = None
         self.clock = QElapsedTimer()
         self.clock.start()
@@ -217,7 +263,28 @@ class IdleScreen(QWidget):
             item.clicked.connect(lambda checked, name=name: self.set_language(name))
         self.fixed_event = event          # FROM_POLICY면 화면에 올 때마다 운영자 이벤트를 읽는다
         self.banner = EventBanner(None if event == theme.FROM_POLICY else event, self)
+        # 11/10: 매장 / 포장이 떠 있을 때 오른쪽 위에 운영자 버튼 (둘 중 하나를 고르지 않아도 운영자 로그인)
+        self.admin_button = chip("운영자")
+        self.admin_button.setObjectName("idle_admin_button")
+        self.admin_button.setCheckable(False)
+        self.admin_button.setParent(self)
+        self.admin_button.clicked.connect(self.open_admin)
+        self.admin_button.hide()
         self.dine_choice = DineChoice(self)   # 11/03: 매장 / 포장은 이 화면 위에서 고른다
+
+    def show_admin_button(self, on):
+        self.admin_button.setVisible(on)
+        if on:
+            self.place_admin_button()
+            self.admin_button.raise_()
+
+    def place_admin_button(self):
+        width = max(96, self.admin_button.fontMetrics().horizontalAdvance("운영자") + 48)
+        self.admin_button.setGeometry(self.width() - width - 24, 24, width, theme.BUTTON_HEIGHT)
+
+    def open_admin(self):
+        self.dine_choice.reset()
+        self.router.open_action("admin")
 
     @staticmethod
     def logo_layers():
@@ -245,12 +312,36 @@ class IdleScreen(QWidget):
         return self.router.language        # 01 시작 화면과 같이 쓴다
 
     def on_show(self):
+        settings = self.router.session.vault.read("settings", default={}) if self.router.session.vault else {}
+        self.load_backgrounds(settings)
         self.dine_choice.reset()                # 새 손님: 떠 있던 버튼은 내린다
         for item in self.languages.buttons():   # 새 손님이면 한국어로 돌아와 있다
             item.setChecked(item.text() == self.language)
         self.set_approach_hint(self.show_approach_hint)
         if self.fixed_event == theme.FROM_POLICY:
-            self.banner.set_event(self.router.session.current_event())
+            policy = self.router.session.policy()
+            event = self.router.session.current_event()
+            self.banner.set_promotions(promotion_lines(policy, settings, event))
+            self.banner.set_event(event)
+
+    def load_backgrounds(self, settings):
+        files = idle_backgrounds(settings)
+        if files == self.background_files:
+            return
+        backgrounds = [QPixmap(str(theme.ASSETS / filename)) for filename in files]
+        if any(picture.isNull() for picture in backgrounds):
+            files = idle_backgrounds({})
+            backgrounds = [QPixmap(str(theme.ASSETS / filename)) for filename in files]
+        self.background_files = files
+        self.background, self.choice_background = backgrounds
+        if not self.size().isEmpty():
+            self.scaled_background = self.background.scaled(
+                self.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation)
+            self.scaled_choice_background = self.choice_background.scaled(
+                self.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                Qt.TransformationMode.SmoothTransformation)
+        self.update()
 
     def set_language(self, name):
         self.router.language = name
@@ -284,9 +375,13 @@ class IdleScreen(QWidget):
         self.scaled_background = self.background.scaled(
             self.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
             Qt.TransformationMode.SmoothTransformation)
+        self.scaled_choice_background = self.choice_background.scaled(
+            self.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation)
         self.shadow_layer = self.make_shadow_layer()
         if self.dine_choice.isVisible() and not self.dine_choice.closing:
             self.dine_choice.move(self.dine_choice.place())
+        self.place_admin_button()
         super().resizeEvent(event)
 
     def make_shadow_layer(self):
@@ -302,7 +397,7 @@ class IdleScreen(QWidget):
         for offset, width in ((0, 70), (130, 40), (220, 90), (380, 50), (470, 30), (600, 80)):
             band = QLinearGradient(offset, 0, offset + width, 0)
             band.setColorAt(0, QColor(70, 40, 15, 0))
-            band.setColorAt(0.5, QColor(70, 40, 15, 26))
+            band.setColorAt(0.5, QColor(70, 40, 15, 38))
             band.setColorAt(1, QColor(70, 40, 15, 0))
             painter.fillRect(QRectF(offset, -length / 2, width, length), band)
         painter.end()
@@ -313,20 +408,23 @@ class IdleScreen(QWidget):
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), theme.BG)
-        if self.scaled_background is not None:
-            picture = self.scaled_background
+        picture = (self.scaled_choice_background if self.dine_choice.isVisible()
+                   else self.scaled_background)
+        if picture is not None:
             painter.drawPixmap((self.width() - picture.width()) // 2,
                                (self.height() - picture.height()) // 2, picture)
         self.draw_shadow(painter)
         self.draw_logo(painter)
-        if self.dine_choice.isVisible():          # 매장 / 포장 버튼이 떠 있으면 아래 '터치하세요' 줄을 덮는다
-            top = self.to_screen(START_BOX).top() - self.height() * 0.07
-            bottom = self.height() - theme.EVENT_HEIGHT
-            cover = QLinearGradient(0, top, 0, top + 40)
-            base = QColor(theme.BG)
-            cover.setColorAt(0, QColor(base.red(), base.green(), base.blue(), 0))
-            cover.setColorAt(1, QColor(base.red(), base.green(), base.blue(), 255))
-            painter.fillRect(QRectF(0, top, self.width(), bottom - top), cover)
+        if self.dine_choice.isVisible():
+            elapsed = max(0.0, self.seconds() - self.choice_prompt_started)
+            progress = min(1.0, elapsed / CHOICE_PROMPT_SECONDS)
+            eased = 1.0 - (1.0 - progress) ** 3
+            box = self.to_screen(CHOICE_BOX).translated(0, (1.0 - eased) * 24)
+            painter.save()
+            painter.setOpacity(eased)
+            self.draw_fitted_text(painter, CHOICE_TEXT[self.language], box,
+                                  theme.BROWN, 44, family="Jua")
+            painter.restore()
         else:
             self.draw_fitted_text(painter, self.start_text(), self.to_screen(START_BOX),
                                   theme.BROWN, 40, bold=True)
@@ -357,7 +455,7 @@ class IdleScreen(QWidget):
         t = self.seconds()
         shift = SHADOW_SWAY * math.sin(t * 2 * math.pi / 7)
         painter.save()
-        painter.setOpacity(0.65 + 0.35 * math.sin(t * 2 * math.pi / 11))
+        painter.setOpacity(0.62 + 0.38 * math.sin(t * 2 * math.pi / 9))
         painter.drawPixmap(QPointF(-SHADOW_SWAY * 2 + shift, -SHADOW_SWAY * 2 + shift * 0.4),
                            self.shadow_layer)
         painter.restore()
@@ -386,7 +484,7 @@ class IdleScreen(QWidget):
             steps = 30
             for i in range(steps + 1):
                 part = i / steps
-                wave = math.sin(part * 5.5 - t * 1.6 + number * 1.7) * 12 * (0.3 + part)
+                wave = math.sin(part * 5.5 - t * 2.0 + number * 1.7) * 18 * (0.3 + part)
                 half = thick / 2 * (1 - part * 0.7)            # 위로 갈수록 가늘게
                 left.append(QPointF(x + wave - half, y - part * rise))
                 right.append(QPointF(x + wave + half, y - part * rise))
@@ -400,12 +498,19 @@ class IdleScreen(QWidget):
             painter.drawPolygon(QPolygonF(left + right[::-1]))
         painter.restore()
 
-    def draw_fitted_text(self, painter, text, box, color, size, bold=False):
+    def draw_fitted_text(self, painter, text, box, color, size, bold=False, family=None):
         # 언어마다 길이가 달라서 상자에 들어갈 때까지 글자를 줄인다.
-        font = theme.font(size, bold=bold)
+        font = QFont(family) if family else theme.font(size, bold=bold)
+        if family:
+            font.setFamilies([family, *theme.GLYPH_FALLBACKS])
+            font.setPixelSize(round(size * theme.SCALE))
+            font.setBold(bold)
         while size > 14 and QFontMetrics(font).horizontalAdvance(text) > box.width():
             size -= 1
-            font = theme.font(size, bold=bold)
+            if family:
+                font.setPixelSize(round(size * theme.SCALE))
+            else:
+                font = theme.font(size, bold=bold)
         painter.setFont(font)
         painter.setPen(color)
         painter.drawText(box, Qt.AlignmentFlag.AlignCenter, text)

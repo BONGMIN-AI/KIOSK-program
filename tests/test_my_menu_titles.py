@@ -117,7 +117,7 @@ class MyMenuTest(unittest.TestCase):
             when = datetime(day.year, day.month, day.day, 10)
             complete_order(vault, {"M001": quantity}, 3000, "C0001", now=when)
         report = caffeine_report(vault.read("orders"), "C0001", vault.read("menu"), date(2026, 10, 20))
-        self.assertEqual(report["this_week"][:2], [150, 150])   # 10/19(월)·10/20(화)
+        self.assertEqual(report["this_week"][:3], [0, 150, 150])   # 일요일부터: 10/18·10/19(월)·10/20(화)
         self.assertEqual(report["total"], 300)
         self.assertEqual(report["last_week_total"], 150)
         self.assertEqual(report["change_percent"], 100)

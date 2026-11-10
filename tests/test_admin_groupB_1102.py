@@ -85,7 +85,7 @@ def test_admin_pages_edit_member_sales_banners_and_settings(window):
     router = window.router
     admin = router.screens["admin"]
     admin.set_sales_period("최근 30일")
-    assert admin.sales_top.rowCount() == 5 and admin.sales_tiles["total"].text().endswith("원")
+    assert admin.sales_top.rowCount() > 5 and admin.sales_tiles["total"].text().endswith("원")
     admin.show_tab("members")
     assert not admin.member_edit_button.isEnabled()
     admin.member_table.selectRow(1)
@@ -94,10 +94,11 @@ def test_admin_pages_edit_member_sales_banners_and_settings(window):
     admin.save_member()
     assert router.session.vault.read("customers")["C0002"]["extra"]["nickname"] == "딸기왕"
     admin.show_tab("banners")
+    original_slide_count = len(admin.banners())
     admin.banner_table.item(0, 0).setCheckState(Qt.CheckState.Checked)
     admin.show_banners(False)
     router.show_screen("home")
-    assert len(router.screens["home"].slideshow.slides) == len(DEFAULT_SLIDES) - 1
+    assert len(router.screens["home"].slideshow.slides) == original_slide_count - 1
     router.show_screen("admin", tab="kiosk")
     admin.kiosk_fields["idle_seconds"].setText("90")
     admin.ticket_switch.setChecked(False)

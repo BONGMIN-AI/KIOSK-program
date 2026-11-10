@@ -6,9 +6,13 @@ My Menu = 최근 주문 보기(지난 주문을 통째로 다시 담아 장바�
 """
 
 import time
+from io import BytesIO
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QButtonGroup, QFrame, QGridLayout, QHBoxLayout, QLabel, QSizePolicy,
+from PIL import Image, ImageDraw
+
+from PySide6.QtCore import QEvent, Qt, QTimer
+from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtWidgets import (QButtonGroup, QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout, QLabel, QSizePolicy,
                                QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from domain.member_cards import lost as card_lost
@@ -25,6 +29,36 @@ from gui.widgets import (FixedWidthCard, Card, CategoryIcon, ConfirmBox, CupIcon
                          menu_photo_path, trimmed_pixmap)
 CARD_MIN_WIDTH = 200     # 화면이 넓으면 한 줄에 카드를 더 놓는다 (최소 3칸)
 GRID_GAP = 14
+_popular_photo_cache = {}
+
+
+def popular_wide_photo(path, width=300, height=148):
+    """정사각 메뉴 사진의 가장자리를 같은 배경색으로 이어 가로 칸에 맞춘다."""
+    key = (str(path), width, height)
+    if key not in _popular_photo_cache:
+        source = Image.open(path).convert("RGB")
+        w, h = source.size
+        corners = [source.getpixel(point) for point in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1))]
+        background = tuple(sum(color[channel] for color in corners) // 4 for channel in range(3))
+        top = max(0, min(12, 172 - height))              # 148 높이는 위 12px를 잘라 가운데, 172는 사진 그대로
+        foreground = source.resize((172, 172), Image.Resampling.LANCZOS).crop((0, top, 172, top + height))
+        canvas = Image.new("RGB", (width, height), background)
+        fade = Image.new("L", (172, height))
+        draw = ImageDraw.Draw(fade)
+        for col in range(172):
+            opacity = round(255 * min(1, col / 34, (171 - col) / 34))
+            draw.line((col, 0, col, height), fill=opacity)
+        canvas.paste(foreground, ((width - 172) // 2, 0), fade)
+        canvas = canvas.convert("RGBA")
+        rounded = Image.new("L", (width, height))
+        ImageDraw.Draw(rounded).rounded_rectangle((0, 0, width - 1, height - 1), radius=14, fill=255)
+        canvas.putalpha(rounded)
+        data = BytesIO()
+        canvas.save(data, format="PNG")
+        pixmap = QPixmap()
+        pixmap.loadFromData(data.getvalue())
+        _popular_photo_cache[key] = pixmap, background
+    return _popular_photo_cache[key]
 
 
 def short_options(options):
@@ -36,16 +70,34 @@ def short_options(options):
     return " · ".join(part for part in parts if part)
 
 
+class WidePhoto(QLabel):
+    """카드 너비가 바뀔 때마다 그 너비로 넓힌 사진을 다시 그린다 (늘려 찌그러뜨리지 않는다)."""
+
+    def __init__(self, path, height=148):
+        super().__init__()
+        self.path = path
+        self.setFixedHeight(height)
+        self.setMinimumWidth(1)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setPixmap(popular_wide_photo(path, height=height)[0])
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        width = max(172, self.width())
+        if self.pixmap().width() != width:
+            self.setPixmap(popular_wide_photo(self.path, width, self.height())[0])
+
+
 class MenuCard(Card):
     """메뉴 한 개. 누르면 옵션 팝업을 연다."""
 
-    def __init__(self, item, on_open, badge=None):
+    def __init__(self, item, on_open, badge=None, wide_photo=False):
         super().__init__()
         self.item = item
         self.on_open = on_open
         # 세로로 긴 카드: 칸 너비에 맞춰 늘어나고 높이는 고정 (나중에 실제 커피 사진을 위쪽에 넣는다)
         self.setMinimumWidth(CARD_MIN_WIDTH - 20)
-        self.setFixedHeight(290)
+        self.setFixedHeight(260 if badge else 290)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -55,11 +107,29 @@ class MenuCard(Card):
         photo_layout = QHBoxLayout(photo)
         photo_layout.setContentsMargins(0, 10, 0, 10)
         photo_layout.setContentsMargins(0, 4, 0, 4)
-        size = 172 if menu_photo_path(item) else 128          # 사진은 칸을 거의 채우고, 그린 잔은 작게
-        photo_layout.addWidget(menu_icon(item, size), alignment=Qt.AlignmentFlag.AlignCenter)
+        path = menu_photo_path(item)
+        if badge and path:
+            pixmap, background = popular_wide_photo(path)
+            photo.setStyleSheet(f"background: rgb{background}; border-radius: 14px;")
+            photo_layout.setContentsMargins(0, 0, 0, 0)
+            picture = QLabel()
+            picture.setPixmap(pixmap)
+            picture.setScaledContents(True)
+            picture.setFixedHeight(148)
+            picture.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            photo_layout.addWidget(picture)
+        elif path:          # 사진 칸을 사진 가장자리 색으로 채워 사진만 떠 보이지 않게 (좋아요 카드 11/09, 모든 메뉴 카드 11/09)
+            height = 148 if wide_photo else 172
+            background = popular_wide_photo(path, height=height)[1]
+            photo.setStyleSheet(f"background: rgb{background}; border-radius: 14px;")
+            photo_layout.setContentsMargins(0, 0, 0, 0)
+            photo_layout.addWidget(WidePhoto(path, height), alignment=Qt.AlignmentFlag.AlignVCenter)
+        else:
+            photo_layout.addWidget(menu_icon(item, 128), alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(photo, 1)
-        if badge:                                # 인기 탭: 사진 왼쪽 위에 '1위 · ♥ 58'
-            tag = QLabel(badge, photo)
+        tag_text = badge or ("신메뉴" if item.get("new_menu") else None)
+        if tag_text:                             # 인기 순위 또는 신메뉴 표시
+            tag = QLabel(tag_text, photo)
             tag.setFont(theme.font(13, bold=True))
             tag.setStyleSheet(f"background: {theme.ACCENT}; color: {theme.CARD}; border-radius: 10px;"
                               " padding: 3px 10px;")
@@ -101,10 +171,9 @@ class AddLikeTile(QFrame):
                            f" background: {theme.CREAM}; }}")
         column = QVBoxLayout(self)
         column.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        bubble = label("좋아하는 음료를 추가해봐요!", 16, bold=True)
+        bubble = label("좋아하는 음료를\n추가해봐요!", 16, bold=True)
         bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        bubble.setStyleSheet(f"background: {theme.CARD}; color: {theme.BROWN}; border: 2px solid {theme.LINE};"
-                             " border-radius: 14px; padding: 8px 14px;")
+        bubble.setStyleSheet(f"color: {theme.BROWN};")
         column.addWidget(bubble, alignment=Qt.AlignmentFlag.AlignCenter)
         plus = label("+", 56, bold=True)
         plus.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -133,6 +202,8 @@ class MenuScreen(QWidget):
         self.grid_area = QScrollArea()
         self.grid_area.setWidgetResizable(True)
         self.grid_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.built_columns = None                 # 지금 카드 격자를 몇 칸으로 놓았는지
+        self.grid_area.installEventFilter(self)
         self.ticket_panel = TicketPanel(self.session, on_drinks=lambda: self.show_category(CATEGORY_ORDER[0]),
                                         on_pay=lambda: self.router.show_screen("cart"))
         self.ticket_panel.on_cart = self.refresh
@@ -141,10 +212,18 @@ class MenuScreen(QWidget):
         self.middle_stack.addWidget(self.ticket_panel)
         middle.addWidget(self.middle_stack, 1)
         layout.addLayout(middle, 1)
-        layout.addWidget(self.make_cart_panel())
+        self.cart_panel = self.make_cart_panel()
+        layout.addWidget(self.cart_panel)
         self.popup = OptionPopup(self, self.session, on_added=self.after_popup)
         self.popup.hide()
         self.confirm_box = ConfirmBox(self)       # 카페인 알리미 '그래도 담을까요?' (최근 주문 다시 담기)
+        self.staff_box = ConfirmBox(self)
+        self.staff_box.no_button.setText("취소")
+        self.staff_box.no_button.clicked.connect(self.cancel_staff_call)
+        self.staff_timer = QTimer(self)
+        self.staff_timer.setInterval(1000)
+        self.staff_timer.timeout.connect(self.tick_staff_call)
+        self.staff_seconds = 0
         self.caffeine_settings = self.make_caffeine_settings()   # 톱니바퀴 → 알리미 설정 창
         self.titles_sheet = self.make_titles_sheet()             # E21 칭호 진행 현황
         self.ticket_lines = []
@@ -158,7 +237,7 @@ class MenuScreen(QWidget):
         side = FixedWidthCard(150)
         column = QVBoxLayout(side)
         column.setContentsMargins(12, 16, 12, 16)
-        column.setSpacing(6)
+        column.setSpacing(0)
         logo = TapLabel(self.logo_tap)          # E22: 빠르게 다섯 번 누르면 숨은 쿠폰
         self.taps, self.last_tap = 0, 0.0
         logo.setPixmap(trimmed_pixmap("logo_sub.png").scaled(
@@ -170,11 +249,14 @@ class MenuScreen(QWidget):
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
         column.addWidget(brand)
         column.addSpacing(4)
+        buttons_layout = QVBoxLayout()
+        buttons_layout.setSpacing(0)
+        column.addLayout(buttons_layout, 1)
         self.category_buttons = QButtonGroup(self)
         for name in [MY_MENU, POPULAR, TICKET] + CATEGORY_ORDER:
             item = button("", "category", lambda checked=False, name=name: self.show_category(name))
             item.setCheckable(True)
-            item.setFixedHeight(58)             # 인기·승차권 탭이 늘어 회원 9칸이 큰 글자에서도 한 화면에
+            item.setFixedHeight(66)
             inside = QVBoxLayout(item)          # 아이콘은 크게, 이름은 작게 두 줄로
             inside.setContentsMargins(0, 3, 0, 3)
             inside.setSpacing(0)
@@ -187,8 +269,9 @@ class MenuScreen(QWidget):
             inside.addWidget(part)
             item.setObjectName(f"category_{name}")
             self.category_buttons.addButton(item)
-            column.addWidget(item)
-        column.addStretch()
+            buttons_layout.addWidget(item)
+            if name != CATEGORY_ORDER[-1]:
+                buttons_layout.addStretch(1)
         return side
 
     def make_top_bar(self):
@@ -201,10 +284,64 @@ class MenuScreen(QWidget):
         self.member_name.setFont(theme.font(19, bold=True))
         self.member_name.setText("비회원 주문")
         row.addWidget(self.member_name)
-        self.member_detail = label("", 15, muted=True)
-        row.addWidget(self.member_detail)
-        row.addStretch()
+        self.member_detail = ElidedLabel()
+        self.member_detail.setFont(theme.font(15))
+        self.member_detail.setStyleSheet(f"color: {theme.TEXT2};")
+        row.addWidget(self.member_detail, 1)
+        self.lost_card_link = link_button("회원카드를 잃어버렸어요", self.card_link_clicked)
+        row.addWidget(self.lost_card_link)
+        # 11/09: 얼굴 등록 · 회원카드 구매는 직원호출 왼쪽에 갈색 버튼으로 (My Menu에서, 필요한 회원에게만)
+        self.face_button = button("얼굴 등록", "primary",
+                                  lambda: self.router.show_screen("enroll", customer=self.session.customer))
+        self.card_buy_button = button("회원카드 구매", "primary", self.buy_card)
+        for item in (self.face_button, self.card_buy_button):
+            item.setFixedHeight(42)
+            item.hide()
+            row.addWidget(item)
+        self.staff_button = button("직원호출", "outline", self.call_staff)
+        self.staff_button.setFixedSize(126, 42)
+        row.addWidget(self.staff_button)
         return bar
+
+    def call_staff(self):
+        """5초 안에 취소할 수 있는 직원 호출 확인 창."""
+        self.staff_seconds = 5
+        self.staff_box.ask("직원 호출", "직원을 부를게요", "확인(5)", self.confirm_staff_call)
+        self.staff_timer.start()
+
+    def cancel_staff_call(self):
+        self.staff_timer.stop()
+
+    def tick_staff_call(self):
+        self.staff_seconds -= 1
+        if self.staff_seconds <= 0:
+            self.staff_box.yes()
+        else:
+            self.staff_box.yes_button.setText(f"확인({self.staff_seconds})")
+
+    def confirm_staff_call(self):
+        self.staff_timer.stop()
+        from PySide6.QtWidgets import QApplication
+        QApplication.beep()
+        self.staff_box.tell("직원 호출", "직원을 불렀어요")
+        self.staff_box.on_yes = None
+
+    def buy_card(self):
+        """'회원카드 구매': 새 회원카드를 장바구니에 담는다 (음료와 함께 결제)."""
+        try:
+            self.session.add_card("new")
+        except ValueError as error:
+            self.router.notify(str(error), 5)
+            return
+        fee = self.session.card_total()
+        self.router.notify(f"회원카드({fee:,}원)를 장바구니에 담았어요\n음료와 함께 결제해 주세요", 4)
+        self.after_card_change()
+
+    def card_link_clicked(self):
+        if self.session.card_status():
+            self.ask_lost_card()
+        elif self.session.customer is not None and card_lost(self.session.customer):
+            self.add_reissue_card()
 
     def logo_tap(self):
         """1초 안 간격으로 다섯 번 누르면 이스터에그 (E22)."""
@@ -247,7 +384,15 @@ class MenuScreen(QWidget):
         if customer is None:
             self.member_name.setText("비회원 주문")
             self.member_detail.setText("로그인 없이 주문 중 · 회원 혜택·적립은 없어요")
+            self.staff_button.hide()
+            self.lost_card_link.hide()
+            self.face_button.hide()
+            self.card_buy_button.hide()
             return
+        on_my_menu = self.category == MY_MENU
+        self.face_button.setVisible(on_my_menu and not customer["extra"].get("face_enrolled"))
+        self.card_buy_button.setVisible(on_my_menu and not self.session.card_status() and not card_lost(customer)
+                                        and self.session.card_kind is None)
         extra = customer["extra"]
         title = f"[{title_name(extra['title'])}] " if extra.get("title") else ""
         self.member_name.setText(f"{title}{call_name(customer)} 님 ›")      # 11/04: 닉네임보다 이름
@@ -255,6 +400,15 @@ class MenuScreen(QWidget):
         card = f"  ·  {card}" if card else ""
         self.member_detail.setText(f"포인트 {extra['points']:,}P  ·  쿠폰 {len(self.session.coupons())}장"
                                    f"  ·  방문 {extra['visits']}회{card}")
+        self.staff_button.show()
+        status = self.session.card_status()
+        reissue = card_lost(customer) and self.session.card_kind != "reissue"
+        self.lost_card_link.setVisible(self.category == MY_MENU and (bool(status) or reissue))
+        if reissue and not status:
+            fee = self.session.policy()["card_reissue_fee"]
+            self.lost_card_link.setText(f"회원카드 재발급 ({fee:,}원) 장바구니에 담기")
+        else:
+            self.lost_card_link.setText("회원카드를 잃어버렸어요")
 
     def make_banner(self):
         banner = ElidedLabel()
@@ -311,6 +465,8 @@ class MenuScreen(QWidget):
     def on_show(self):
         self.popup.hide()
         self.confirm_box.hide()
+        self.staff_timer.stop()
+        self.staff_box.hide()
         self.caffeine_settings.hide()
         self.update_banner()
         self.update_top_bar()
@@ -326,6 +482,7 @@ class MenuScreen(QWidget):
 
     def show_category(self, name):
         self.category = name
+        self.update_top_bar()
         for item in self.category_buttons.buttons():
             item.setChecked(item.objectName() == f"category_{name}")
         self.middle_stack.setCurrentWidget(self.ticket_panel if name == TICKET else self.grid_area)
@@ -349,17 +506,33 @@ class MenuScreen(QWidget):
         self.refresh()
 
     def columns(self):
-        width = self.grid_area.viewport().width() or 700
-        return max(3, (width + GRID_GAP) // (CARD_MIN_WIDTH + GRID_GAP))
+        # 스크롤바가 생기고 없어짐에 따라 칸 수가 오락가락하지 않게, 스크롤 칸 바깥 너비에서 스크롤바 몫을 늘 뺀다
+        bar = self.grid_area.verticalScrollBar().sizeHint().width()
+        width = (self.grid_area.width() - bar - 10) if self.grid_area.width() > 100 else 700
+        if self.category == POPULAR:
+            return 4 if width >= 1060 else 3
+        card = round(CARD_MIN_WIDTH * theme.SCALE)        # 큰 글자는 카드도 조금 넓게 (이름이 잘리지 않게)
+        return max(3, (width + GRID_GAP) // (card + GRID_GAP))
 
-    def card_grid(self, items, badges=None):
+    def eventFilter(self, watched, event):
+        # 11/09: 화면을 만든 때의 너비가 아니라 실제로 놓인 너비로 칸 수를 맞춘다
+        # (처음 들어갈 때 3칸 → 나중에 6칸처럼 달라져 '큰 글자가 남은 것'처럼 보이던 문제)
+        if (watched is self.grid_area and event.type() == QEvent.Type.Resize
+                and self.built_columns is not None and self.category != TICKET
+                and self.columns() != self.built_columns):
+            self.built_columns = None
+            QTimer.singleShot(0, self, lambda: self.show_category(self.category))
+        return super().eventFilter(watched, event)
+
+    def card_grid(self, items, badges=None, wide_photo=False):
         """메뉴 카드를 빈틈 없이 채우는 격자. 칸 수는 화면 너비로 정한다. badges: 카드 위 작은 글(인기 순위)."""
         grid = QGridLayout()
         grid.setSpacing(GRID_GAP)
         count = self.columns()
+        self.built_columns = count
         for index, item in enumerate(items):
             badge = badges[index] if badges else None
-            grid.addWidget(MenuCard(item, self.open_option, badge), index // count, index % count)
+            grid.addWidget(MenuCard(item, self.open_option, badge, wide_photo), index // count, index % count)
         for col in range(count):
             grid.setColumnStretch(col, 1)
         return grid
@@ -408,6 +581,10 @@ class MenuScreen(QWidget):
 
     # My Menu (회원 첫 화면)
     def make_my_menu(self):
+        with theme.font_adjust(4):
+            return self._make_my_menu_content()
+
+    def _make_my_menu_content(self):
         page = QWidget()
         column = QVBoxLayout(page)
         column.setContentsMargins(4, 4, 4, 4)
@@ -415,14 +592,32 @@ class MenuScreen(QWidget):
         # Quick Order / 좋아요한 음료 / 카페인 리포트 — 세 구간을 각각 카드 블록으로 나눈다
         if self.session.card_status() == "회원카드 등록 전":     # 11/03: 산 카드를 손님이 직접 등록
             column.addWidget(self.make_card_register())
-        column.addWidget(self.make_quick_order())
+        pair = QHBoxLayout()
+        pair.setSpacing(18)
+        quick = self.make_quick_order()
+        quick.setFixedHeight(265)
+        pair.addWidget(quick, 1)
         if self.session.ticket_sales_on():       # 승차권을 살 때 저장한 노선 (회원)
-            column.addWidget(saved_routes_card(self.session, self.open_saved_route, self.forget_route))
-        column.addWidget(self.make_likes_card())
-        column.addWidget(self.make_caffeine_card())
-        card_link = self.make_card_link()
-        if card_link is not None:
-            column.addWidget(card_link, alignment=Qt.AlignmentFlag.AlignRight)
+            divider = QFrame()
+            divider.setObjectName("my_menu_vertical_divider")
+            divider.setFixedWidth(2)
+            divider.setStyleSheet(f"background: {theme.CARAMEL_LIGHT}; border: none;")
+            glow = QGraphicsDropShadowEffect(divider)
+            glow.setBlurRadius(16)
+            glow.setOffset(0, 0)
+            glow.setColor(QColor(139, 79, 31, 100))
+            divider.setGraphicsEffect(glow)
+            pair.addWidget(divider)
+            routes = saved_routes_card(self.session, self.open_saved_route, self.forget_route)
+            routes.setFixedHeight(265)
+            pair.addWidget(routes, 1)
+        column.addLayout(pair)
+        likes = self.make_likes_card()
+        likes.setFixedHeight(330)
+        column.addWidget(likes)
+        caffeine = self.make_caffeine_card()
+        caffeine.setFixedHeight(round(280 * theme.SCALE))   # 11/09: 큰 글자에서 글이 겹치지 않게 칸도 키운다
+        column.addWidget(caffeine)
         column.addStretch()
         return page
 
@@ -451,17 +646,6 @@ class MenuScreen(QWidget):
         alive = lambda: (self.isVisible() and self.session.customer is not None
                          and unused_card(self.session.vault, customer_id) is not None)
         self.router.notice.show_countdown(lambda s: f"받으신 회원카드를 리더기에 대 주세요 · {s}초", 20, alive)
-
-    def make_card_link(self):
-        """회원카드 분실 신고 (카드 있음) / 재발급 신청 (분실 처리됨) — 작은 밑줄 글자."""
-        customer = self.session.customer
-        status = self.session.card_status()
-        if status:
-            return link_button("회원카드를 잃어버렸어요", self.ask_lost_card)
-        if customer is not None and card_lost(customer) and self.session.card_kind != "reissue":
-            fee = self.session.policy()["card_reissue_fee"]
-            return link_button(f"회원카드 재발급 ({fee:,}원) 장바구니에 담기", self.add_reissue_card)
-        return None
 
     def ask_lost_card(self):
         fee = self.session.policy()["card_reissue_fee"]
@@ -507,13 +691,15 @@ class MenuScreen(QWidget):
         column.addWidget(label("♥ 좋아요한 음료", 14, bold=True))
         likes = self.session.likes()
         if likes:
-            column.addLayout(self.card_grid(likes[:6]))
+            column.addLayout(self.card_grid(likes[:6], wide_photo=True))
+            for tile in card.findChildren(MenuCard):
+                tile.setFixedHeight(260)
         else:
             row = QHBoxLayout()
             self.add_like_tile = AddLikeTile(lambda: self.show_category(CATEGORY_ORDER[0]))
-            row.addWidget(self.add_like_tile, 1)
-            hint = label("메뉴 옵션 창의 ♡를 누르면\n여기에 모여요", 15, muted=True)
-            row.addWidget(hint, 1)
+            self.add_like_tile.setFixedSize(226, 260)
+            row.addWidget(self.add_like_tile)
+            row.addStretch()
             column.addLayout(row)
         return card
 
@@ -522,23 +708,35 @@ class MenuScreen(QWidget):
         card = Card()
         column = QVBoxLayout(card)
         column.setContentsMargins(18, 14, 18, 14)
-        column.setSpacing(10)
+        column.setSpacing(16)
         recent = self.session.recent()
         self.quick_button = None
-        row = QHBoxLayout()
-        row.setSpacing(18)
-        text = QVBoxLayout()
-        text.addWidget(label("최근 주문 보기", 14, bold=True))
+        head = QHBoxLayout()
+        head.addWidget(label("최근 주문 보기", 14, bold=True), alignment=Qt.AlignmentFlag.AlignTop)
+        head.addStretch()
         if recent is None:
-            row.addWidget(CupIcon("latte", 96))
-            text.addWidget(label("아직 주문 기록이 없어요", 22, title=True))
-            text.addWidget(label("첫 주문 뒤 여기에 최근 주문이 생겨요", 15, muted=True))
-            row.addLayout(text, 1)
-            column.addLayout(row)
+            column.addLayout(head)
+            column.addWidget(label("아직 주문 기록이 없어요", 22, title=True))
+            column.addWidget(label("첫 주문 뒤 여기에 최근 주문이 생겨요", 15, muted=True))
+            column.addStretch()
             return card
         lines = recent["lines"]
-        row.addWidget(menu_icon(self.session.menu()[lines[0]["menu_id"]], 96,
-                                (lines[0]["options"] or {}).get("temperature")))
+        self.quick_button = button("다시 담기 ▶", "secondary", lambda: self.reorder(lines))
+        self.quick_button.setMinimumHeight(56)
+        head.addWidget(self.quick_button, alignment=Qt.AlignmentFlag.AlignTop)
+        column.addLayout(head)
+        row = QHBoxLayout()
+        row.setSpacing(22)
+        photo = menu_icon(self.session.menu()[lines[0]["menu_id"]], 165,
+                          (lines[0]["options"] or {}).get("temperature"))
+        shadow = QGraphicsDropShadowEffect(photo)
+        shadow.setBlurRadius(20)
+        shadow.setOffset(0, 6)
+        shadow.setColor(QColor(58, 29, 8, 65))
+        photo.setGraphicsEffect(shadow)
+        row.addWidget(photo, alignment=Qt.AlignmentFlag.AlignTop)
+        text = QVBoxLayout()
+        text.setSpacing(13)
         for line in lines[:3]:                   # 세 줄까지 보여 주고 나머지는 '외 n개'
             detail = f"  {short_options(line['options'])}" if line["options"] else ""
             row_text = ElidedLabel(f"{line['name']} × {line['quantity']}{detail}")
@@ -550,11 +748,10 @@ class MenuScreen(QWidget):
         price = label(f"총 {recent['count']}개 · {theme.won(total)} (지금 가격)", 16, bold=True)
         price.setStyleSheet(f"color: {theme.CARAMEL};")
         text.addWidget(price)
+        text.addStretch()
         row.addLayout(text, 1)
-        self.quick_button = button("다시 담기 ▶", "secondary", lambda: self.reorder(lines))
-        self.quick_button.setMinimumHeight(64)
-        row.addWidget(self.quick_button, alignment=Qt.AlignmentFlag.AlignVCenter)
         column.addLayout(row)
+        column.addStretch()
         return card
 
     def reorder(self, lines, go_cart=True, caffeine_ok=False):
@@ -612,7 +809,9 @@ class MenuScreen(QWidget):
         text = QVBoxLayout()
         text.setSpacing(4)
         text.addWidget(label("이번 주 카페인 섭취량", 15, muted=True))
-        text.addWidget(label(f"{report['total']:,}mg", 30, title=True))
+        amount = label(f"{report['total']:,}mg", 30, title=True)
+        amount.setMinimumHeight(amount.fontMetrics().height() + 6)
+        text.addWidget(amount)
         message = label(report["message"], 15, bold=True, guide=True)
         text.addWidget(message)
         text.addSpacing(8)
@@ -824,9 +1023,8 @@ class MenuScreen(QWidget):
     def resizeEvent(self, event):
         self.popup.setGeometry(self.rect())
         self.confirm_box.setGeometry(self.rect())
+        self.staff_box.setGeometry(self.rect())
         self.caffeine_settings.setGeometry(self.rect())
+        # 11/09: 넓은 화면(1920)에서는 오른쪽 장바구니를 넓게 (좁은 창은 메뉴 카드 3칸 자리를 지킨다)
+        self.cart_panel.setFixedWidth(400 if self.width() >= 1600 else 300)
         super().resizeEvent(event)
-        # 창 크기가 바뀌어 한 줄 칸 수가 달라지면 카드를 다시 놓는다
-        if getattr(self, "shown_columns", None) not in (None, self.columns()):
-            self.show_category(self.category)
-        self.shown_columns = self.columns()

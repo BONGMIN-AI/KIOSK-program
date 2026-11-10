@@ -30,12 +30,25 @@ def test_report_names_the_biggest_day():
 
 def test_trend_by_week_and_month():
     week = caffeine_trend(ORDERS, "C1", MENU, "주별", TODAY)
-    assert len(week["values"]) == 8 and week["labels"][-2:] == ["19", "26"] and week["labels"][0] == "9/7"
+    assert len(week["values"]) == 8 and week["labels"][-2:] == ["3주", "4주"] and week["labels"][0] == "9월/1주"
     assert week["values"][-2:] == [150, 450]
     month = caffeine_trend(ORDERS, "C1", MENU, "월별", TODAY)
     assert month["labels"] == ["5월", "6월", "7월", "8월", "9월", "10월"]
     assert month["values"][-2:] == [600, 600]
-    assert caffeine_trend(ORDERS, "C1", MENU, "이번 주", TODAY)["values"][0] == 300
+    daily = caffeine_trend(ORDERS, "C1", MENU, "이번 주", TODAY)
+    assert daily["labels"] == ["일", "월", "화", "수", "목", "금", "토"]
+    assert daily["values"][1] == 300 and daily["current"] == 6
+
+
+def test_sunday_starts_report_trend_and_alert_week_together():
+    from domain.my_menu import week_caffeine
+    sunday = date(2026, 11, 1)
+    orders = {"sunday": order(sunday, 1), "previous": order(date(2026, 10, 31), 2)}
+    report = caffeine_report(orders, "C1", MENU, sunday)
+    trend = caffeine_trend(orders, "C1", MENU, "이번 주", sunday)
+    assert report["total"] == 150 and report["this_week"] == [150, 0, 0, 0, 0, 0, 0]
+    assert trend["values"] == report["this_week"] and trend["current"] == 0
+    assert week_caffeine(orders, "C1", MENU, sunday) == {"mg": 150, "잔": 1}
 
 
 def test_limit_warning_by_cups_and_mg():

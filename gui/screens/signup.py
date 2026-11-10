@@ -15,7 +15,8 @@ from domain.member_cards import perks_text
 from face import FaceError
 from gui import theme
 from gui.screens.login import nav_bar
-from gui.widgets import FixedWidthCard, Card, FacePanel, button, label, message_label, phone_field, text_field
+from gui.screens.ticket import HangulKeyboard
+from gui.widgets import FixedWidthCard, Card, FacePanel, TouchKeyboard, button, label, message_label, phone_field, text_field
 
 
 def check_box(text, bold=False):
@@ -23,6 +24,36 @@ def check_box(text, bold=False):
     box.setFont(theme.font(16, bold=bold))
     box.setMinimumHeight(40)
     return box
+
+
+def option_box(title, detail):
+    """회원가입 오른쪽 아래의 눈에 띄는 선택 칸 (회원카드 신청 · 얼굴 등록): 테두리 상자 + 큰 체크 + 혜택 한 줄.
+    상자 어디를 눌러도 체크가 바뀐다."""
+    box = ClickFrame()
+    box.setObjectName("option_box")
+    box.setStyleSheet(f"QFrame#option_box {{ background: {theme.CREAM}; border: 2px solid {theme.CARAMEL};"
+                      " border-radius: 14px; }")
+    column = QVBoxLayout(box)
+    column.setContentsMargins(12, 6, 12, 6)
+    column.setSpacing(2)
+    check = check_box(title, bold=True)
+    check.setFont(theme.font(18, bold=True))
+    side = round(26 * theme.SCALE)
+    check.setStyleSheet(f"QCheckBox {{ border: none; }} QCheckBox::indicator {{ width: {side}px; height: {side}px; }}")
+    column.addWidget(check)
+    perks = label(detail, 14, bold=True)
+    perks.setStyleSheet(f"border: none; color: {theme.CARAMEL};")
+    column.addWidget(perks)
+    box.clicked = check.toggle
+    return box, check, perks
+
+
+class ClickFrame(QFrame):
+    clicked = None
+
+    def mousePressEvent(self, event):
+        if self.clicked is not None:
+            self.clicked()
 
 
 class SignupScreen(QWidget):
@@ -52,6 +83,16 @@ class SignupScreen(QWidget):
         self.phone = phone_field("전화번호 * (숫자만 치면 010-0000-0000 모양으로)")
         for field in (self.name, self.login_id, self.password, self.password_again, self.phone):
             left.addWidget(field)
+        self.keyboard_switch = button("한글 / 영문 전환", "outline", self.switch_keyboard)
+        left.addWidget(self.keyboard_switch)
+        self.korean_keyboard = HangulKeyboard()
+        self.english_keyboard = TouchKeyboard()
+        fields = (self.name, self.login_id, self.password, self.password_again, self.phone)
+        self.korean_keyboard.attach(*fields)
+        self.english_keyboard.attach(*fields)
+        left.addWidget(self.korean_keyboard)
+        left.addWidget(self.english_keyboard)
+        self.english_keyboard.hide()
         left.addStretch()
         body.addWidget(info, 1)
 
@@ -79,22 +120,14 @@ class SignupScreen(QWidget):
         right.setStretch(right.count() - 1, 1)
         self.privacy = check_box("[필수] 개인정보 수집·이용 동의", bold=True)
         self.marketing = check_box("[선택] 마케팅 정보 수신 동의")
-        self.face_consent = check_box("[선택] 얼굴 등록 동의 · 다음부터 카메라만 보면 로그인")
-        section(label("약관 동의", 18, bold=True), self.privacy, self.marketing, self.face_consent)
+        section(label("약관 동의", 18, bold=True), self.privacy, self.marketing)
+        # 11/09: 얼굴 등록도 회원카드처럼 눈에 띄는 칸으로 (작은 체크 줄이라 못 보고 지나쳤다)
+        self.face_box, self.face_consent, self.face_perks = option_box(
+            "[선택] 얼굴 등록", "다음부터 카메라만 보면 바로 로그인 · 사진은 저장하지 않아요")
+        right.addWidget(self.face_box)
         # 11/01 회원카드 신청 (선택): 혜택을 보여 주고 고르게 한다 → 운영자 승인 → 카운터에서 받기
-        self.card_box = QFrame()
-        self.card_box.setObjectName("card_box")
-        self.card_box.setStyleSheet(f"QFrame#card_box {{ background: {theme.CREAM}; border: 2px solid {theme.CARAMEL};"
-                                    " border-radius: 14px; }")
-        card = QVBoxLayout(self.card_box)
-        card.setContentsMargins(12, 6, 12, 6)
-        card.setSpacing(2)
-        self.card_request = check_box("[선택] 회원카드 신청", bold=True)
-        self.card_request.setStyleSheet("border: none;")
-        card.addWidget(self.card_request)
-        self.card_perks = perks = label("", 14, bold=True)       # 운영자 정책 값으로 on_show에서 채운다
-        perks.setStyleSheet(f"border: none; color: {theme.CARAMEL};")
-        card.addWidget(perks)
+        self.card_box, self.card_request, self.card_perks = option_box("[선택] 회원카드 신청", "")
+        card = self.card_box.layout()                          # 혜택 글은 운영자 정책 값으로 on_show에서 채운다
         self.card_how = how = label("", 13, muted=True)
         how.setStyleSheet(f"border: none; color: {theme.TEXT2};")
         how.setVisible(theme.SCALE == 1)         # 큰 글자에서는 칸 높이에 맞춰 뺀다
@@ -106,6 +139,14 @@ class SignupScreen(QWidget):
         body.addWidget(right_card, 1)
         layout.addLayout(body, 1)
         layout.addLayout(nav_bar(router, lambda: router.show_screen("home")))
+
+    def switch_keyboard(self):
+        korean = self.korean_keyboard.isVisible()
+        target = self.korean_keyboard.target if korean else self.english_keyboard.target
+        self.korean_keyboard.target = target
+        self.english_keyboard.target = target
+        self.korean_keyboard.setVisible(not korean)
+        self.english_keyboard.setVisible(korean)
 
     def on_show(self):
         for field in (self.name, self.login_id, self.password, self.password_again, self.phone,
@@ -257,9 +298,9 @@ class EnrollScreen(QWidget):
         self.show_running(False)
         self.router.session.reload_customer()
         self.message.setText("")
-        self.steps.setText("✓ 얼굴 등록 완료\n다음부터 회원 ID + 얼굴로 로그인할 수 있어요.")
-        self.start_button.setEnabled(False)
-        self.skip_button.setText("주문 시작 →")
+        # 11/09: 등록이 끝나면 '주문 시작'을 누를 필요 없이 바로 My Menu로
+        self.go_order()
+        self.router.notify("얼굴 등록 완료!\n다음부터 회원 ID + 얼굴로 로그인할 수 있어요.", 5)
 
     def show_running(self, running):
         """등록 중: 왼쪽은 얼굴 기호, 오른쪽은 '지금 할 일' 크게 · 시작 버튼은 '취소'로."""

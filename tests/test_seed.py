@@ -3,7 +3,9 @@ import unittest
 
 from domain.allergens import ALLERGENS
 from domain.options import available_options, normalize_options
-from domain.seed import make_demo_customers, make_menu
+from core.storage import MemoryVault
+from domain.policy import load_policy
+from domain.seed import add_demo_events, enrich_existing_events, make_demo_customers, make_menu
 
 CATEGORIES = {"커피", "디카페인", "논커피", "차", "에이드", "디저트"}
 
@@ -72,6 +74,28 @@ class SeedCustomerTest(unittest.TestCase):
         for customer in customers.values():
             for name in customer["extra"]["allergies"]:
                 self.assertIn(name, ALLERGENS)
+
+
+class DemoEventTest(unittest.TestCase):
+    def test_existing_event_details_are_filled_once(self):
+        vault = MemoryVault()
+        vault.write("settings", {})
+        add_demo_events(vault)
+        settings = vault.read("settings")
+        events = settings["point_policy"]["events"]
+        events[0]["message"] = "운영자가 적은 문구"
+        events[1]["message"] = ""
+        events[1]["hours"] = None
+        settings["point_policy"]["events"] = events[:3]
+        vault.write("settings", settings)
+        enrich_existing_events(vault)
+        enriched = load_policy(vault.read("settings"))["events"]
+        self.assertEqual(len(enriched), 6)
+        self.assertEqual(enriched[0]["message"], "운영자가 적은 문구")
+        self.assertTrue(enriched[1]["message"])
+        self.assertEqual(enriched[1]["hours"], [16, 22])
+        enrich_existing_events(vault)
+        self.assertEqual(len(load_policy(vault.read("settings"))["events"]), 6)
 
 
 if __name__ == "__main__":

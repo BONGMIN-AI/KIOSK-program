@@ -32,18 +32,24 @@ def check_rows(table, rows):
         table.item(row, 0).setCheckState(Qt.CheckState.Checked)
 
 
+def row_key(table, row):
+    return table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+
+
 def test_menu_batch_sold_out_and_buttons_follow_state(admin):
     table = admin.menu_table
+    keys = [row_key(table, row) for row in (0, 1, 2)]      # 계절 메뉴가 위에 올 수 있어 줄 순서로 키를 읽는다
+    already = sum(1 for i in admin.vault().read("menu").values() if i.get("sold_out") and not i.get("hidden"))
     assert not admin.sold_out_button.isEnabled() and not admin.menu_delete_button.isEnabled()
     check_rows(table, (0, 1, 2))
     assert admin.sold_out_button.isEnabled() and not admin.on_sale_button.isEnabled()
     admin.set_sold_out(True)
     menu = admin.vault().read("menu")
-    assert all(menu[key]["sold_out"] for key in ("M001", "M002", "M003"))
+    assert all(menu[key]["sold_out"] for key in keys)
     check_rows(table, (0, 1))
     assert admin.on_sale_button.isEnabled() and not admin.sold_out_button.isEnabled()
     admin.menu_filter.setCurrentText("품절만")
-    assert table.rowCount() == 3
+    assert table.rowCount() == already + 3
 
 
 def test_members_and_orders_are_separate_pages(admin):
