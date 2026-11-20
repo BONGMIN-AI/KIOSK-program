@@ -298,10 +298,10 @@ def saved_routes_card(session, on_open, on_remove):
     column = QVBoxLayout(card)
     column.setContentsMargins(18, 14, 18, 16)
     column.setSpacing(8)
-    column.addWidget(label("★ 즐겨찾기 노선", 14, bold=True))
+    column.addWidget(label("★ 즐겨찾기 노선", 23, bold=True))
     routes = session.saved_routes()
     if not routes:
-        hint = label("승차권을 살 때 '예 · 저장'을 고르면 여기에 모여요", 15, muted=True, guide=True)
+        hint = label("승차권을 살 때 '예 · 저장'을 고르면 여기에 모여요", 20, muted=True, guide=True)
         column.addWidget(hint)
         column.addStretch()
         return card

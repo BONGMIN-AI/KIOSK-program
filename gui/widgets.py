@@ -1090,7 +1090,7 @@ class CountdownBox(ConfirmBox):
 
 
 class PromoBanner(QWidget):
-    """홍보 배너 그림 한 장. 칸을 꽉 채우고 넘치는 부분은 가운데 기준으로 자른다 (둥근 모서리)."""
+    """홍보 배너 그림 한 장. 원본 비율로 전체 그림을 칸 가운데에 맞춘다."""
 
     def __init__(self, filename, parent=None):
         super().__init__(parent)
@@ -1113,11 +1113,11 @@ class PromoBanner(QWidget):
         if self.picture.isNull():          # 그림 파일이 없어도 멈추지 않고 빈 칸으로 둔다
             painter.fillRect(target, QColor(theme.CARAMEL_LIGHT))
             return
-        scale = max(target.width() / self.picture.width(), target.height() / self.picture.height())
-        width, height = target.width() / scale, target.height() / scale
-        source = QRectF((self.picture.width() - width) / 2, (self.picture.height() - height) / 2,
-                        width, height)
-        painter.drawPixmap(target, self.picture, source)
+        scale = min(target.width() / self.picture.width(), target.height() / self.picture.height())
+        fitted = QRectF(0, 0, self.picture.width() * scale, self.picture.height() * scale)
+        fitted.moveCenter(target.center())
+        painter.fillRect(target, QColor(theme.CREAM))
+        painter.drawPixmap(fitted, self.picture, QRectF(self.picture.rect()))
 
 
 class Slideshow(QWidget):

@@ -72,6 +72,9 @@ class LoginScreen(QWidget):
         self.login_id.textChanged.connect(lambda _text: getattr(self, "mode", "face") != "face" and self.update_options())
         left.addWidget(self.login_id)
         self.password = text_field("비밀번호 (화면에 보이지 않아요)", password=True)
+        policy = self.password.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.password.setSizePolicy(policy)
         left.addWidget(self.password)
         # 11/09: 엔터로 다음 단계 (아이디 → 얼굴 인증 또는 비밀번호 칸, 비밀번호 → 로그인)
         self.login_id.returnPressed.connect(self.id_entered)
@@ -142,9 +145,12 @@ class LoginScreen(QWidget):
         for widget in (self.signup_link, self.find_button):
             links.addWidget(widget, alignment=Qt.AlignmentFlag.AlignRight)
         right.addLayout(links)
-        body.addWidget(right_card)
+        sidebar = QVBoxLayout()
+        sidebar.setSpacing(14)
+        sidebar.addWidget(right_card, 1)
+        sidebar.addLayout(nav_bar(router, self.go_back))
+        body.addLayout(sidebar)
         layout.addLayout(body, 1)
-        layout.addLayout(nav_bar(router, self.go_back))
         self.set_mode("face")      # 처음부터 02 모양으로 (02-B 버튼은 숨김)
 
     def on_show(self, mode="face", message="", keep_id=False, login_id=""):
